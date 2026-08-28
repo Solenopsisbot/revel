@@ -50,7 +50,7 @@
   }
 </script>
 
-<Moment>
+<Moment pose={step === 'scan' ? 'alert' : 'leaning'}>
   {#if step === 'credentials'}
     <div class="pane">
       <p class="eyebrow">Welcome back</p>

@@ -27,7 +27,7 @@
   }
 </script>
 
-<Moment>
+<Moment pose="serious">
   <div class="pane">
     <p class="eyebrow">Forgotten password</p>
     <h1>There's a way back in.</h1>

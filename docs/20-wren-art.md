@@ -169,7 +169,8 @@ Same prompt/negative/settings as alert-01.
 - Test coral (#FF7A5C) eyes as an alternative -- the spec lists it.
 - Try the cozy_anime LoRA for warmer, softer moment-screen variants.
 - Regenerate on bunny_v4 if the MPS issue is resolved (restart with `--no-half`).
-- Produce transparent-background versions for compositing into the layout.
+- ~~Produce transparent-background versions for compositing into the layout.~~
+  Done in Round 3, below.
 
 ---
 
@@ -181,28 +182,86 @@ load `rabbit_v7` first and then `bunny_v4`.** Loading the SD 1.5 model appears
 to reset dtype state that a direct SDXL-to-SDXL switch leaves broken. Worth
 re-running the final prompts on bunny_v4 this way to compare.
 
-## Known gap: no transparent-background render
+---
 
-Every kept image has a **solid dark background**, so dropping one into a layout
-produces a visible rectangle. In `design/index.html` the moment screen works
-around it with a CSS edge mask — the frame edges fade out so she reads as
-emerging from shadow rather than pasted on.
+## Round 3 -- the cutout pass (nano banana)
 
-That is a workaround, not a fix. Naive chroma-keying won't work here: the
-background is near-black and **her hoodie is also black**, so keying dark pixels
-eats the character.
+**This closed the transparent-background gap.** Every image above has a solid
+dark ground, so dropping one into a layout produced a visible rectangle, and
+naive chroma-keying was never going to work: the background is near-black and
+her hoodie is also black, so keying dark pixels eats the character.
 
-**Viola can do this directly in nano banana** — edit the kept renders into
-poses and a blank background, which is faster and gives better control than
-re-rolling the generator. That's the expected path; the steps below are the
-fallback if it's ever done programmatically.
+The fix was the one the last section predicted -- edit the kept renders in
+**nano banana** rather than re-rolling the generator. Six images came back with
+real alpha, a consistent character across all of them, and the hoodie's mint
+accents intact.
 
-The programmatic fix, if anyone needs it:
+All in `design/wren/`, named `wren-cut-*` so the cutout ones are obvious in a
+directory listing -- that is the property you are choosing on.
 
-1. Regenerate with `simple background, white background` in the prompt. A dark
-   character on white is trivially separable.
-2. Key the white to alpha. No `rembg` or Pillow exists on this machine or on
-   the generation host, and A1111 has no background-removal extension, so this
-   needs one of those added first.
-3. Keep both versions — the dark-background render is the better *illustration*
-   (the rim lighting reads well); the cutout is what the layout needs.
+| File | Source | What it is |
+|---|---|---|
+| `wren-cut-warm.png` | 1024x1024 | Neutral-warm, fang showing. The "here, what do you need" face. |
+| `wren-cut-serious.png` | 1024x1024 | Serious-caring. Level mouth, direct eye contact. |
+| `wren-cut-alert.png` | 1024x1024 | Alert. Wide eyes, parted lips. |
+| `wren-cut-standing.png` | 768x1376 | Full body, hands in pockets, quiet smile. |
+| `wren-cut-leaning.png` | 768x1376 | Full body, leaning, one foot crossed. Waiting rather than answering. |
+| `wren-cut-seated.png` | 896x1200 | Seated, chin on hand. Sits on a white plinth that is part of the image. |
+
+The three portraits share a framing, so they can be swapped in place without
+the composition moving -- which is what makes a per-screen `pose` prop worth
+having rather than a single mascot image.
+
+### Derived web assets
+
+`apps/web/static/wren/`, generated from the sources above:
+
+```sh
+# Full-body: trim to the alpha bounding box so CSS positions her by her
+# silhouette rather than by the generator's padding, then 2x the largest
+# on-screen height (620px).
+magick wren-cut-standing.png -trim +repage -resize x1240 -quality 88 standing.webp
+magick wren-cut-leaning.png  -trim +repage -resize x1240 -quality 88 leaning.webp
+magick wren-cut-seated.png   -trim +repage -resize x1000 -quality 88 seated.webp
+
+# Expressions, at panel size and at avatar size.
+magick wren-cut-warm.png -resize 512x512 -quality 90 warm.webp
+magick wren-cut-warm.png -resize 128x128 -quality 90 warm-sm.webp   # and serious, alert
+```
+
+412 KB for the whole set, against 892 KB for the single dark-background PNG it
+replaced.
+
+### What changed in the app
+
+- `Moment.svelte` and the landing hero **no longer carry the CSS edge mask.**
+  That mask existed only to fade out the corners of a rectangular dark render;
+  with real alpha it was actively harmful, because it dimmed her face.
+- What replaced it is a soft drop shadow. It is doing real work rather than
+  being decoration: her hoodie is near-black and the moment ground is a dark
+  violet gradient, so without a shadow the silhouette merges into the
+  background and only the mint accents survive.
+- `Moment.svelte` takes a `pose` prop. Full-body poses hang from the bottom
+  edge; the expression portraits sit lower and larger, so her face lands at
+  about headline height.
+- Screen assignments: recovery code and forgotten-password get `serious`,
+  because those screens have to be believed rather than liked. Device pairing
+  gets `alert`. The landing page and sign-in get `leaning` -- the two screens
+  where she is waiting on you. Ordinary sign-up gets `standing`.
+
+`seated` is exported but unused. The white plinth she is sitting on is part of
+the image, so it needs a layout with somewhere to sit; it is not a drop-in
+replacement for the other two.
+
+## Still open
+
+- **The hair gradient.** Round 3 reads as a mint-to-aqua shift far better than
+  the SD renders did, but it is still not the deliberate root-to-tip gradient
+  the spec describes.
+- **The pleased and explaining expressions** from `09-mascot.md` are still not
+  generated. The cutout set covers neutral-warm, serious-caring and alert.
+- **Coral eyes** have never been tested. The gold works, so the alternative in
+  the spec has not had a fair hearing.
+- **Poses for the app shell.** Everything so far is a moment-screen figure.
+  The Wren panel (`docs/12`) will want something that reads at 32px and in a
+  narrow column, which is a different problem.

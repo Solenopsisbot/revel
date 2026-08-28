@@ -36,7 +36,9 @@
   }
 </script>
 
-<Moment>
+<!-- The recovery-code step is the sentence people have to believe, so Wren
+     says it with her serious face rather than her friendly one. -->
+<Moment pose={step === 'code' ? 'serious' : 'standing'}>
   {#if step === 'account'}
     <div class="pane">
       <p class="eyebrow">Make an account</p>

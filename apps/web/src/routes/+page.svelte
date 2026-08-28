@@ -44,7 +44,9 @@
     <div class="haze a"></div>
     <div class="haze b"></div>
     <div class="haze c"></div>
-    <img class="art" src="/wren.png" alt="" aria-hidden="true" />
+    <!-- Leaning, not standing: the landing page is the one screen where she
+         is waiting on you rather than answering you. -->
+    <img class="art" src="/wren/leaning.webp" alt="" aria-hidden="true" />
     <div class="hero-in">
       <h1>Somewhere to actually talk.</h1>
       <p class="sub">
@@ -207,14 +209,9 @@
   .art {
     position: absolute; right: 2%; bottom: 0; z-index: 1; height: min(74dvh, 620px); width: auto;
     pointer-events: none;
-    -webkit-mask-image:
-      linear-gradient(to right, transparent 0%, #000 15%, #000 85%, transparent 100%),
-      linear-gradient(to bottom, transparent 0%, #000 16%, #000 100%);
-    -webkit-mask-composite: source-in;
-    mask-image:
-      linear-gradient(to right, transparent 0%, #000 15%, #000 85%, transparent 100%),
-      linear-gradient(to bottom, transparent 0%, #000 16%, #000 100%);
-    mask-composite: intersect;
+    /* A true alpha cutout, so no edge mask — see `Moment.svelte` for why the
+       shadow is doing the work the mask used to. */
+    filter: drop-shadow(0 12px 34px rgb(0 0 0 / .5));
   }
 
   .band { padding: 92px 0; }
