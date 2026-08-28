@@ -18,6 +18,8 @@ class Core {
   /** Faces currently typing in the open room. */
   typing = $state<string[]>([]);
   membersOpen = $state(true);
+  /** The message being replied to, if any. Cleared on send or Escape. */
+  replyTo = $state<string | null>(null);
 
   get space() {
     return this.spaces.find((s) => s.id === this.currentSpaceId) ?? this.spaces[0]!;
@@ -42,6 +44,7 @@ class Core {
   openRoom(spaceId: string, roomId: string) {
     this.currentSpaceId = spaceId;
     this.currentRoomId = roomId;
+    this.replyTo = null;
     const room = this.space.rooms.find((r) => r.id === roomId);
     if (room) {
       room.unread = undefined;
@@ -59,8 +62,16 @@ class Core {
     if (!trimmed) return;
     const id = `local-${crypto.randomUUID()}`;
     const list = this.messages[this.currentRoomId] ?? [];
-    list.push({ id, faceId: this.speakingAs, body: trimmed, at: Date.now(), pending: true });
+    list.push({
+      id,
+      faceId: this.speakingAs,
+      body: trimmed,
+      at: Date.now(),
+      pending: true,
+      replyTo: this.replyTo ?? undefined,
+    });
     this.messages[this.currentRoomId] = list;
+    this.replyTo = null;
 
     setTimeout(() => {
       const m = this.messages[this.currentRoomId]?.find((x) => x.id === id);

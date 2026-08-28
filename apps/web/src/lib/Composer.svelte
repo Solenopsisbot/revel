@@ -6,12 +6,14 @@
   let draft = $state('');
   let switcherOpen = $state(false);
   let input = $state<HTMLTextAreaElement>();
+  let dragging = $state(false);
 
   const face = $derived(faces[core.speakingAs]!);
 
   function submit() {
     core.send(draft);
     draft = '';
+    replyTo = null;
     // Someone replies, so the typing indicator and arrival animation have
     // something to do.
     core.simulateTyping('rae', 2600);
@@ -26,7 +28,11 @@
       e.preventDefault();
       submit();
     }
-    if (e.key === 'Escape') switcherOpen = false;
+    if (e.key === 'Escape') {
+      // Escape clears the most specific thing first, then the next.
+      if (switcherOpen) switcherOpen = false;
+      else if (core.replyTo) core.replyTo = null;
+    }
   }
 
   function grow(el: HTMLTextAreaElement) {
@@ -54,7 +60,28 @@
     </div>
   {/if}
 
-  <div class="box" style="--fc: var(--face-{face.colour})">
+  {#if core.replyTo}
+    {@const target = core.thread.find((x) => x.id === core.replyTo)}
+    {#if target}
+      <div class="reply-banner">
+        <Icon name="reply" size={14} />
+        <span>Replying to <b style="color: var(--face-{faces[target.faceId]!.colour})">{faces[target.faceId]!.name}</b></span>
+        <span class="snip">{target.body}</span>
+        <button class="x" onclick={() => (core.replyTo = null)} aria-label="Cancel reply">×</button>
+      </div>
+    {/if}
+  {/if}
+
+  <div
+    class="box"
+    class:dragging
+    class:replying={!!core.replyTo}
+    style="--fc: var(--face-{face.colour})"
+    ondragover={(e) => { e.preventDefault(); dragging = true; }}
+    ondragleave={() => (dragging = false)}
+    ondrop={(e) => { e.preventDefault(); dragging = false; }}
+    role="group"
+  >
     {#if core.plural}
       <!-- The chip exists only because this account has several faces.
            A singlet never sees it (`docs/11`). -->
@@ -105,9 +132,48 @@
     display: flex; align-items: flex-end; gap: 8px;
     background: var(--ground-3); border: 2px solid var(--line);
     border-radius: var(--r-lg); padding: 6px 6px 6px 12px;
-    transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+    transition:
+      border-color var(--t-base) var(--ease),
+      background var(--t-base) var(--ease),
+      box-shadow var(--t-base) var(--ease);
   }
-  .box:focus-within { border-color: var(--brand); box-shadow: var(--focus-ring); }
+  /* Hovering the box hints it is a target before you commit to clicking it. */
+  .box:hover:not(:focus-within) { border-color: var(--ground-4); background: var(--ground-2); }
+  .box:focus-within {
+    border-color: var(--brand);
+    background: var(--ground-2);
+    box-shadow: var(--focus-ring);
+  }
+  /* Files dragged over it: the whole field becomes the drop target, so the
+     affordance is the field rather than a separate zone that appears. */
+  .box.dragging {
+    border-color: var(--face-mint);
+    border-style: dashed;
+    background: color-mix(in oklab, var(--face-mint) 10%, var(--ground-2));
+  }
+  .box.replying { border-top-left-radius: 0; border-top-right-radius: 0; }
+
+  .reply-banner {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 12px; font-size: var(--text-sm); color: var(--text-mute);
+    background: var(--ground-2); border: 2px solid var(--line); border-bottom: 0;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    animation: banner var(--t-base) var(--ease);
+  }
+  @keyframes banner {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+  .reply-banner .snip {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text-mute);
+  }
+  .reply-banner .x {
+    border: 0; background: transparent; color: var(--text-mute); cursor: pointer;
+    font-size: 18px; line-height: 1; padding: 0 4px; border-radius: var(--r-xs);
+    transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+  }
+  .reply-banner .x:hover { color: var(--text); background: var(--ground-3); }
 
   .chip {
     display: inline-flex; align-items: center; gap: 6px; flex: none; cursor: pointer;
@@ -126,7 +192,10 @@
     font: inherit; padding: 8px 0; resize: none; overflow-y: auto; max-height: 180px;
   }
   textarea:focus { outline: none; }
-  textarea::placeholder { color: var(--text-mute); }
+  /* The placeholder recedes as you focus, so the field feels ready rather
+     than still labelled. */
+  textarea::placeholder { color: var(--text-mute); transition: color var(--t-base) var(--ease); }
+  .box:focus-within textarea::placeholder { color: color-mix(in oklab, var(--text-mute) 55%, transparent); }
 
   .icon {
     border: 0; background: transparent; color: var(--text-dim); cursor: pointer;
@@ -134,6 +203,7 @@
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .icon:hover { background: var(--ground-4); color: var(--text); }
+  .icon:active { transform: scale(0.9); }
 
   .send {
     flex: none; width: 36px; height: 36px; border-radius: 50%; border: 0; cursor: pointer;
@@ -143,7 +213,13 @@
     transition: transform var(--t-fast) var(--ease-toy), box-shadow var(--t-fast) var(--ease),
       opacity var(--t-fast) var(--ease);
   }
-  .send:disabled { opacity: .4; cursor: default; box-shadow: none; }
+  /* Enabling the send button is the clearest signal that the field has
+     content, so it is worth animating rather than snapping. */
+  .send:disabled {
+    opacity: .35; cursor: default; box-shadow: none;
+    background: var(--ground-4); transform: scale(.92);
+  }
+  .send:not(:disabled):hover { filter: brightness(1.08); }
   /* The one overshoot in the product: it presses down like an object. */
   .send:not(:disabled):active { transform: translateY(var(--lift)); box-shadow: 0 0 0 #55229e; }
 </style>

@@ -145,8 +145,17 @@
     border-radius: var(--r-sm); color: var(--text-mute); font-weight: 600;
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
+  .room { position: relative; }
   .room:hover { background: var(--ground-2); color: var(--text-dim); }
   .room.active { background: var(--ground-3); color: var(--text); }
+  /* The active room gets a marker that grows in, so the selection reads as
+     something that moved rather than something that blinked (docs/32). */
+  .room.active::before {
+    content: ''; position: absolute; left: 0; top: 50%; translate: 0 -50%;
+    width: 3px; height: 60%; border-radius: var(--r-pill); background: var(--brand);
+    animation: mark var(--t-base) var(--ease);
+  }
+  @keyframes mark { from { height: 0; opacity: 0; } to { height: 60%; opacity: 1; } }
   .room.unread { color: var(--text); }
   .room .glyph { opacity: .6; display: grid; place-items: center; width: 15px; }
   .room .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -170,6 +179,8 @@
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .icon-btn:hover { background: var(--ground-2); color: var(--text); }
+  .icon-btn:active { transform: scale(0.9); }
+  .icon-btn[aria-pressed='true'] { color: var(--text); background: var(--ground-3); }
 
   /* Room content cross-fades; the sidebar selection is what moves. A slide
      here would fight the promise that switching is instant (docs/32). */
@@ -178,6 +189,7 @@
 
   .members { background: var(--ground-1); border-left: 1px solid var(--line); overflow: hidden auto; padding: 8px 10px; }
   .member { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-sm); }
+  .member { cursor: pointer; transition: background var(--t-fast) var(--ease); }
   .member:hover { background: var(--ground-2); }
   .who { min-width: 0; }
   .nm { font-weight: 600; font-size: var(--text-sm); display: flex; align-items: center; gap: 6px; }

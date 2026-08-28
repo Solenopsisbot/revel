@@ -92,7 +92,7 @@
 
       <div class="actions">
         <button title="React" onclick={() => core.react(m.id, 'yes')}><Icon name="plus" size={15} /></button>
-        <button title="Reply"><Icon name="reply" size={15} /></button>
+        <button title="Reply" onclick={() => (core.replyTo = m.id)}><Icon name="reply" size={15} /></button>
       </div>
     </article>
   {/each}
@@ -115,7 +115,16 @@
   .row, .typing, .empty { flex: none; }
 
   .row { display: flex; gap: 12px; padding: 6px 16px; position: relative; }
+  /* Hover is a background lift plus a hairline on the left edge — enough to
+     locate the row you are acting on without the list looking striped. */
+  .row::before {
+    content: ''; position: absolute; inset: 0 auto 0 0; width: 2px;
+    background: var(--fc); opacity: 0;
+    transition: opacity var(--t-fast) var(--ease);
+  }
   .row:hover { background: var(--ground-2); }
+  .row:hover::before { opacity: .55; }
+  .row:has(.actions button:focus-visible) { background: var(--ground-2); }
   .row.grouped { padding-top: 2px; }
   .gutter { width: 40px; flex: none; }
   .body { min-width: 0; flex: 1; }
@@ -153,6 +162,8 @@
   }
   .replyto .who { font-weight: 700; color: var(--rc); }
   .replyto .snip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .replyto:hover { color: var(--text-dim); }
+  .replyto:hover .snip { color: var(--text-dim); }
 
   .annot {
     margin-top: 6px; padding: 7px 12px; border-left: 3px solid var(--face-aqua);
@@ -170,8 +181,11 @@
     display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
     background: var(--ground-3); border: 1px solid var(--line);
     border-radius: var(--r-pill); padding: 2px 9px; font-size: var(--text-sm);
-    transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+    transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
+      transform var(--t-fast) var(--ease);
   }
+  .rx:hover { border-color: var(--brand); transform: translateY(-1px); }
+  .rx:active { transform: none; }
   .rx.mine { background: color-mix(in oklab, var(--brand) 24%, transparent); border-color: var(--brand); }
   /* A count change pops just enough to catch peripheral vision. */
   .rx .n { font-weight: 700; font-size: var(--text-xs); animation: pop var(--t-fast) var(--ease); }
@@ -181,15 +195,20 @@
   .actions {
     position: absolute; right: 14px; top: -10px; display: flex; gap: 2px; padding: 3px;
     background: var(--ground-3); border: 1px solid var(--line); border-radius: var(--r-sm);
-    opacity: 0; pointer-events: none;
-    transition: opacity var(--t-fast) var(--ease);
+    opacity: 0; pointer-events: none; transform: translateY(3px);
+    transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+    box-shadow: var(--shadow-ambient);
   }
-  .row:hover .actions { opacity: 1; pointer-events: auto; }
+  .row:hover .actions,
+  .row:has(.actions button:focus-visible) .actions {
+    opacity: 1; pointer-events: auto; transform: none;
+  }
   .actions button {
     border: 0; background: transparent; color: var(--text-dim); cursor: pointer;
     padding: 4px; border-radius: var(--r-xs); display: grid; place-items: center;
   }
   .actions button:hover { background: var(--ground-4); color: var(--text); }
+  .actions button:active { transform: scale(0.9); }
 
   .typing { display: flex; align-items: center; gap: 8px; padding: 4px 16px 8px; font-size: var(--text-xs); color: var(--text-mute); }
   .dots { display: inline-flex; gap: 3px; align-items: flex-end; height: 10px; }
