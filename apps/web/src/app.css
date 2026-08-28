@@ -14,4 +14,14 @@ body {
   overflow: hidden;
 }
 button { font: inherit; color: inherit; }
-:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--r-xs); }
+/* Fields and the composer draw their own focus treatment on their wrapper.
+   A blanket :focus-visible would paint a second, smaller ring inside it. */
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--r-xs);
+}
+input:focus-visible,
+textarea:focus-visible { outline: none; box-shadow: none; }

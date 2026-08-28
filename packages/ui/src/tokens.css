@@ -6,7 +6,8 @@
  * See ../docs/07-design-language.md for the rules these encode.
  *
  * Three themes on [data-theme]: dusk (violet, default), midnight (navy),
- * daylight (light). Two personality levels on [data-personality]: full, calm.
+ * ember (warm dark), moss (green dark), daylight (light). Two personality
+ * levels on [data-personality]: full, calm.
  * Two densities on [data-density]: cozy, compact.
  */
 
@@ -142,6 +143,47 @@
   --face-violet: #9f71f1;       --face-sky: var(--sky);
   --face-mint: var(--mint);     --face-coral: var(--coral);
   --face-lilac: var(--lilac);   --face-aqua: var(--aqua);
+}
+
+/* ---- ember: warm dark. --------------------------------------------------
+   Same ramp shape as dusk (L* 13-35), different hue. Grounds are generated to
+   hit those lightness targets rather than picked by eye, and every face ink is
+   checked against --ground-0; only violet needed lifting. */
+[data-theme='ember'] {
+  --ground-0: #2f1d12;
+  --ground-1: #3a2518;
+  --ground-2: #482f21;
+  --ground-3: #593b2b;
+  --ground-4: #6e4a38;
+  --line: #603e2e;
+  --text: #ffffff;
+  --text-dim: #e0c8b6;
+  --text-mute: #ab8d79;
+  --face-gold: var(--gold);     --face-rose: var(--rose);
+  --face-violet: #9f71f1;       --face-sky: var(--sky);
+  --face-mint: var(--mint);     --face-coral: var(--coral);
+  --face-lilac: var(--lilac);   --face-aqua: var(--aqua);
+  --moment-bg: radial-gradient(120% 110% at 20% 0%, #b4632c 0%, #7a3d1e 42%, #40220f 100%);
+  --scrim: rgba(24, 12, 6, .72);
+}
+
+/* ---- moss: green dark. ------------------------------------------------- */
+[data-theme='moss'] {
+  --ground-0: #12251c;
+  --ground-1: #182e23;
+  --ground-2: #1f3a2c;
+  --ground-3: #294837;
+  --ground-4: #355945;
+  --line: #2c4d3a;
+  --text: #ffffff;
+  --text-dim: #bcd6c6;
+  --text-mute: #85a291;
+  --face-gold: var(--gold);     --face-rose: var(--rose);
+  --face-violet: #9f71f1;       --face-sky: var(--sky);
+  --face-mint: var(--mint);     --face-coral: var(--coral);
+  --face-lilac: var(--lilac);   --face-aqua: var(--aqua);
+  --moment-bg: radial-gradient(120% 110% at 20% 0%, #3f8f63 0%, #245a3e 42%, #102a1e 100%);
+  --scrim: rgba(6, 20, 13, .72);
 }
 
 /* ---- daylight: light. ------------------------------------------------- */
