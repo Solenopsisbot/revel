@@ -16,7 +16,8 @@
   import type { Item } from './menu.js';
   import EmojiPicker from './EmojiPicker.svelte';
   import Attachments from './media/Attachments.svelte';
-  import { core, faces, MY_ACCOUNT } from './fake/core.svelte.js';
+  import { core, MY_ACCOUNT } from './fake/core.svelte.js';
+  import { contextMenu } from './contextmenu.svelte.js';
   import { clock, names } from './format.js';
   import type { Message } from './fake/data.js';
 
@@ -26,7 +27,7 @@
     unreadAbove = false,
   }: { m: Message; grouped: boolean; unreadAbove?: boolean } = $props();
 
-  const face = $derived(faces[m.faceId]!);
+  const face = $derived(core.faces[m.faceId]!);
   const mine = $derived(core.mine(m));
   const editing = $derived(core.editing === m.id);
   const confirming = $derived(core.confirmingDelete === m.id);
@@ -90,9 +91,22 @@
     if (id === 'delete') core.confirmingDelete = m.id;
   }
 
+  /**
+   * Right-click opens the same items the ⋯ button does. Deliberately the same
+   * list rather than a second one: two menus for one object drift, and then
+   * people learn that one of them is the "real" one.
+   *
+   * Skipped when there's a text selection, so right-clicking to copy a quoted
+   * phrase still reaches the browser's own menu.
+   */
+  function onContext(e: MouseEvent) {
+    if (!window.getSelection()?.isCollapsed) return;
+    contextMenu.open(e, menuItems, pickMenu, face.name);
+  }
+
   /** "Rae, June and 2 others reacted with 🔥" — the tooltip does the work. */
   function who(by: string[], key: string) {
-    return `${names(by.map((f) => faces[f]?.name ?? f))} reacted with ${key}`;
+    return `${names(by.map((f) => core.faces[f]?.name ?? f))} reacted with ${key}`;
   }
 </script>
 
@@ -111,6 +125,7 @@
   class:gone={!!m.deleted}
   class:flash={core.jumpTo === m.id}
   style="--fc: var(--face-{face.colour})"
+  oncontextmenu={onContext}
 >
   <div class="gutter">
     {#if grouped && !unreadAbove}
@@ -126,11 +141,11 @@
     {#if target}
       <button
         class="replyto"
-        style="--rc: var(--face-{faces[target.faceId]!.colour})"
+        style="--rc: var(--face-{core.faces[target.faceId]!.colour})"
         onclick={() => (core.jumpTo = target.id)}
       >
         <Icon name="reply" size={13} />
-        <span class="who">{faces[target.faceId]!.name}</span>
+        <span class="who">{core.faces[target.faceId]!.name}</span>
         <span class="snip">{target.deleted ? 'message deleted' : target.body || 'attachment'}</span>
       </button>
     {/if}

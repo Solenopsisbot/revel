@@ -9,7 +9,7 @@
 import {
   account,
   devices,
-  faces,
+  faces as seedFaces,
   keyChanges,
   language,
   lastRead,
@@ -20,6 +20,8 @@ import {
   rosters,
   spaces,
   storage,
+  type Face,
+  type FaceColour,
   type Message,
   type NotifyLevel,
 } from './data.js';
@@ -32,6 +34,19 @@ export const MY_ACCOUNT = 'acct-v';
 const EMOJI_KEY = 'revel.emoji';
 
 class Core {
+  /**
+   * The faces, made reactive.
+   *
+   * `data.ts` is a plain module and cannot hold `$state`, so the record it
+   * exports notifies nothing when a field on it changes — editing a face
+   * repainted the editor and nothing else.
+   *
+   * This lives on the class rather than as a module-level `const faces =
+   * $state(...)` because the bare-export version *looks* right and silently
+   * isn't: the mutation lands on the proxy but subscribers never fire. Every
+   * other reactive thing in this file is a class field, so this one is too.
+   */
+  faces: Record<string, Face> = $state(seedFaces);
   spaces = $state(spaces);
   currentSpaceId = $state('solexsis');
   currentRoomId = $state('design');
@@ -102,10 +117,10 @@ class Core {
     return this.messages[this.currentRoomId] ?? [];
   }
   get roster() {
-    return (rosters[this.currentRoomId] ?? []).map((id) => faces[id]!);
+    return (rosters[this.currentRoomId] ?? []).map((id) => this.faces[id]!);
   }
   get myFaces() {
-    return myFaces.map((id) => faces[id]!);
+    return myFaces.map((id) => this.faces[id]!);
   }
   get plural() {
     // Plurality is invisible until you use it (`docs/11`). One face, no chip.
@@ -114,7 +129,7 @@ class Core {
 
   /** Anything one of my faces said. Edit and delete hang off this. */
   mine(m: Message) {
-    return faces[m.faceId]?.accountId === MY_ACCOUNT;
+    return this.faces[m.faceId]?.accountId === MY_ACCOUNT;
   }
 
   find(id: string | null) {
@@ -276,6 +291,88 @@ class Core {
     else delete this.notifications.spaces[spaceId];
   }
 
+  // --- rooms and spaces ----------------------------------------------------
+
+  markRead(spaceId: string, roomId: string) {
+    const room = this.spaces.find((s) => s.id === spaceId)?.rooms.find((r) => r.id === roomId);
+    if (!room) return;
+    room.unread = undefined;
+    room.mention = false;
+  }
+
+  /** Leaving is a local removal here. In the real client it is an MLS group
+      exit, which is why the history stops rather than disappearing. */
+  leaveRoom(spaceId: string, roomId: string) {
+    const space = this.spaces.find((s) => s.id === spaceId);
+    if (!space || space.rooms.length <= 1) return;
+    space.rooms = space.rooms.filter((r) => r.id !== roomId);
+    if (this.currentRoomId === roomId) this.openRoom(spaceId, space.rooms[0]!.id);
+  }
+
+  createRoom(spaceId: string, name: string, kind: 'text' | 'voice' = 'text', category = 'General') {
+    const space = this.spaces.find((s) => s.id === spaceId);
+    if (!space) return;
+    const id = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (!id || space.rooms.some((r) => r.id === id)) return;
+    space.rooms.push({ id, name: id, kind, category, audience: { kind: 'everyone' } });
+    this.messages[id] ??= [];
+    this.openRoom(spaceId, id);
+  }
+
+  deleteRoom(spaceId: string, roomId: string) {
+    this.leaveRoom(spaceId, roomId);
+  }
+
+  renameRoom(spaceId: string, roomId: string, name: string, topic?: string) {
+    const room = this.spaces.find((s) => s.id === spaceId)?.rooms.find((r) => r.id === roomId);
+    if (!room) return;
+    const trimmed = name.trim();
+    if (trimmed) room.name = trimmed;
+    room.topic = topic?.trim() || undefined;
+  }
+
+  updateSpace(spaceId: string, patch: { name?: string; description?: string; visibility?: 'invite' | 'link' | 'public' }) {
+    const space = this.spaces.find((s) => s.id === spaceId);
+    if (!space) return;
+    if (patch.name?.trim()) {
+      space.name = patch.name.trim();
+      space.initial = space.name[0]!.toUpperCase();
+    }
+    if (patch.description !== undefined) space.description = patch.description.trim() || undefined;
+    if (patch.visibility) space.visibility = patch.visibility;
+  }
+
+  /** A space is a row and a key group, not a machine (`docs/18`), so deleting
+      one is an ordinary — if irreversible — operation rather than a teardown. */
+  deleteSpace(spaceId: string) {
+    if (this.spaces.length <= 1) return;
+    this.spaces = this.spaces.filter((s) => s.id !== spaceId);
+    const first = this.spaces[0]!;
+    this.openRoom(first.id, first.rooms[0]!.id);
+  }
+
+  // --- faces ---------------------------------------------------------------
+
+  /** Edit one of your own faces. Refuses other people's, which is not a
+      security boundary here but is the shape the real core will need. */
+  updateFace(faceId: string, patch: Partial<Pick<Face, 'name' | 'pronouns' | 'note' | 'bio' | 'colour' | 'status'>>) {
+    const face = this.faces[faceId];
+    if (!face || face.accountId !== MY_ACCOUNT) return;
+    if (patch.name !== undefined && patch.name.trim()) face.name = patch.name.trim();
+    if (patch.pronouns !== undefined) face.pronouns = patch.pronouns.trim() || undefined;
+    if (patch.note !== undefined) face.note = patch.note.trim() || undefined;
+    if (patch.bio !== undefined) face.bio = patch.bio.trim() || undefined;
+    if (patch.colour) face.colour = patch.colour;
+    if (patch.status) face.status = patch.status;
+  }
+
+  addFace(name: string, colour: FaceColour = 'sky') {
+    const id = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    if (!id || this.faces[id]) return;
+    this.faces[id] = { id, name: name.trim(), colour, accountId: MY_ACCOUNT, status: 'here' };
+    myFaces.push(id);
+  }
+
   // --- actions Wren's buttons call -----------------------------------------
   // Every one of these is the same method the settings UI calls. Wren gets no
   // privileged path (`docs/12`): if she can do it, you can do it by hand.
@@ -336,4 +433,3 @@ class Core {
 }
 
 export const core = new Core();
-export { faces };

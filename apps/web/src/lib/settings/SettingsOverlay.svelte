@@ -12,9 +12,16 @@
   import Privacy from '$lib/settings/Privacy.svelte';
   import Storage from '$lib/settings/Storage.svelte';
 
-  let { open = $bindable(false), section = $bindable('account') }: {
+  let {
+    open = $bindable(false),
+    section = $bindable('account'),
+    /** Which face the Faces pane opens on. Lets the profile card's "Edit this
+        face" land on the right one rather than on the list. */
+    face = $bindable<string | null>(null),
+  }: {
     open?: boolean;
     section?: string;
+    face?: string | null;
   } = $props();
 
   const meta = $derived(SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]!);
@@ -73,7 +80,7 @@
           {#if section === 'account'}
             <Account />
           {:else if section === 'faces'}
-            <Faces />
+            <Faces bind:editing={face} />
           {:else if section === 'devices'}
             <Devices />
           {:else if section === 'appearance'}

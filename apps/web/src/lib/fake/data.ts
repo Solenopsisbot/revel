@@ -140,7 +140,23 @@ export interface Room {
    * about it (`docs/10` §The controls).
    */
   translate?: boolean;
+  /**
+   * Who holds the keys to this room (`docs/18` §"Who can see what"). This is
+   * the encryption boundary, not a permission — which is why it is immutable
+   * after the room exists and the UI says so rather than greying out silently.
+   */
+  audience: Audience;
 }
+
+/**
+ * A room's audience. `everyone` is the space's default group; `roles` and
+ * `picked` each create their own. Kept as a small closed set because every
+ * distinct audience is a separate key group with a real cost (`docs/03` §4).
+ */
+export type Audience =
+  | { kind: 'everyone' }
+  | { kind: 'roles'; roles: string[] }
+  | { kind: 'picked'; faceIds: string[] };
 
 export interface Space {
   id: string;
@@ -149,6 +165,15 @@ export interface Space {
   from: FaceColour;
   to: FaceColour;
   rooms: Room[];
+  description?: string;
+  /**
+   * Who can get in (`docs/18` §Creating a space). Public means listed in the
+   * directory, which is opt-in and the only way a space is discoverable at
+   * all — there is no algorithmic surface to be ranked by.
+   */
+  visibility: 'invite' | 'link' | 'public';
+  /** Roles that exist in this space, for the audience picker. */
+  roles: string[];
 }
 
 export const faces: Record<string, Face> = {
@@ -185,14 +210,17 @@ export const spaces: Space[] = [
     initial: 'S',
     from: 'violet',
     to: 'rose',
+    description: 'Building Revel, mostly at unreasonable hours.',
+    visibility: 'invite',
+    roles: ['Admin', 'Build', 'Design'],
     rooms: [
-      { id: 'general', name: 'general', kind: 'text', category: 'General', topic: 'Anything, within reason', unread: 2 },
-      { id: 'design', name: 'design', kind: 'text', category: 'General', topic: 'Shapes, colour, and arguing about radii', unread: 3, mention: true },
-      { id: 'off-topic', name: 'off-topic', kind: 'text', category: 'General' },
-      { id: 'crypto-review', name: 'crypto-review', kind: 'text', category: 'Build', topic: 'Read the threat model before posting', slow: 30 },
-      { id: 'ci-noise', name: 'ci-noise', kind: 'text', category: 'Build', notify: 'none' },
-      { id: 'the-couch', name: 'the couch', kind: 'voice', category: 'Voice', inCall: ['rae', 'emeri'] },
-      { id: 'focus', name: 'focus', kind: 'voice', category: 'Voice' },
+      { id: 'general', name: 'general', kind: 'text', category: 'General', topic: 'Anything, within reason', unread: 2, audience: { kind: 'everyone' } },
+      { id: 'design', name: 'design', kind: 'text', category: 'General', topic: 'Shapes, colour, and arguing about radii', unread: 3, mention: true, audience: { kind: 'everyone' } },
+      { id: 'off-topic', name: 'off-topic', kind: 'text', category: 'General', audience: { kind: 'everyone' } },
+      { id: 'crypto-review', name: 'crypto-review', kind: 'text', category: 'Build', topic: 'Read the threat model before posting', slow: 30, audience: { kind: 'roles', roles: ['Build'] } },
+      { id: 'ci-noise', name: 'ci-noise', kind: 'text', category: 'Build', notify: 'none', audience: { kind: 'everyone' } },
+      { id: 'the-couch', name: 'the couch', kind: 'voice', category: 'Voice', inCall: ['rae', 'emeri'], audience: { kind: 'everyone' } },
+      { id: 'focus', name: 'focus', kind: 'voice', category: 'Voice', audience: { kind: 'everyone' } },
     ],
   },
   {
@@ -201,9 +229,12 @@ export const spaces: Space[] = [
     initial: 'B',
     from: 'aqua',
     to: 'sky',
+    description: 'A byte-level architecture and the loss curves it produces.',
+    visibility: 'link',
+    roles: ['Admin', 'Research'],
     rooms: [
-      { id: 'papers', name: 'papers', kind: 'text', category: 'General', language: 'Japanese', weekly: 210 },
-      { id: 'runs', name: 'runs', kind: 'text', category: 'General', topic: 'Loss curves and disappointment', unread: 7, weekly: 340 },
+      { id: 'papers', name: 'papers', kind: 'text', category: 'General', language: 'Japanese', weekly: 210, audience: { kind: 'everyone' } },
+      { id: 'runs', name: 'runs', kind: 'text', category: 'General', topic: 'Loss curves and disappointment', unread: 7, weekly: 340, audience: { kind: 'everyone' } },
     ],
   },
 ];
@@ -554,11 +585,11 @@ export const language: LanguageSettings = {
 };
 
 export const INTERFACE_LANGUAGES = [
-  { id: 'en', name: 'English' },
-  { id: 'de', name: 'Deutsch' },
-  { id: 'fr', name: 'Français' },
-  { id: 'ja', name: '日本語' },
-  { id: 'pt', name: 'Português' },
+  { id: 'en', name: 'English', audience: { kind: 'everyone' } },
+  { id: 'de', name: 'Deutsch', audience: { kind: 'everyone' } },
+  { id: 'fr', name: 'Français', audience: { kind: 'everyone' } },
+  { id: 'ja', name: '日本語', audience: { kind: 'everyone' } },
+  { id: 'pt', name: 'Português', audience: { kind: 'everyone' } },
 ] as const;
 
 /** Languages the on-device models can handle, for the "languages I read" list. */

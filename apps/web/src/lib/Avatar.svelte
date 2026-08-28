@@ -1,16 +1,37 @@
 <script lang="ts">
   import type { Face } from './fake/data.js';
-  let { face, size = 40, dot = false }: { face: Face; size?: number; dot?: boolean } = $props();
+
+  let {
+    face,
+    size = 40,
+    dot = false,
+  }: { face: Face; size?: number; dot?: boolean } = $props();
+
   const initial = $derived(face.name.charAt(0).toUpperCase());
+
+  /**
+   * The presence dot takes its colour from the actual status. It used to be
+   * mint unconditionally, which meant someone shown as `busy` in the roster
+   * still got a green dot — the list said one thing and the dot said another.
+   */
+  const statusColour = $derived(
+    face.status === 'busy'
+      ? 'var(--face-rose)'
+      : face.status === 'away'
+        ? 'var(--face-gold)'
+        : face.status === 'invisible'
+          ? 'var(--text-mute)'
+          : 'var(--face-mint)',
+  );
 </script>
 
 <span
   class="av"
-  style="--fc: var(--face-{face.colour}); width:{size}px; height:{size}px; font-size:{Math.round(size * 0.38)}px"
+  style="--fc: var(--face-{face.colour}); --sc: {statusColour}; width:{size}px; height:{size}px; font-size:{Math.round(size * 0.38)}px"
   title={face.name}
 >
   {initial}
-  {#if dot}<span class="dot"></span>{/if}
+  {#if dot}<span class="dot" class:hollow={face.status === 'invisible'}></span>{/if}
 </span>
 
 <style>
@@ -25,7 +46,10 @@
   .dot {
     position: absolute; right: -1px; bottom: -1px;
     width: 30%; height: 30%; min-width: 9px; min-height: 9px;
-    border-radius: 50%; background: var(--face-mint);
+    border-radius: 50%; background: var(--sc);
     border: 2px solid var(--ground-1);
   }
+  /* Invisible reads as an outline rather than a filled dot — you are shown as
+     offline to everyone else, and your own UI should not pretend otherwise. */
+  .dot.hollow { background: var(--ground-1); box-shadow: inset 0 0 0 2px var(--text-mute); }
 </style>

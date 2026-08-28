@@ -26,4 +26,16 @@ export type Item = {
   /** Shown, but not pickable — an absent row is harder to reason about than a
       greyed one when you are looking for an action you know exists. */
   disabled?: boolean;
+  /**
+   * A tick on the left. Used where a group of rows is really one setting —
+   * a room's notification level, say — so picking one is visibly a choice
+   * between them rather than three unrelated commands.
+   */
+  checked?: boolean;
+  /**
+   * Starts a labelled group. Cheaper than nested submenus, which are miserable
+   * with a pointer and worse with a keyboard, and the menus here are short
+   * enough that a heading does the same job.
+   */
+  header?: string;
 };

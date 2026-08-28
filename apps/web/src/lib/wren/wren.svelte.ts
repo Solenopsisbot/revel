@@ -18,7 +18,6 @@
  * notice can do to itself.
  */
 import { core } from '../fake/core.svelte.js';
-import { faces } from '../fake/data.js';
 import type { Action, Category, Notice, Rung, Severity } from './notices.js';
 
 export type Volume = 'quiet' | 'normal' | 'chatty';
@@ -187,7 +186,7 @@ class Wren {
 
     for (const k of core.keyChanges) {
       if (k.acknowledged) continue;
-      const name = faces[k.faceId]?.name ?? 'Someone';
+      const name = core.faces[k.faceId]?.name ?? 'Someone';
       // The live case is the one attack-shaped event a person must not miss,
       // so it is the only notice exempt from the budget.
       out.push(

@@ -1,11 +1,20 @@
 <script lang="ts">
   import Avatar from '$lib/Avatar.svelte';
   import Icon from '$lib/Icon.svelte';
-  import { core, faces, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
+  import { core, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
   import MessageList from '$lib/MessageList.svelte';
   import Composer from '$lib/Composer.svelte';
   import SettingsOverlay from '$lib/settings/SettingsOverlay.svelte';
   import WrenSurface from '$lib/wren/WrenSurface.svelte';
+  import ContextMenu from '$lib/ContextMenu.svelte';
+  import ProfileCard from '$lib/ProfileCard.svelte';
+  import CommandBar from '$lib/command/CommandBar.svelte';
+  import SpaceSettings from '$lib/space/SpaceSettings.svelte';
+  import CallBar from '$lib/voice/CallBar.svelte';
+  import CallStage from '$lib/voice/CallStage.svelte';
+  import { contextMenu } from '$lib/contextmenu.svelte.js';
+  import { roomMenu, spaceMenu, memberMenu } from '$lib/menus.js';
+  import { voice } from '$lib/voice/voice.svelte.js';
   import { page } from '$app/state';
 
   // ?settings=<section> opens straight to a pane, so any of them can be
@@ -14,7 +23,105 @@
   let settingsOpen = $state(!!deepLink);
   let settingsSection = $state(deepLink ?? 'account');
 
-  const me = $derived(faces[core.speakingAs]!);
+  const me = $derived(core.faces[core.speakingAs]!);
+
+  let commandOpen = $state(false);
+  let spaceOpen = $state(false);
+  let spaceTab = $state('overview');
+  let spaceRoom = $state<string | undefined>(undefined);
+  let editingFace = $state<string | null>(null);
+  let spaceHead = $state<HTMLElement>();
+
+  /** Every surface the command bar can reach is one the chrome can reach too
+      — that is the rule, not a coincidence (`docs/12`). */
+  const cmdCtx = {
+    openSettings: (section: string) => {
+      settingsSection = section;
+      settingsOpen = true;
+    },
+    openSpaceSettings: (tab = 'overview') => {
+      spaceTab = tab;
+      spaceRoom = undefined;
+      spaceOpen = true;
+    },
+    openRoomSettings: (roomId: string) => {
+      spaceTab = 'rooms';
+      spaceRoom = roomId;
+      spaceOpen = true;
+    },
+  };
+
+  function onKey(e: KeyboardEvent) {
+    // ⌘K is the command surface; ⌘F is search (`docs/19` — two keys, two jobs,
+    // because merging them makes both worse). Search isn't built yet, so ⌘F is
+    // left to the browser rather than swallowed by a stub.
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      commandOpen = !commandOpen;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+      e.preventDefault();
+      settingsOpen = true;
+    }
+  }
+
+  function openRoomMenu(e: MouseEvent, roomId: string) {
+    const room = core.space.rooms.find((r) => r.id === roomId);
+    if (!room) return;
+    const resolved = core.notifyFor(core.currentSpaceId, roomId);
+    contextMenu.open(
+      e,
+      roomMenu(room, resolved),
+      (id) => {
+        const [verb, arg] = id.split(':');
+        if (verb === 'notify') {
+          core.setRoomNotify(
+            core.currentSpaceId,
+            roomId,
+            arg === 'inherit' ? undefined : (arg as 'all' | 'mentions' | 'none'),
+          );
+        }
+        if (id === 'mark-read') core.markRead(core.currentSpaceId, roomId);
+        if (id === 'room-settings') cmdCtx.openRoomSettings(roomId);
+        if (id === 'leave-room') core.leaveRoom(core.currentSpaceId, roomId);
+      },
+      `#${room.name}`,
+    );
+  }
+
+  function openSpaceMenu(e: MouseEvent, spaceId = core.currentSpaceId) {
+    const space = core.spaces.find((s) => s.id === spaceId);
+    if (!space) return;
+    if (spaceId !== core.currentSpaceId) core.openRoom(spaceId, space.rooms[0]!.id);
+    contextMenu.open(
+      e,
+      spaceMenu(space),
+      (id) => {
+        if (id === 'space-settings') cmdCtx.openSpaceSettings();
+        if (id === 'invite') cmdCtx.openSpaceSettings('invites');
+        if (id === 'create-room') cmdCtx.openSpaceSettings('rooms');
+        if (id === 'space-notify') cmdCtx.openSettings('notifications');
+        if (id === 'server-sees') cmdCtx.openSettings('about');
+        if (id === 'leave-space') cmdCtx.openSpaceSettings('danger');
+      },
+      space.name,
+    );
+  }
+
+  function openMemberMenu(e: MouseEvent, faceId: string) {
+    const face = core.faces[faceId];
+    if (!face) return;
+    contextMenu.open(
+      e,
+      memberMenu({ name: face.name, isAgent: !!face.agent, isMe: faceId === core.speakingAs }),
+      (id) => {
+        if (id === 'profile' || id === 'agent-info') core.profileFor = faceId;
+        if (id === 'block') cmdCtx.openSettings('privacy');
+        if (id === 'verify') cmdCtx.openSettings('devices');
+      },
+      face.name,
+    );
+  }
 
   /** Where one of Wren's actions wants to take you. She uses the same routes
       the chrome does — there is no screen she can reach that you can't. */
@@ -34,6 +141,8 @@
   );
 </script>
 
+<svelte:window onkeydown={onKey} />
+
 <div class="shell" class:no-members={!core.membersOpen}>
   <nav class="rail" aria-label="Spaces">
     {#each core.spaces as space (space.id)}
@@ -42,6 +151,7 @@
         class:active={space.id === core.currentSpaceId}
         style="--from: var(--face-{space.from}); --to: var(--face-{space.to})"
         onclick={() => core.openRoom(space.id, space.rooms[0]!.id)}
+        oncontextmenu={(e) => openSpaceMenu(e, space.id)}
         title={space.name}
       >{space.initial}</button>
     {/each}
@@ -49,7 +159,16 @@
   </nav>
 
   <aside class="sidebar">
-    <header class="space-head">{core.space.name}</header>
+    <button
+      class="space-head"
+      bind:this={spaceHead}
+      onclick={(e) => openSpaceMenu(e)}
+      oncontextmenu={(e) => openSpaceMenu(e)}
+      title="{core.space.name} — settings and invites"
+    >
+      <span class="sh-nm">{core.space.name}</span>
+      <Icon name="chevron" size={16} />
+    </button>
     <div class="rooms">
       {#each Object.entries(categories) as [category, rooms] (category)}
         <div class="cat">{category}</div>
@@ -59,7 +178,15 @@
             class:active={room.id === core.currentRoomId}
             class:unread={!!room.unread}
             class:quiet={core.notifyFor(core.currentSpaceId, room.id).level === 'none'}
-            onclick={() => core.openRoom(core.currentSpaceId, room.id)}
+            onclick={() => {
+              core.openRoom(core.currentSpaceId, room.id);
+              // A voice room is a place you walk into: one click puts you in
+              // it, muted (`docs/21`). No modal, no device wizard.
+              if (room.kind === 'voice' && voice.roomId !== room.id) {
+                voice.join(core.currentSpaceId, room.id);
+              }
+            }}
+            oncontextmenu={(e) => openRoomMenu(e, room.id)}
           >
             <span class="glyph">
               {#if room.kind === 'voice'}<Icon name="voice" size={15} />{:else}#{/if}
@@ -71,11 +198,33 @@
               <span class="dot" aria-label="unread"></span>
             {/if}
           </button>
+          {#if room.kind === 'voice' && room.inCall?.length}
+            <!-- Occupants before you commit, so you can see who's in there
+                 without joining to find out (`docs/21`). -->
+            <div class="incall">
+              {#each room.inCall as id (id)}
+                {#if core.faces[id]}
+                  <button
+                    class="occupant"
+                    onclick={() => (core.profileFor = id)}
+                    oncontextmenu={(e) => openMemberMenu(e, id)}
+                  >
+                    <Avatar face={core.faces[id]} size={18} />
+                    <span>{core.faces[id].name}</span>
+                  </button>
+                {/if}
+              {/each}
+            </div>
+          {/if}
         {/each}
       {/each}
     </div>
+    {#if voice.inCall && !voice.viewingCall}
+      <CallBar />
+    {/if}
+
     <div class="me">
-      <button class="me-id" title="You">
+      <button class="me-id" onclick={() => (core.profileFor = core.speakingAs)} title="You">
         <Avatar face={me} size={30} dot />
         <span class="me-meta">
           <span class="me-nm">{me.name}</span>
@@ -96,6 +245,17 @@
       <span class="glyph">{#if core.room.kind === 'voice'}<Icon name="voice" />{:else}#{/if}</span>
       <h1>{core.room.name}</h1>
       <div class="spacer"></div>
+      {#if core.room.kind === 'voice' && voice.roomId !== core.currentRoomId}
+        <button class="join" onclick={() => voice.join(core.currentSpaceId, core.currentRoomId)}>
+          <Icon name="voice" size={15} /> Join
+        </button>
+      {/if}
+      <button
+        class="icon-btn"
+        onclick={() => (commandOpen = true)}
+        title="Search and commands (⌘K)"
+        aria-label="Command bar"
+      ><Icon name="search" size={19} /></button>
       <WrenSurface onroute={route} />
       <button
         class="icon-btn"
@@ -105,20 +265,42 @@
       ><Icon name="people" size={20} /></button>
     </header>
 
-    {#key core.currentRoomId}
-      <div class="fade"><MessageList /></div>
-    {/key}
-
-    <Composer />
+    {#if voice.viewingCall}
+      <CallStage />
+    {:else}
+      {#key core.currentRoomId}
+        <div class="fade"><MessageList /></div>
+      {/key}
+      <Composer />
+    {/if}
   </main>
 
-  <SettingsOverlay bind:open={settingsOpen} bind:section={settingsSection} />
+  <SettingsOverlay bind:open={settingsOpen} bind:section={settingsSection} bind:face={editingFace} />
+  <SpaceSettings bind:open={spaceOpen} bind:tab={spaceTab} bind:room={spaceRoom} />
+  <CommandBar bind:open={commandOpen} ctx={cmdCtx} />
+  <ContextMenu />
+
+  {#if core.profileFor}
+    <ProfileCard
+      faceId={core.profileFor}
+      onclose={() => (core.profileFor = null)}
+      onedit={(id) => {
+        editingFace = id;
+        settingsSection = 'faces';
+        settingsOpen = true;
+      }}
+    />
+  {/if}
 
   {#if core.membersOpen}
     <aside class="members" aria-label="Members">
       <div class="cat">In this room — {core.roster.length}</div>
       {#each core.roster as face (face.id)}
-        <div class="member">
+        <button
+          class="member"
+          onclick={() => (core.profileFor = face.id)}
+          oncontextmenu={(e) => openMemberMenu(e, face.id)}
+        >
           <Avatar {face} size={32} dot />
           <div class="who">
             <div class="nm" style="color: var(--face-{face.colour})">
@@ -132,7 +314,7 @@
               <div class="sub">another of your faces</div>
             {/if}
           </div>
-        </div>
+        </button>
       {/each}
     </aside>
   {/if}
@@ -170,10 +352,26 @@
   @keyframes grow { from { height: 0; opacity: 0; } to { height: 26px; opacity: 1; } }
 
   .sidebar { background: var(--ground-1); border-right: 1px solid var(--line); display: flex; flex-direction: column; overflow: hidden; }
+  /* The space name is the space menu — the affordance Discord taught
+     everyone, and the only place a space-wide action is obviously reachable. */
   .space-head {
-    padding: 14px 16px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    padding: 14px 16px; border: 0; border-bottom: 1px solid var(--line);
+    background: transparent; cursor: pointer; color: var(--text);
     font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg);
+    transition: background var(--t-fast) var(--ease);
   }
+  .space-head:hover { background: var(--ground-2); }
+  .sh-nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .space-head :global(svg) { color: var(--text-mute); }
+
+  .join {
+    display: inline-flex; align-items: center; gap: 6px; flex: none;
+    border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700;
+    background: var(--face-mint); color: var(--ground-0);
+    padding: 6px 13px; border-radius: var(--r-pill);
+  }
+  .join:hover { filter: brightness(1.06); }
   .rooms { overflow-y: auto; padding: 10px 8px; flex: 1; }
 
   /* Bottom-left, where every chat client puts the "you" area. */
@@ -227,6 +425,14 @@
   /* A room set to notify about nothing still counts unread, it just reads
      quieter in the list. Otherwise the setting is invisible. */
   .room.quiet { opacity: .55; }
+
+  .incall { display: flex; flex-direction: column; gap: 1px; margin: 0 0 4px 30px; }
+  .occupant {
+    display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
+    border: 0; background: transparent; cursor: pointer; font: inherit;
+    font-size: 12px; color: var(--text-mute); padding: 3px 8px; border-radius: var(--r-sm);
+  }
+  .occupant:hover { background: var(--ground-2); color: var(--text-dim); }
   .room .glyph { opacity: .6; display: grid; place-items: center; width: 15px; }
   .room .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .room .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text); flex: none; }

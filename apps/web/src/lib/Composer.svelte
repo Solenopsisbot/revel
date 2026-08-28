@@ -1,14 +1,14 @@
 <script lang="ts">
   import Avatar from './Avatar.svelte';
   import Icon from './Icon.svelte';
-  import { core, faces } from './fake/core.svelte.js';
+  import { core } from './fake/core.svelte.js';
 
   let draft = $state('');
   let switcherOpen = $state(false);
   let input = $state<HTMLTextAreaElement>();
   let dragging = $state(false);
 
-  const face = $derived(faces[core.speakingAs]!);
+  const face = $derived(core.faces[core.speakingAs]!);
 
   function submit() {
     // Clearing the reply target is `core.send`'s job, not the composer's.
@@ -65,7 +65,7 @@
     {#if target}
       <div class="reply-banner">
         <Icon name="reply" size={14} />
-        <span>Replying to <b style="color: var(--face-{faces[target.faceId]!.colour})">{faces[target.faceId]!.name}</b></span>
+        <span>Replying to <b style="color: var(--face-{core.faces[target.faceId]!.colour})">{core.faces[target.faceId]!.name}</b></span>
         <span class="snip">{target.body}</span>
         <button class="x" onclick={() => (core.replyTo = null)} aria-label="Cancel reply">×</button>
       </div>
