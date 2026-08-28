@@ -1,207 +1,262 @@
 <script lang="ts">
-  import Avatar from '$lib/Avatar.svelte';
-  import Icon from '$lib/Icon.svelte';
-  import { core, faces } from '$lib/fake/core.svelte.js';
-  import MessageList from '$lib/MessageList.svelte';
-  import Composer from '$lib/Composer.svelte';
+  import Mark from '$lib/Mark.svelte';
+  import Reveal from '$lib/Reveal.svelte';
+  import Button from '$lib/moment/Button.svelte';
+  import { goto } from '$app/navigation';
 
-  const categories = $derived(
-    core.space.rooms.reduce<Record<string, typeof core.space.rooms>>((acc, r) => {
-      (acc[r.category] ??= []).push(r);
-      return acc;
-    }, {}),
-  );
+  const pillars = [
+    {
+      title: 'No cleartext path',
+      body: `Every room is end to end encrypted. Not as an option, not for "public" rooms, not for bots. There is one pipeline and it carries ciphertext, so there is nothing on the server to hand over, to leak, or to quietly start reading.`,
+    },
+    {
+      title: 'No ghost readers',
+      body: `Anything that can read a room is in that room's member list — people, their devices, and bots alike. If a translation bot can see your messages, you can see the bot. A promise you cannot check is not a promise.`,
+    },
+    {
+      title: 'Your key is you',
+      body: `Your account is a keypair you own. Your handle lives with a provider you can leave, and moving doesn't cost you your rooms, your history or your contacts.`,
+    },
+  ];
+
+  const costs: [string, string][] = [
+    ['Server-side search', 'Your device searches its own copy. A new device says so while it indexes, rather than quietly returning half the results.'],
+    ['Link previews', "Built by the sender's device and sent with the message, so nobody's server fetches a URL on your behalf."],
+    ['Spam and abuse filtering', 'Nothing scans your messages, because nothing can. Reports carry cryptographic proof instead, and moderators are members like anyone else.'],
+    ['Notification previews', 'Pushes carry no content. Your phone decrypts locally, so a preview on your lock screen is your choice rather than ours.'],
+    ['Recovering your account', 'We never had your password. If you lose it and your recovery code, the account is gone — and we would rather say that here than in a support email.'],
+  ];
 </script>
 
-<div class="shell" class:no-members={!core.membersOpen}>
-  <nav class="rail" aria-label="Spaces">
-    {#each core.spaces as space (space.id)}
-      <button
-        class="space"
-        class:active={space.id === core.currentSpaceId}
-        style="--from: var(--face-{space.from}); --to: var(--face-{space.to})"
-        onclick={() => core.openRoom(space.id, space.rooms[0]!.id)}
-        title={space.name}
-      >{space.initial}</button>
-    {/each}
-    <button class="space add" title="Add a space"><Icon name="plus" size={20} /></button>
-  </nav>
+<svelte:head><title>Revel — somewhere to actually talk</title></svelte:head>
 
-  <aside class="sidebar">
-    <header class="space-head">{core.space.name}</header>
-    <div class="rooms">
-      {#each Object.entries(categories) as [category, rooms] (category)}
-        <div class="cat">{category}</div>
-        {#each rooms as room (room.id)}
-          <button
-            class="room"
-            class:active={room.id === core.currentRoomId}
-            class:unread={!!room.unread}
-            onclick={() => core.openRoom(core.currentSpaceId, room.id)}
-          >
-            <span class="glyph">
-              {#if room.kind === 'voice'}<Icon name="voice" size={15} />{:else}#{/if}
-            </span>
-            <span class="name">{room.name}</span>
-            {#if room.mention}
-              <span class="pill">{room.unread}</span>
-            {:else if room.unread}
-              <span class="dot" aria-label="unread"></span>
-            {/if}
-          </button>
-        {/each}
+<div class="page">
+  <header class="nav">
+    <a class="brand" href="/"><Mark size={26} stroke="var(--ground-0)" /><span>Revel</span></a>
+    <nav>
+      <a href="/app">Open the app</a>
+      <a href="/signin">Sign in</a>
+      <Button onclick={() => goto('/signup')}>Make an account</Button>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <div class="haze a"></div>
+    <div class="haze b"></div>
+    <div class="haze c"></div>
+    <img class="art" src="/wren.png" alt="" aria-hidden="true" />
+    <div class="hero-in">
+      <h1>Somewhere to actually talk.</h1>
+      <p class="sub">
+        Every room is end to end encrypted, with no cleartext path and no
+        exceptions. Your headmates and your computer friends are members here,
+        not features. And anything that can read a room is sitting in the member
+        list where you can see it.
+      </p>
+      <div class="cta">
+        <Button onclick={() => goto('/signup')}>Make an account</Button>
+        <Button variant="secondary" onclick={() => goto('/app')}>Look around first</Button>
+      </div>
+      <p class="fine">
+        We can't read your messages.<br />
+        We also can't search them for you, recover them, or tell you what you missed.<br />
+        That's the trade, and we'd rather say it now than in a support email.
+      </p>
+    </div>
+  </section>
+
+  <section class="band" id="how">
+    <div class="wrap pillars">
+      {#each pillars as p, i (p.title)}
+        <Reveal delay={i * 90}>
+          <article class="pillar">
+            <h2>{p.title}</h2>
+            <p>{p.body}</p>
+          </article>
+        </Reveal>
       {/each}
     </div>
-  </aside>
+  </section>
 
-  <main class="chat">
-    <header class="chat-head">
-      <span class="glyph">{#if core.room.kind === 'voice'}<Icon name="voice" />{:else}#{/if}</span>
-      <h1>{core.room.name}</h1>
-      <div class="spacer"></div>
-      <button
-        class="icon-btn"
-        aria-pressed={core.membersOpen}
-        onclick={() => (core.membersOpen = !core.membersOpen)}
-        title="Members"
-      ><Icon name="people" size={20} /></button>
-    </header>
-
-    {#key core.currentRoomId}
-      <div class="fade"><MessageList /></div>
-    {/key}
-
-    <Composer />
-  </main>
-
-  {#if core.membersOpen}
-    <aside class="members" aria-label="Members">
-      <div class="cat">In this room — {core.roster.length}</div>
-      {#each core.roster as face (face.id)}
-        <div class="member">
-          <Avatar {face} size={32} dot />
-          <div class="who">
-            <div class="nm" style="color: var(--face-{face.colour})">
-              {face.name}
-              {#if face.agent}<span class="badge">{face.agent.label}</span>{/if}
+  <section class="band alt" id="costs">
+    <div class="wrap">
+      <Reveal>
+        <h2 class="big">Here's what it costs.</h2>
+        <p class="lede">
+          A server that can't read your messages can't do things for you either.
+          Most of it comes back — done on your device, or by someone visibly in
+          the room. Some of it doesn't come back at all.
+        </p>
+      </Reveal>
+      <div class="costs">
+        {#each costs as [title, back], i (title)}
+          <Reveal delay={i * 60}>
+            <div class="cost">
+              <div class="lost">{title}</div>
+              <div class="back">{back}</div>
             </div>
-            {#if face.agent}
-              <!-- The security statement, not the badge. Never customisable. -->
-              <div class="sub">can read this room</div>
-            {:else if face.accountId === faces.viola.accountId && face.id !== 'viola'}
-              <div class="sub">another of your faces</div>
-            {/if}
-          </div>
+          </Reveal>
+        {/each}
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="faces">
+    <div class="wrap two">
+      <Reveal>
+        <div class="feature">
+          <h2>One account, many faces.</h2>
+          <p>
+            If you're a plural system, you shouldn't need five accounts and a bot
+            to be yourself. One login, many names, avatars and pronouns —
+            switched from the composer, per message. And if that isn't you, you
+            will never see any of it: the machinery only appears once you have a
+            second face.
+          </p>
+          <p class="micro">
+            Whether your faces are publicly linked is off by default. Some
+            systems are out; some very much aren't.
+          </p>
         </div>
-      {/each}
-    </aside>
-  {/if}
+      </Reveal>
+      <Reveal delay={90}>
+        <div class="feature">
+          <h2>Computer friends are members.</h2>
+          <p>
+            The people in your rooms who happen to be AI aren't integrations
+            bolted on from the side. Same presence, same permissions, same
+            roster, and a badge saying what they are.
+          </p>
+          <p class="micro">
+            They hold keys like anyone else, which is exactly why they appear in
+            the member list — and why we don't offer to run one for you.
+          </p>
+        </div>
+      </Reveal>
+    </div>
+  </section>
+
+  <section class="band alt">
+    <div class="wrap">
+      <Reveal>
+        <h2 class="big">Or run the whole thing yourself.</h2>
+        <p class="lede">
+          The only honest way to say "we can't read your messages" is to let you
+          check. One binary, your own box, your own rules about who can sign in.
+          Centralised until you'd rather it wasn't.
+        </p>
+        <div class="cta">
+          <Button variant="secondary" onclick={() => goto('/app')}>See how it works</Button>
+          <a class="link" href="https://github.com/Solenopsisbot/revel">Read the source</a>
+        </div>
+      </Reveal>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap foot">
+      <div class="brand"><Mark size={22} stroke="var(--ground-0)" /><span>Revel</span></div>
+      <p>
+        Unaudited, and honest about it. Encrypted against the server's data, not
+        yet against its code — read the threat model before trusting it with
+        anything that could hurt you.
+      </p>
+    </div>
+  </footer>
 </div>
 
 <style>
-  .shell {
-    display: grid;
-    grid-template-columns: 76px 250px 1fr 240px;
-    height: 100dvh;
-    transition: grid-template-columns var(--t-base) var(--ease);
-  }
-  .shell.no-members { grid-template-columns: 76px 250px 1fr 0px; }
+  .page { height: 100dvh; overflow-y: auto; background: var(--ground-0); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 6vw; }
 
-  .rail {
-    background: var(--ground-1); border-right: 1px solid var(--line);
-    display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 0;
+  .nav {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    padding: 14px 6vw;
+    background: color-mix(in oklab, var(--ground-0) 78%, transparent);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid color-mix(in oklab, var(--line) 60%, transparent);
   }
-  .space {
-    width: 48px; height: 48px; border: 0; cursor: pointer; position: relative;
-    border-radius: var(--r-md); color: #fff; font-weight: 800; font-size: 16px;
-    background: linear-gradient(160deg, var(--from), var(--to));
-    transition: border-radius var(--t-base) var(--ease-toy), transform var(--t-fast) var(--ease);
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); }
+  .brand span { font-family: var(--font-display); font-weight: 600; font-size: 1.3rem; letter-spacing: -.02em; }
+  .nav nav { display: flex; align-items: center; gap: 18px; }
+  .nav nav a {
+    color: var(--text-dim); text-decoration: none; font-size: var(--text-sm); font-weight: 600;
+    transition: color var(--t-fast) var(--ease);
   }
-  .space:hover { border-radius: var(--r-sm); }
-  .space:active { transform: scale(0.94); }
-  .space.add { background: var(--ground-3); color: var(--text-mute); display: grid; place-items: center; }
-  /* The selection indicator grows from nothing — the thing you did gets the
-     visible motion (docs/32). */
-  .space.active::before {
-    content: ''; position: absolute; left: -14px; top: 50%; translate: 0 -50%;
-    width: 4px; height: 26px; border-radius: var(--r-pill); background: var(--text);
-    animation: grow var(--t-base) var(--ease);
-  }
-  @keyframes grow { from { height: 0; opacity: 0; } to { height: 26px; opacity: 1; } }
+  .nav nav a:hover { color: var(--text); }
 
-  .sidebar { background: var(--ground-1); border-right: 1px solid var(--line); display: flex; flex-direction: column; overflow: hidden; }
-  .space-head {
-    padding: 14px 16px; border-bottom: 1px solid var(--line);
-    font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg);
+  .hero {
+    position: relative; overflow: hidden; background: var(--moment-bg);
+    padding: 11vh 6vw 13vh; display: flex; align-items: center; min-height: 76dvh;
   }
-  .rooms { overflow-y: auto; padding: 10px 8px; flex: 1; }
-  .cat {
-    font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
-    color: var(--text-mute); padding: 12px 8px 4px;
+  .hero-in { position: relative; z-index: 2; max-width: 36rem; }
+  h1 {
+    font-family: var(--font-display); font-size: clamp(2.6rem, 6.4vw, 4.4rem);
+    line-height: .97; letter-spacing: -.035em; font-weight: 600; margin: 0 0 22px;
   }
-  .room {
-    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
-    padding: 7px 10px; border: 0; background: transparent; cursor: pointer;
-    border-radius: var(--r-sm); color: var(--text-mute); font-weight: 600;
-    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
-  }
-  .room { position: relative; }
-  .room:hover { background: var(--ground-2); color: var(--text-dim); }
-  .room.active { background: var(--ground-3); color: var(--text); }
-  /* The active room gets a marker that grows in, so the selection reads as
-     something that moved rather than something that blinked (docs/32). */
-  .room.active::before {
-    content: ''; position: absolute; left: 0; top: 50%; translate: 0 -50%;
-    width: 3px; height: 60%; border-radius: var(--r-pill); background: var(--brand);
-    animation: mark var(--t-base) var(--ease);
-  }
-  @keyframes mark { from { height: 0; opacity: 0; } to { height: 60%; opacity: 1; } }
-  .room.unread { color: var(--text); }
-  .room .glyph { opacity: .6; display: grid; place-items: center; width: 15px; }
-  .room .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .room .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text); flex: none; }
-  .room .pill {
-    background: var(--face-rose); color: #fff; font-size: 11px; font-weight: 800;
-    border-radius: var(--r-pill); padding: 1px 7px;
+  .sub { font-size: 1.0625rem; line-height: 1.55; margin: 0 0 30px; color: color-mix(in oklab, var(--text) 88%, transparent); }
+  .cta { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .fine { margin-top: 30px; font-size: var(--text-sm); line-height: 1.75; color: color-mix(in oklab, var(--text) 60%, transparent); }
+
+  .haze { position: absolute; z-index: 0; border-radius: 50%; filter: blur(70px); pointer-events: none; }
+  .a { width: 520px; height: 520px; background: var(--face-violet); left: -160px; top: -140px; opacity: .5; }
+  .b { width: 380px; height: 380px; background: var(--face-rose); right: 26%; bottom: -180px; opacity: .3; }
+  .c { width: 300px; height: 300px; background: var(--face-aqua); left: 34%; top: -150px; opacity: .26; }
+  .art {
+    position: absolute; right: 2%; bottom: 0; z-index: 1; height: min(74dvh, 620px); width: auto;
+    pointer-events: none;
+    -webkit-mask-image:
+      linear-gradient(to right, transparent 0%, #000 15%, #000 85%, transparent 100%),
+      linear-gradient(to bottom, transparent 0%, #000 16%, #000 100%);
+    -webkit-mask-composite: source-in;
+    mask-image:
+      linear-gradient(to right, transparent 0%, #000 15%, #000 85%, transparent 100%),
+      linear-gradient(to bottom, transparent 0%, #000 16%, #000 100%);
+    mask-composite: intersect;
   }
 
-  .chat { display: flex; flex-direction: column; overflow: hidden; background: var(--ground-0); min-width: 0; }
-  .chat-head {
-    display: flex; align-items: center; gap: 10px; padding: 12px 16px;
-    border-bottom: 1px solid var(--line); flex: none;
-  }
-  .chat-head h1 { margin: 0; font-size: var(--text-lg); font-weight: 700; }
-  .chat-head .glyph { color: var(--text-mute); display: grid; place-items: center; }
-  .spacer { flex: 1; }
-  .icon-btn {
-    border: 0; background: transparent; color: var(--text-dim); cursor: pointer;
-    width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
-    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
-  }
-  .icon-btn:hover { background: var(--ground-2); color: var(--text); }
-  .icon-btn:active { transform: scale(0.9); }
-  .icon-btn[aria-pressed='true'] { color: var(--text); background: var(--ground-3); }
+  .band { padding: 92px 0; }
+  .band.alt { background: var(--ground-1); border-block: 1px solid var(--line); }
+  h2 { font-family: var(--font-display); font-weight: 600; letter-spacing: -.025em; }
+  .big { font-size: clamp(1.9rem, 3.6vw, 2.6rem); margin: 0 0 14px; }
+  .lede { color: var(--text-dim); max-width: 56ch; margin: 0 0 34px; }
 
-  /* Room content cross-fades; the sidebar selection is what moves. A slide
-     here would fight the promise that switching is instant (docs/32). */
-  .fade { flex: 1; min-height: 0; animation: fade var(--t-fast) var(--ease); }
-  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .pillars { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 26px; }
+  .pillar h2 { font-size: var(--text-xl); margin: 0 0 8px; }
+  .pillar p { color: var(--text-dim); margin: 0; }
 
-  .members { background: var(--ground-1); border-left: 1px solid var(--line); overflow: hidden auto; padding: 8px 10px; }
-  .member { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-sm); }
-  .member { cursor: pointer; transition: background var(--t-fast) var(--ease); }
-  .member:hover { background: var(--ground-2); }
-  .who { min-width: 0; }
-  .nm { font-weight: 600; font-size: var(--text-sm); display: flex; align-items: center; gap: 6px; }
-  .sub { font-size: 11px; color: var(--text-mute); }
-  .badge {
-    font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
-    padding: 1px 6px; border-radius: var(--r-xs);
-    border: 1px solid var(--text-mute); color: var(--text-dim); line-height: 1.5;
+  .costs { display: grid; gap: 1px; background: var(--line); border-radius: var(--r-md); overflow: hidden; }
+  .cost {
+    display: grid; grid-template-columns: minmax(180px, 1fr) 2fr; gap: 20px;
+    background: var(--ground-0); padding: 20px 22px;
+    transition: background var(--t-base) var(--ease);
   }
+  .cost:hover { background: var(--ground-2); }
+  /* Coral, because these are genuinely losses. Softening the colour here
+     would be softening the claim. */
+  .lost { font-weight: 700; color: var(--face-coral); }
+  .back { color: var(--text-dim); font-size: var(--text-sm); }
 
-  @media (max-width: 900px) {
-    .shell, .shell.no-members { grid-template-columns: 68px 1fr; }
-    .members { display: none; }
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 40px; }
+  .feature h2 { font-size: var(--text-xl); margin: 0 0 10px; }
+  .feature p { color: var(--text-dim); margin: 0 0 12px; }
+  .micro { font-size: var(--text-sm); color: var(--text-mute); }
+
+  .link {
+    display: inline-flex; align-items: center; gap: 7px; color: var(--text-dim);
+    text-decoration: none; font-weight: 600; font-size: var(--text-sm);
+    transition: color var(--t-fast) var(--ease);
+  }
+  .link:hover { color: var(--text); }
+
+  footer { padding: 46px 0 70px; border-top: 1px solid var(--line); }
+  .foot { display: flex; gap: 26px; align-items: flex-start; flex-wrap: wrap; }
+  .foot p { color: var(--text-mute); font-size: var(--text-sm); max-width: 60ch; margin: 0; line-height: 1.7; }
+
+  @media (max-width: 860px) {
+    .art { display: none; }
+    .cost { grid-template-columns: 1fr; gap: 6px; }
+    .nav nav a { display: none; }
   }
 </style>
