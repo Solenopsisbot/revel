@@ -12,15 +12,19 @@ Two tracks in parallel: prove the unproven crypto decisions, and build the UI
 against fake data before any backend exists.
 
 **Crypto spikes** (throwaway code, findings recorded in `03-…`):
-1. **Per-device leaves + account-signed device certs** on `ts-mls`: two
+1. **Per-device leaves + account-signed device certs. ✅ DONE** on `mls-rs`
+   (`crates/revel-crypto`, 30 tests). The original text below described the
+   spike; the result is in [`31-phase0-results.md`](31-phase0-results.md) §1.
+   Two
    devices of one account in one group, a third device enrolled by unwrapping
    the account key from a mocked backup (the password path) and a fourth via
    a mocked QR flow, one device revoked → Remove → the revoked device can't
    open the next era. This is the one thing Kith never did; it gates Phase 1.
-2. **Engine benchmark:** `ts-mls` vs `mls-rs`-compiled-to-WASM, in Chrome,
-   Safari, and Bun — Add/Commit/Welcome latency and Welcome size at 2, 50,
-   500, 2,000 leaves; with and without inlined ratchet tree; X25519 vs X-Wing.
-   Output: the shipping engine, the PQ decision, the real size ceiling.
+2. **Engine benchmark. ✅ DONE** — `mls-rs` at 2/50/500/2000 leaves, with and
+   without the inlined ratchet tree, classical vs the X-Wing-style PQ hybrid.
+   Findings in [`31-phase0-results.md`](31-phase0-results.md): sending is flat
+   at ~50 µs regardless of group size, the ceiling is Welcome *bandwidth* rather
+   than CPU, and PQ is affordable but cannot reach the web yet.
 3. **External-sender proposals + the committer policy** end-to-end with three
    simulated clients and a Bun "host": batching, fallback, commit-before-send.
 4. **Local store perf:** Dexie vs SQLite-WASM in the browser for a 200k-event

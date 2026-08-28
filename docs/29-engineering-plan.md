@@ -41,7 +41,7 @@ front-loaded: get it right once and it costs nothing forever.
 group, so migrating means **creating a new group**, not upgrading one. Old
 history stays readable under the old suite; new messages use the new one; the
 timeline shows a seam. Write this down as the expected mechanism now, because the
-post-quantum decision (`03` §12) may well trigger it.
+post-quantum migration (`03` §12) is expected to trigger exactly this.
 
 **Deprecation policy:** a major version bump means old clients get read-only
 access to affected rooms with a clear message, never a silent failure. Nothing is

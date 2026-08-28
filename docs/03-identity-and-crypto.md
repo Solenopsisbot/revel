@@ -317,18 +317,53 @@ and refuses adds beyond it with a clear message. Larger "public" rooms are a
 later design — probably sender-keys-style with a room key rotated on kick —
 and the honest product framing for those is "public means public".
 
-## 12. Library decisions
+## 12. Library decisions — **settled, and measured**
 
-- **OPAQUE:** `@serenity-kit/opaque` (RFC 9807, Argon2id, audited). Runs on Bun.
-- **MLS:** behind `packages/crypto/src/engine.ts` (`createGroup`, `join`,
-  `propose`, `commit`, `exporter`, `serialize`). Ship on `ts-mls` (Kith proved
-  it; pure TS; PQ ciphersuites available). Phase 0 benchmarks `mls-rs` compiled
-  to WASM as the swap candidate — it's the most production-exercised
-  implementation and the best audit target. Whichever ships gets the audit
-  budget.
-- **AEAD/KDF:** `@noble/ciphers`, `@noble/hashes`, `@noble/curves` v2. Same as
-  Kith's `packages/crypto`; most of that package ports directly.
-- **Ciphersuite:** `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` (Kith's), with
-  X-Wing hybrid as a Phase 0 measurement — if the size/latency cost is fine,
-  ship PQ from day one; it's the kind of thing that's free to do at the start
-  and expensive later.
+Superseded the original plan in two ways: the core is **Rust**, not TypeScript
+(`26-platform-and-stack.md`), and the post-quantum question has been benchmarked
+rather than guessed (`31-phase0-results.md`).
+
+| | Shipping | Was planned |
+| --- | --- | --- |
+| **MLS** | **`mls-rs` 0.56** (AWS), in Rust | `ts-mls`, with mls-rs as a "swap candidate" |
+| **Crypto provider** | `mls-rs-crypto-rustcrypto` — pure Rust, and the only one that targets wasm32 | — |
+| **OPAQUE** | `opaque-ke` directly in Rust | `@serenity-kit/opaque`, which wraps that same crate |
+| **Primitives** | `ed25519-dalek`, RustCrypto | `@noble/*` |
+| **Ciphersuite** | `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` | same |
+
+`mls-rs 0.56` and `mls-rs-crypto-rustcrypto 0.22.1` must both resolve to
+`mls-rs-core 0.27` — older pairings pull two different core versions and the
+provider then fails to satisfy mls-rs's own `CryptoProvider` bound.
+
+### Post-quantum: worth it, and currently blocked on the web
+
+Benchmarked against **ML-KEM-768 + X25519** (the X-Wing-style hybrid, chosen
+because it holds if *either* primitive holds, so it isn't a bet on lattices):
+
+| | classical | PQ hybrid |
+| --- | ---: | ---: |
+| encrypt a message | 15 µs | 15 µs — **free** |
+| one add @ 500 members | 2.5 ms | 4.3 ms |
+| Welcome, single join | 0.4 KiB | 1.4 KiB |
+| ratchet tree @ 2000 (cacheable) | 626 KiB | 2.9 MB |
+
+The cost is affordable — messaging is identical, and a join costs about 1 KiB
+more plus a larger tree that is public and cacheable. **The blocker is not
+performance, it is availability:** the only mls-rs PQ provider wraps AWS-LC, a C
+library that cannot build for `wasm32`, and the web client is the v1 product.
+
+Mixing is worse than not shipping it: a ciphersuite is fixed per group, so "PQ
+on native, classical on web" would make a room's cryptographic strength depend,
+invisibly, on which apps its members happen to use.
+
+**Decision: ship classical now.** The migration path already exists — a
+ciphersuite change means new groups rather than an upgrade (`29` §1), the same
+mechanism any crypto change would use.
+
+**The route back:** pure-Rust `x-wing` and `ml-kem` crates exist and **do build
+for wasm32** (verified). What is missing is an adapter implementing mls-rs's
+`KemType` over one of them; `mls-rs-crypto-hpke`'s `CombinedKem` is generic over
+its KEMs, so this is a trait impl and a provider, not new cryptography. It still
+lands in audit scope, because a wrong adapter is as bad as wrong primitives.
+Tracked as a near-term spike — getting PQ before launch is much cheaper than
+migrating groups afterwards.

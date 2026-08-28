@@ -101,7 +101,7 @@ and use any host). The binary is the same; it's config.
 | Voice | **LiveKit** | Proven in Kith incl. E2EE. |
 | Web client | **SvelteKit 5** (runes) + Tailwind v4, **no** DaisyUI | Same as Kith minus the component library — we're building a design system, not skinning one (see `05-client-and-ux.md`). |
 | Desktop | **Tauri 2** wrapping the web build | Native notifications, OS keychain for keys, code-signed binaries — the "trustworthy client" story. Tauri 2 also does iOS/Android; whether that's good enough for mobile is a Phase 7 question. |
-| Crypto | `@serenity-kit/opaque` (OPAQUE), `@noble/*` (primitives), **an MLS engine behind an interface** (`ts-mls` first; `mls-rs`→WASM as the audited-swap candidate) | Every MLS library is unaudited in 2026. Isolate it so switching is a package swap, and budget for an audit of whichever we ship. |
+| Crypto | **Rust**: `mls-rs` (MLS), `opaque-ke` (OPAQUE), RustCrypto and `ed25519-dalek`. WASM for web, UniFFI for native. | Superseded the original TypeScript plan — see [`26-platform-and-stack.md`](26-platform-and-stack.md). One implementation everywhere means one audit, and mls-rs is the most production-exercised MLS there is. |
 | Local store | Dexie (IndexedDB) in browser; SQLite via Tauri/Bun elsewhere, behind one `Store` interface | Local-first needs a real database on the client. |
 | Monorepo | pnpm workspaces, Biome, Vitest, TS strict (`noUncheckedIndexedAccess`, `verbatimModuleSyntax`) | Kith conventions. Keep. |
 
@@ -113,7 +113,7 @@ apps/
   agent-host/   @uca/core as a daemon + localhost plaintext API
 packages/
   protocol/     Zod schemas: entities, event envelope, encrypted event types, permissions, wire frames
-  crypto/       MLS engine interface + ts-mls impl, era history, envelope backup, device certs, media sealing
+  (crypto lives in crates/revel-crypto — Rust, see 26-platform-and-stack.md)
   core/         headless client: sync, sessions, room reducer, store interface, search, notification rules
   ui/           the design system (tokens, primitives) — consumed by web; UI-only
   sdk-py/       (later) Python client for the agent host's localhost API
