@@ -61,7 +61,7 @@ class Theme {
 
   set<K extends keyof Appearance>(key: K, value: Appearance[K]) {
     this.current = { ...this.current, [key]: value };
-    this.apply();
+    this.apply(true);
     try {
       localStorage.setItem(KEY, JSON.stringify(this.current));
     } catch {
@@ -69,9 +69,26 @@ class Theme {
     }
   }
 
-  apply() {
+  /**
+   * Applying a theme rewrites custom properties that ~32 transition
+   * declarations are watching, so every background and colour in the app
+   * animates at once — at different durations, because they were tuned for
+   * different jobs. The result reads as lag and smear.
+   *
+   * A theme change is not a state change worth animating: you asked for it and
+   * it should already be true. So transitions are suppressed for one frame
+   * while it lands.
+   */
+  apply(instant = false) {
     if (typeof document === 'undefined') return;
     const el = document.documentElement;
+    if (instant) {
+      el.classList.add('theme-switching');
+      // Two frames: one for the class to take effect, one for the paint.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => el.classList.remove('theme-switching')),
+      );
+    }
     el.dataset.theme = this.current.theme;
     el.dataset.density = this.current.density;
     el.dataset.personality = this.current.personality;

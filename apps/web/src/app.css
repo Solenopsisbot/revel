@@ -25,3 +25,14 @@ button:focus-visible,
 }
 input:focus-visible,
 textarea:focus-visible { outline: none; box-shadow: none; }
+
+/* Set for one frame while a theme is applied — see theme.svelte.ts. Without
+   it, every transitioning property in the app animates at once and the swap
+   looks like lag rather than a switch. */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: none !important;
+  animation: none !important;
+}

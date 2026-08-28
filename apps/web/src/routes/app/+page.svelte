@@ -4,7 +4,7 @@
   import { core, faces } from '$lib/fake/core.svelte.js';
   import MessageList from '$lib/MessageList.svelte';
   import Composer from '$lib/Composer.svelte';
-  import Appearance from '$lib/Appearance.svelte';
+  import { goto } from '$app/navigation';
 
   const categories = $derived(
     core.space.rooms.reduce<Record<string, typeof core.space.rooms>>((acc, r) => {
@@ -60,7 +60,9 @@
       <span class="glyph">{#if core.room.kind === 'voice'}<Icon name="voice" />{:else}#{/if}</span>
       <h1>{core.room.name}</h1>
       <div class="spacer"></div>
-      <Appearance />
+      <button class="icon-btn" onclick={() => goto('/app/settings')} title="Settings" aria-label="Settings">
+        <Icon name="chevron" size={20} />
+      </button>
       <button
         class="icon-btn"
         aria-pressed={core.membersOpen}
