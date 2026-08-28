@@ -39,6 +39,7 @@ internal docs and get updated in the same change as the code (Kith's rule).
 | [`20-wren-art.md`](20-wren-art.md) | The reproducible generation recipe for Wren's art, what worked, and the transparent-background gap. |
 | [`25-live-voice-translation.md`](25-live-voice-translation.md) | Whether live voice translation is doable, the latency budget, ASR-at-source, and why captions beat dubbing. |
 | [`26-platform-and-stack.md`](26-platform-and-stack.md) | **Supersedes `02`'s stack table.** Native mobile in scope; Rust crypto core + TypeScript app core, and why that seam. |
+| [`32-motion.md`](32-motion.md) | The motion vocabulary: what moves, how fast, what must never move, and why an optimistic message must not animate as if it succeeded. |
 | [`31-phase0-results.md`](31-phase0-results.md) | **Measured results from running code**: per-device leaves proven, the group-size ceiling is bandwidth not CPU, and post-quantum is free where it matters. |
 | [`30-design-review.md`](30-design-review.md) | An outside critique of the built reference page, plus what was changed in response — including the measurements that showed the grounds were too dark. |
 | [`29-engineering-plan.md`](29-engineering-plan.md) | Protocol versioning under un-re-encryptable history, the licence split, telemetry that doesn't surveil, the multi-client test harness, performance budgets, self-host first run. |

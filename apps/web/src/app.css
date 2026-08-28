@@ -1,0 +1,17 @@
+/* The design system is the single source of truth for colour, type, shape and
+   motion. Everything below is layout — if a value here could have been a
+   token, it should have been. */
+@import '@revel/ui/tokens.css';
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--ground-0);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  overflow: hidden;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--r-xs); }

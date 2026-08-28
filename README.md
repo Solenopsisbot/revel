@@ -18,6 +18,8 @@ list, because a promise you can't check isn't a promise.
 | [`crates/revel-crypto/`](crates/revel-crypto/) | The Rust crypto core: device certificates, MLS identity, benchmarks. |
 | [`packages/protocol/`](packages/protocol/) | The contract: ids, permissions, the event envelope, encrypted event types. |
 | [`apps/server/`](apps/server/) | The Host: policy, the opaque event log, fan-out. |
+| [`apps/web/`](apps/web/) | The client. Runs today against fixtures; the real core swaps in behind the same interface. `pnpm --filter @revel/web dev` |
+| [`packages/ui/`](packages/ui/) | Design tokens — the single source of truth for colour, type, shape and motion. |
 | [`design/`](design/) | A zero-build design reference. Open `design/index.html` in a browser. |
 
 ## The shape of it
