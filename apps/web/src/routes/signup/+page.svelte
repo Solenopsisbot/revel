@@ -105,10 +105,9 @@
       </div>
 
       <p class="fine">
-        Write it down. Save the file. Do both.<br />
-        If you lose this and forget your password, your account is gone and we
-        genuinely cannot help you.<br />
-        We're not being dramatic. That is the architecture.
+        Write it down, save the file, or both.<br />
+        If you lose this and forget your password, the account can't be
+        recovered — not by support, not by us.
       </p>
     </div>
   {:else}

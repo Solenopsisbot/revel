@@ -18,6 +18,26 @@ decide.
 button, and then in small muted type directly below: the honest caveat. That
 small type is not a disclaimer. It's the other half of the sentence.
 
+### The failure mode to watch for
+
+Stating a limit honestly is the voice. **Narrating our own honesty is not.**
+The difference is small in a sentence and large across a page:
+
+| Cringe | Fine |
+| --- | --- |
+| "That's the trade, and we'd rather say it now than in a support email." | "We can't search them for you, recover them, or tell you what you missed." |
+| "Unaudited, and honest about it." | "The cryptography has not been independently audited yet." |
+| "The only honest way to say we can't read your messages is to let you check." | "The source is public, so you can check what it does." |
+| "A promise you cannot check is not a promise." | "If a bot can see your messages, you can see the bot." |
+| "We're not being dramatic. That is the architecture." | "The account can't be recovered — not by support, not by us." |
+
+The bad column is doing a *bit* about candour: congratulating ourselves for
+saying the thing while we say it. It reads as marketing precisely because it is.
+Say the fact and stop. The reader can decide it was honest.
+
+Aphorisms are the same failure in a different costume. If a line would look at
+home on a poster, cut it.
+
 ### Rules
 
 1. **Never say "military-grade," "bank-grade," or any grade.** Our encryption

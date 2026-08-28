@@ -11,7 +11,7 @@
     },
     {
       title: 'No ghost readers',
-      body: `Anything that can read a room is in that room's member list — people, their devices, and bots alike. If a translation bot can see your messages, you can see the bot. A promise you cannot check is not a promise.`,
+      body: `Anything that can read a room is in that room's member list — people, their devices, and bots alike. If a translation bot can see your messages, you can see the bot.`,
     },
     {
       title: 'Your key is you',
@@ -24,7 +24,7 @@
     ['Link previews', "Built by the sender's device and sent with the message, so nobody's server fetches a URL on your behalf."],
     ['Spam and abuse filtering', 'Nothing scans your messages, because nothing can. Reports carry cryptographic proof instead, and moderators are members like anyone else.'],
     ['Notification previews', 'Pushes carry no content. Your phone decrypts locally, so a preview on your lock screen is your choice rather than ours.'],
-    ['Recovering your account', 'We never had your password. If you lose it and your recovery code, the account is gone — and we would rather say that here than in a support email.'],
+    ['Recovering your account', 'We never had your password, so there is nothing to reset. Lose it and your recovery code, and the account is gone.'],
   ];
 </script>
 
@@ -59,8 +59,7 @@
       </div>
       <p class="fine">
         We can't read your messages.<br />
-        We also can't search them for you, recover them, or tell you what you missed.<br />
-        That's the trade, and we'd rather say it now than in a support email.
+        We also can't search them for you, recover them, or tell you what you missed.
       </p>
     </div>
   </section>
@@ -85,7 +84,7 @@
         <p class="lede">
           A server that can't read your messages can't do things for you either.
           Most of it comes back — done on your device, or by someone visibly in
-          the room. Some of it doesn't come back at all.
+          the room. Some of it doesn't.
         </p>
       </Reveal>
       <div class="costs">
@@ -128,8 +127,9 @@
             roster, and a badge saying what they are.
           </p>
           <p class="micro">
-            They hold keys like anyone else, which is exactly why they appear in
-            the member list — and why we don't offer to run one for you.
+            They hold keys like anyone else, which is why they appear in the
+            member list. It's also why we don't offer to host one for you: we'd
+            be holding its keys, and then we could read your rooms.
           </p>
         </div>
       </Reveal>
@@ -141,9 +141,9 @@
       <Reveal>
         <h2 class="big">Or run the whole thing yourself.</h2>
         <p class="lede">
-          The only honest way to say "we can't read your messages" is to let you
-          check. One binary, your own box, your own rules about who can sign in.
-          Centralised until you'd rather it wasn't.
+          One binary, your own box, your own rules about who can sign in. The
+          source is public, so you can check what it does rather than take our
+          word for it. Centralised until you'd rather it wasn't.
         </p>
         <div class="cta">
           <Button variant="secondary" onclick={() => goto('/app')}>See how it works</Button>
@@ -157,9 +157,10 @@
     <div class="wrap foot">
       <div class="brand"><Mark size={22} stroke="var(--ground-0)" /><span>Revel</span></div>
       <p>
-        Unaudited, and honest about it. Encrypted against the server's data, not
-        yet against its code — read the threat model before trusting it with
-        anything that could hurt you.
+        The cryptography has not been independently audited yet. Encryption
+        protects your messages from the server's operators and from a breach of
+        its database; it does not protect against a compromised client build.
+        The threat model has the details.
       </p>
     </div>
   </footer>

@@ -30,14 +30,23 @@
     box-shadow: 0 var(--lift) 0 #9c1049, var(--shadow-ambient), var(--highlight-inset);
   }
   .secondary {
-    background: rgba(255, 255, 255, .1); color: var(--text);
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text) 22%, transparent);
+    background: var(--ground-2); color: var(--text);
+    box-shadow: inset 0 0 0 1px var(--ground-4);
   }
-  .ghost { background: transparent; color: color-mix(in oklab, var(--text) 70%, transparent); }
+  .ghost {
+    background: transparent; color: var(--text);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text) 24%, transparent);
+  }
   .btn:not(:disabled):hover { filter: brightness(1.08); }
-  .ghost:not(:disabled):hover { background: rgba(255, 255, 255, .08); }
+  .ghost:not(:disabled):hover { background: var(--ground-2); box-shadow: inset 0 0 0 1px var(--ground-4); }
   .primary:not(:disabled):active { transform: translateY(var(--lift)); box-shadow: 0 0 0 #9c1049, var(--highlight-inset); }
   .secondary:not(:disabled):active, .ghost:not(:disabled):active { transform: scale(.97); }
   /* Inert, not explained. The label is the explanation (`docs/08`). */
-  .btn:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; background: rgba(255, 255, 255, .1); color: var(--text); }
+  /* Inert but still legible — a disabled control the user cannot read is a
+     dead end rather than a signal. */
+  .btn:disabled {
+    cursor: not-allowed; box-shadow: none;
+    background: var(--ground-2); color: var(--text-mute);
+    filter: none;
+  }
 </style>

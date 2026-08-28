@@ -74,7 +74,7 @@
       </form>
 
       <p class="alt">
-        Forgotten your password? <a href="/forgot">There's a way back in.</a>
+        <a href="/forgot">Forgotten your password?</a>
       </p>
     </div>
   {:else if step === 'twofactor'}
@@ -99,8 +99,8 @@
         <Button variant="ghost">Use a passkey instead</Button>
       </div>
       <p class="fine">
-        This step happens at your provider, not on the server holding your
-        messages. It can't read them either way.
+        This step happens at your provider, which is separate from the server
+        holding your messages.
       </p>
     </div>
   {:else}

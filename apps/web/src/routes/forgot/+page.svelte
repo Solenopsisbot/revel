@@ -33,11 +33,9 @@
     <h1>There's a way back in.</h1>
 
     <p class="lede">
-      We can't email you a reset link, because we never had your password. Your
-      device proves it to the server without ever sending it, so there is no
-      password-shaped thing stored anywhere to reset. That's the architecture
-      that keeps your messages yours, and this is the one place it's
-      inconvenient.
+      We can't email you a reset link. Your device proves your password to the
+      server without ever sending it, so there's nothing stored anywhere to
+      reset.
     </p>
 
     <div class="ways">
@@ -59,9 +57,9 @@
     </div>
 
     <p class="fine">
-      If you don't have either of these, the account cannot be recovered. This
-      isn't a policy we could make an exception to — the server does not hold
-      enough information to let you back in, and neither do we.
+      Without one of these, the account can't be recovered. That isn't a policy
+      we could make an exception to — the server doesn't hold enough
+      information to let anyone back in.
     </p>
 
     <p class="alt"><a href="/signin">Back to sign in</a></p>
