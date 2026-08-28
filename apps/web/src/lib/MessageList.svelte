@@ -13,7 +13,7 @@
    */
   import MessageRow from './MessageRow.svelte';
   import Icon from './Icon.svelte';
-  import { core, faces } from './fake/core.svelte.js';
+  import { core } from './fake/core.svelte.js';
   import { dayLabel, newDay } from './format.js';
 
   let viewport = $state<HTMLElement>();
@@ -86,7 +86,7 @@
     return () => clearTimeout(timer);
   });
 
-  const typingNames = $derived(core.typing.map((f) => faces[f]?.name ?? f));
+  const typingNames = $derived(core.typing.map((f) => core.faces[f]?.name ?? f));
 </script>
 
 <div class="pane">
@@ -171,9 +171,15 @@
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
       transform var(--t-fast) var(--ease);
   }
-  @keyframes pill { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  /* `translate` and `transform` are separate properties that COMPOSE — the
+     browser applies translate first, then transform. Re-stating the -50%
+     centring inside a transform here made the pill sit at -100% for the length
+     of the animation and snap to -50% the moment it ended. Centring lives in
+     `translate` above; anything animated moves on `transform` only and never
+     mentions the -50% again. */
+  @keyframes pill { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   .jump:hover { background: var(--ground-4); color: var(--text); }
-  .jump:active { transform: translate(-50%, 1px); }
+  .jump:active { transform: translateY(1px); }
   .jump.has { background: var(--brand); border-color: var(--brand); color: #fff; }
 
   .empty { flex: none; text-align: center; padding: 60px 24px; }
