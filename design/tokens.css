@@ -1,0 +1,190 @@
+/*
+ * Design tokens.
+ * The single source of truth for colour, type, shape, elevation and motion.
+ * Ports verbatim into packages/ui when the monorepo exists.
+ *
+ * See ../docs/07-design-language.md for the rules these encode.
+ *
+ * Three themes on [data-theme]: dusk (violet, default), midnight (navy),
+ * daylight (light). Two personality levels on [data-personality]: full, calm.
+ * Two densities on [data-density]: cozy, compact.
+ */
+
+:root {
+  /* ---- candy accents -------------------------------------------------
+     Decorative stars AND the face/member palette are the same eight
+     colours. That shared palette is why the app reads as one object. */
+  --gold:   #ffd84d;
+  --rose:   #ec4c8c;
+  --violet: #9b6bf0;
+  --sky:    #58a6ff;
+  --mint:   #3ddc84;
+  --coral:  #ff7a5c;
+  --lilac:  #c79bff;
+  --aqua:   #35d6d6;
+
+  /* Deeper stops, for outlines and hard shadows under the candy colours. */
+  --rose-deep:   #7a1740;
+  --violet-deep: #3d1f75;
+  --gold-deep:   #6d5300;
+  --mint-deep:   #10633a;
+
+
+  /* ---- face / ink -----------------------------------------------------
+     The candy colours above are FILL values, tuned for dark grounds. Used as
+     TEXT (member names, badges, annotation labels) they fail on a light
+     ground — measured, not guessed: on daylight six of the eight drop below
+     3:1. So every candy colour has an --face-* ink twin that is theme-aware:
+     identical on the dark themes, darkened to clear 4.5:1 on daylight.
+
+     Rule: --gold paints a star. --face-gold writes a name. */
+
+  --brand: var(--violet);
+  --accent: var(--rose);
+
+  /* ---- type ---------------------------------------------------------- */
+  /* Two families, not three. Figtree does all UI and reading work; Fraunces
+     (soft optical axis) is the voice — section headings and moment screens.
+     Deliberately NOT a rounded geometric like Quicksand: that lane is the
+     reference's own, and borrowing it made our work look like theirs. */
+  --font-ui: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Fraunces', ui-serif, Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --text-xs: 0.75rem;    /* 12 — timestamps, small print */
+  --text-sm: 0.8125rem;  /* 13 — labels, badges */
+  --text-base: 0.9375rem;/* 15 — message body, the workspace default */
+  --text-lg: 1.125rem;   /* 18 — room titles */
+  --text-xl: 1.5rem;     /* 24 — panel headings */
+  --display-1: 2rem;     /* 32 */
+  --display-2: 2.5rem;   /* 40 */
+  --display-3: 3.5rem;   /* 56 */
+  --display-4: 4.5rem;   /* 72 — the one big moment word */
+
+  --leading-tight: 1.15;
+  --leading-body: 1.5;
+
+  /* ---- shape --------------------------------------------------------- */
+  --r-pill: 999px;
+  --r-lg: 20px;
+  --r-md: 14px;
+  --r-sm: 10px;
+  --r-xs: 6px;
+
+  /* ---- density ------------------------------------------------------- */
+  --space: 4px;              /* the proportional unit; density scales it */
+  --row-pad-y: 6px;
+  --row-gap: 2px;
+
+  /* ---- motion -------------------------------------------------------- */
+  --t-fast: 120ms;
+  --t-base: 200ms;
+  --t-slow: 320ms;
+  --ease: cubic-bezier(.22,.61,.36,1);
+  --ease-toy: cubic-bezier(.34,1.56,.64,1);  /* slight overshoot */
+
+  /* ---- elevation ------------------------------------------------------
+     Buttons are raised objects that press down. The lift is a short offset
+     shadow in a DARKER SHADE OF THE BUTTON'S OWN HUE — not a near-black
+     outline-and-drop-shadow, which is a specific costume belonging to
+     someone else's brand. Tactility is the idea we keep; the costume isn't. */
+  --lift: 3px;
+  --shadow-ambient: 0 6px 14px rgba(0,0,0,.30);
+  --shadow-panel: 0 10px 30px rgba(0,0,0,.35);
+  --highlight-inset: inset 0 1px 0 rgba(255,255,255,.30);
+
+  --glow-size: 24px;
+  --focus-ring: 0 0 0 3px color-mix(in oklab, var(--brand) 55%, transparent);
+}
+
+/* ---- dusk: violet dark. The default. ---------------------------------- */
+[data-theme='dusk'] {
+  /* Lifted 2026-08-27 after a design review measured the old ramp at L* 6.2 —
+     darker than Slack, a third of Discord — with chroma 26 against the
+     reference's 66-79. A violet tint that dark is indistinguishable from
+     charcoal, which defeated the one decision meant to make this feel warm.
+     Now L* 13-35 with chroma 48-80. */
+  --ground-0: #271848;   /* app background — L* 12.9 */
+  --ground-1: #2f2056;   /* rail, sidebar   — L* 17.0 */
+  --ground-2: #3a2a68;   /* raised: hover, cards */
+  --ground-3: #47367d;   /* inputs, chips */
+  --ground-4: #584595;   /* highest raised */
+  --line: #4b3a86;
+  --text: #ffffff;
+  --text-dim: #c3b8e0;
+  --text-mute: #8f84ad;
+  --moment-bg: radial-gradient(120% 110% at 20% 0%, #7b4bc4 0%, #4a2790 42%, #2a1657 100%);
+  --scrim: rgba(10, 6, 26, .72);
+  --face-gold: var(--gold);     --face-rose: var(--rose);
+  /* violet needs a nudge lighter than its fill: on the lifted ground it
+     measured 4.39, just under the 4.5 body-text floor. */
+  --face-violet: #9f71f1;       --face-sky: var(--sky);
+  --face-mint: var(--mint);     --face-coral: var(--coral);
+  --face-lilac: var(--lilac);   --face-aqua: var(--aqua);
+}
+
+/* ---- midnight: navy dark. The clouds design. -------------------------- */
+[data-theme='midnight'] {
+  --ground-0: #142234;   /* L* 12.9 */
+  --ground-1: #1a2b3f;   /* L* 17.0 */
+  --ground-2: #22364c;
+  --ground-3: #2c445c;
+  --ground-4: #385570;
+  --line: #2f4961;
+  --text: #ffffff;
+  --text-dim: #b3c6da;
+  --text-mute: #7d93a8;
+  --moment-bg: radial-gradient(120% 110% at 25% 5%, #23415e 0%, #16283d 45%, #0b1522 100%);
+  --scrim: rgba(4, 12, 20, .72);
+  --face-gold: var(--gold);     --face-rose: var(--rose);
+  /* violet needs a nudge lighter than its fill: on the lifted ground it
+     measured 4.39, just under the 4.5 body-text floor. */
+  --face-violet: #9f71f1;       --face-sky: var(--sky);
+  --face-mint: var(--mint);     --face-coral: var(--coral);
+  --face-lilac: var(--lilac);   --face-aqua: var(--aqua);
+}
+
+/* ---- daylight: light. ------------------------------------------------- */
+[data-theme='daylight'] {
+  --ground-0: #f4f1fa;
+  --ground-1: #ffffff;
+  --ground-2: #ede8f7;
+  --ground-3: #e3dcf2;
+  --ground-4: #d5cbe8;
+  --line: #ded5ef;
+  --text: #1b1533;
+  --text-dim: #4a4168;
+  --text-mute: #6f6690;
+  --moment-bg: radial-gradient(120% 110% at 18% 0%, #f3d9ec 0%, #e4d6fa 42%, #fdf7ff 100%);
+  --scrim: rgba(27, 21, 51, .45);
+  /* darkened same-hue twins; each measured >= 4.5:1 on --ground-0 */
+  --face-gold: #886a00;     --face-rose: #d71261;
+  --face-violet: #8447f1;   --face-sky: #0069e2;
+  --face-mint: #147e43;     --face-coral: #d62700;
+  --face-lilac: #8f38ff;    --face-aqua: #167b7b;
+  --shadow-ambient: 0 6px 14px rgba(60,40,110,.16);
+  --shadow-panel: 0 10px 30px rgba(60,40,110,.18);
+  --highlight-inset: inset 0 1px 0 rgba(255,255,255,.65);
+}
+
+/* ---- density ---------------------------------------------------------- */
+[data-density='compact'] { --space: 3px; --row-pad-y: 3px; --row-gap: 0px; }
+
+/* ---- personality: calm strips the decorative layer --------------------
+   Keeps colour, shape and type; drops the toy lift and the star marks.
+   This is the accessibility/low-distraction escape hatch, not a downgrade. */
+[data-personality='calm'] { --lift: 0px; --glow-size: 0px; }
+[data-personality='calm'] .decor { display: none !important; }
+
+/* ---- reduce motion ---------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after {
+  animation-duration: .001ms !important;
+  transition-duration: .001ms !important;
+}

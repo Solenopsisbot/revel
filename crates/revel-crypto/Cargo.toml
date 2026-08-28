@@ -1,0 +1,42 @@
+[package]
+name = "revel-crypto"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# cdylib for UniFFI (Swift/Kotlin) and wasm; rlib so Rust tests still work.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+mls-rs = "0.56"
+mls-rs-core = "0.27"
+mls-rs-crypto-rustcrypto = "0.22"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+thiserror = "2"
+uniffi = { version = "0.32", features = ["cli"] }
+
+[dev-dependencies]
+assert_matches = "1.5"
+proptest = "1"
+uniffi = { version = "0.32", features = ["bindgen-tests"] }
+
+[features]
+pq = ["dep:mls-rs-crypto-awslc"]
+
+[dependencies.mls-rs-crypto-awslc]
+version = "0.25"
+optional = true
+features = ["post-quantum"]
+
+# The PQ benchmark needs AWS-LC, which is optional — without this the default
+# `cargo test` tries to build it and fails on the missing import.
+[[example]]
+name = "bench_pq"
+required-features = ["pq"]
+
+[[example]]
+name = "bench_join"
+required-features = ["pq"]

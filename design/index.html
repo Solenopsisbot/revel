@@ -1,0 +1,1940 @@
+<!doctype html>
+<html lang="en" data-theme="dusk" data-density="cozy" data-personality="full">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<style>
+/* ===================================================================
+   Design reference page.
+   Everything that isn't page-chrome is a real component spec, meant to
+   be lifted into packages/ui as-is.
+   =================================================================== */
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--ground-0);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease);
+}
+
+/* ---------- page chrome (not part of the design system) ---------- */
+.toolbar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+  padding: 10px 20px;
+  background: color-mix(in oklab, var(--ground-1) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.toolbar .grp { display: flex; align-items: center; gap: 6px; }
+.toolbar label { font-size: var(--text-xs); color: var(--text-mute); text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
+.seg { display: flex; background: var(--ground-3); border-radius: var(--r-pill); padding: 3px; gap: 2px; }
+.seg button {
+  font: inherit; font-size: var(--text-sm); font-weight: 600;
+  border: 0; background: transparent; color: var(--text-dim);
+  padding: 4px 12px; border-radius: var(--r-pill); cursor: pointer;
+  transition: all var(--t-fast) var(--ease);
+}
+.seg button[aria-pressed='true'] { background: var(--brand); color: #fff; }
+.seg button:hover:not([aria-pressed='true']) { color: var(--text); }
+
+main { max-width: 1240px; margin: 0 auto; padding: 32px 20px 120px; }
+section { margin: 0 0 72px; }
+h2.sec {
+  font-family: var(--font-display); font-size: var(--text-xl); font-weight: 600;
+  margin: 0 0 6px; letter-spacing: -.01em;
+}
+.sec-note { color: var(--text-mute); font-size: var(--text-sm); margin: 0 0 22px; max-width: 68ch; }
+.panel {
+  background: var(--ground-1); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 22px;
+}
+.callout {
+  border-left: 3px solid var(--face-coral);
+  background: color-mix(in oklab, var(--face-coral) 9%, transparent);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  padding: 14px 18px; margin: 0 0 22px; max-width: 78ch;
+  font-size: var(--text-sm); color: var(--text-dim);
+}
+.callout b { color: var(--face-coral); }
+
+
+/* ================= HERO =================
+   The page had no hero, so it could only be evaluated part by part. This is
+   the moment language applied at full size: gradient ground, ambient haze,
+   one Fraunces line, the raised buttons, and the blunt small print doing the
+   real work underneath. */
+.hero {
+  position: relative; overflow: hidden; margin: -12px 0 64px;
+  border-radius: var(--r-lg); border: 1px solid var(--line);
+  background: var(--moment-bg); min-height: 560px;
+  display: flex; align-items: center; padding: 64px 56px;
+}
+.hero .inner { position: relative; z-index: 2; max-width: 34rem; }
+.hero .wm { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
+.hero .wm .n {
+  font-family: var(--font-display); font-weight: 600; font-size: 1.6rem;
+  letter-spacing: -.02em;
+}
+.hero h1 {
+  font-family: var(--font-display); font-size: var(--display-3); line-height: .97;
+  letter-spacing: -.035em; font-weight: 600; margin: 0 0 20px;
+}
+.hero p.sub { font-size: 1.0625rem; line-height: 1.55; margin: 0 0 30px; color: color-mix(in oklab, var(--text) 88%, transparent); }
+.hero .cta { display: flex; gap: 12px; flex-wrap: wrap; }
+.hero .fine {
+  margin-top: 30px; font-size: var(--text-sm); line-height: 1.75;
+  color: color-mix(in oklab, var(--text) 60%, transparent);
+}
+.hero-art {
+  position: absolute; right: 2%; bottom: 0; z-index: 2; height: 560px; width: auto;
+  pointer-events: none;
+  -webkit-mask-image:
+    linear-gradient(to right, transparent 0%, #000 15%, #000 85%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, #000 16%, #000 100%);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent 0%, #000 15%, #000 85%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, #000 16%, #000 100%);
+  mask-composite: intersect;
+}
+@media (max-width: 1000px) { .hero-art { display: none; } .hero { padding: 44px 28px; min-height: 0; } }
+
+/* ================= THE MARK =================
+   Three overlapping discs, each ringed in the surrounding ground so they
+   read as distinct where they cross. A few people in a place, everyone
+   visible — the product's actual thesis rather than a borrowed ornament.
+   Adopted 2026-08-27 with an 18-degree tilt baked in — see docs/15-mark.md. */
+.mark { display: inline-block; vertical-align: middle; --mark-stroke: var(--ground-1); }
+.mark svg { display: block; }
+.wordmark {
+  font-family: var(--font-display); font-weight: 600; font-size: var(--display-1);
+  letter-spacing: -.02em; display: inline-flex; align-items: center; gap: 12px;
+}
+.applogo {
+  width: 56px; height: 56px; border-radius: var(--r-md);
+  background: linear-gradient(160deg, #6f3fc9, #3d2378);
+  display: grid; place-items: center;
+  --mark-stroke: #351f66;
+  box-shadow: var(--shadow-ambient), var(--highlight-inset);
+}
+
+/* ================= COLOUR ================= */
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
+.sw { border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--line); background: var(--ground-2); }
+.sw .chip { height: 62px; }
+.sw .meta { padding: 8px 10px; font-size: var(--text-xs); }
+.sw .name { font-weight: 700; }
+.sw .hex { color: var(--text-mute); font-family: var(--font-mono); }
+.sw .ratio { font-family: var(--font-mono); font-size: 10px; margin-top: 3px; }
+.pass { color: var(--face-mint); } .warn { color: var(--face-gold); } .fail { color: var(--face-coral); }
+.grounds { display: flex; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--line); }
+.grounds div { flex: 1; padding: 22px 10px; font-size: var(--text-xs); font-family: var(--font-mono); text-align: center; }
+
+/* ================= TYPE ================= */
+.type-row { display: flex; align-items: baseline; gap: 18px; padding: 10px 0; border-bottom: 1px dashed var(--line); }
+.type-row .tag { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-mute); min-width: 190px; flex: none; }
+.moment-word { font-family: var(--font-display); font-size: var(--display-3); line-height: 1; font-weight: 600; letter-spacing: -.025em; }
+
+/* ================= THE RAISED BUTTON =================
+   Tactile — it sits above the surface and presses down. The lift is a short
+   offset in a darker shade of the button's OWN hue, and there is no heavy
+   near-black outline: that particular costume belongs to the reference. */
+.btn {
+  font: inherit; font-weight: 700; font-size: var(--text-base);
+  padding: 11px 24px; border-radius: var(--r-pill);
+  cursor: pointer; position: relative; border: 0;
+  display: inline-flex; align-items: center; gap: 8px;
+  transition: transform var(--t-fast) var(--ease-toy), box-shadow var(--t-fast) var(--ease), filter var(--t-fast) var(--ease);
+}
+.btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.btn-primary {
+  --deep: #9c1049;
+  background: linear-gradient(180deg, #e01868, #c82e6e); color: #fff;
+  box-shadow: 0 var(--lift) 0 var(--deep), var(--shadow-ambient), var(--highlight-inset);
+}
+.btn-brand {
+  --deep: #55229e;
+  background: linear-gradient(180deg, #8a51ed, #7b48d8); color: #fff;
+  box-shadow: 0 var(--lift) 0 var(--deep), var(--shadow-ambient), var(--highlight-inset);
+}
+.btn-gold {
+  --deep: #9c7407;
+  background: linear-gradient(180deg, #ffd84d, #d9a21b); color: #3a2b00;
+  box-shadow: 0 var(--lift) 0 var(--deep), var(--shadow-ambient), var(--highlight-inset);
+}
+.btn-secondary {
+  background: var(--ground-3); color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line), var(--highlight-inset);
+}
+.btn-ghost { background: transparent; color: var(--text-dim); }
+.btn-ghost:hover { background: var(--ground-2); color: var(--text); }
+.btn:hover:not(.btn-ghost):not(:disabled) { filter: brightness(1.07); }
+.btn-primary:active, .btn-brand:active, .btn-gold:active {
+  transform: translateY(var(--lift));
+  box-shadow: 0 0 0 var(--deep), 0 1px 4px rgba(0,0,0,.3), var(--highlight-inset);
+}
+.btn-secondary:active { transform: translateY(1px); }
+.btn:disabled { opacity: .45; cursor: not-allowed; filter: grayscale(.4); }
+.btn-sm { padding: 6px 15px; font-size: var(--text-sm); }
+
+/* ================= FORM CONTROLS ================= */
+.field { display: block; margin-bottom: 14px; }
+.field .lbl { display: block; font-size: var(--text-sm); font-weight: 600; color: var(--text-dim); margin-bottom: 6px; }
+.input {
+  width: 100%; font: inherit; color: var(--text);
+  background: var(--ground-3); border: 2px solid var(--line);
+  border-radius: var(--r-sm); padding: 10px 14px;
+  transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+.input::placeholder { color: var(--text-mute); }
+.input:focus { outline: none; border-color: var(--brand); box-shadow: var(--focus-ring); }
+.hint { font-size: var(--text-xs); color: var(--text-mute); margin-top: 6px; }
+
+.toggle { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px dashed var(--line); }
+.toggle:last-child { border-bottom: 0; }
+.switch {
+  flex: none; width: 44px; height: 26px; border-radius: var(--r-pill);
+  background: var(--ground-4); border: 0; cursor: pointer; position: relative;
+  transition: background var(--t-base) var(--ease); margin-top: 2px;
+}
+.switch::after {
+  content: ''; position: absolute; top: 3px; left: 3px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4);
+  transition: transform var(--t-base) var(--ease-toy);
+}
+.switch[aria-checked='true'] { background: var(--face-mint); }
+.switch[aria-checked='true']::after { transform: translateX(18px); }
+.toggle .t-name { font-weight: 600; }
+.toggle .t-desc { font-size: var(--text-sm); color: var(--text-mute); }
+
+
+/* ================= ICONS =================
+   One sprite, stroke-only, currentColor. Every glyph in the product is one of
+   these; emoji never appear in chrome (see docs/07 "the no-emoji rule"). */
+.ic { width: 1.15em; height: 1.15em; fill: none; stroke: currentColor;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+      display: block; flex: none; }
+.ic-lg { width: 20px; height: 20px; }
+
+/* A custom emote — an image a community uploaded, i.e. user content. */
+.emote { width: 16px; height: 16px; border-radius: 4px; flex: none;
+         background: linear-gradient(140deg, var(--e), color-mix(in oklab, var(--e) 45%, #000)); }
+
+/* ================= AGENT BADGE =================
+   One treatment, several labels. The label is flavour; the treatment is what
+   makes "this is software" readable at a glance regardless of the word. */
+.badge-agent {
+  font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 7px 2px 5px; border-radius: var(--r-xs);
+  background: transparent; color: var(--text-dim);
+  border: 1px solid var(--text-mute);
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.badge-agent::before {
+  content: ''; width: 5px; height: 5px; border-radius: 1px;
+  background: currentColor; transform: rotate(45deg);
+}
+.agent-line { font-size: 11px; color: var(--text-mute); }
+
+/* ================= TRANSLATION =================
+   The translation sits where the message was; the ORIGINAL stays visible
+   beneath it. Never silently replace someone's words with a machine's. */
+.tr { margin-top: 5px; }
+.tr .src {
+  display: flex; align-items: center; gap: 6px; margin-top: 5px;
+  font-size: var(--text-xs); color: var(--text-mute);
+}
+.tr .orig {
+  margin-top: 3px; padding-left: 10px;
+  border-left: 2px solid var(--line); color: var(--text-mute);
+  font-size: var(--text-sm);
+}
+.lang-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--ground-3); border: 1px solid var(--line);
+  border-radius: var(--r-pill); padding: 3px 10px;
+  font-size: var(--text-xs); font-weight: 600; color: var(--text-dim);
+}
+.offer {
+  margin-top: 6px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--ground-2); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 8px 12px; font-size: var(--text-sm);
+}
+
+/* ================= PROFILE CARD ================= */
+.pcard {
+  width: 320px; background: var(--ground-2); border: 1px solid var(--line);
+  border-radius: var(--r-md); overflow: hidden; box-shadow: var(--shadow-panel);
+}
+.pcard .top { padding: 16px; display: flex; gap: 12px; }
+.pcard .nm { font-weight: 700; font-size: var(--text-lg); color: var(--fc); }
+.pcard .sub { font-size: var(--text-sm); color: var(--text-mute); }
+.pcard .bio { font-size: var(--text-sm); margin-top: 6px; }
+.pcard .block { padding: 12px 16px; border-top: 1px solid var(--line); }
+.pcard .k { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); margin-bottom: 6px; }
+.facepill {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0 6px 6px 0;
+  background: var(--ground-3); border: 1px solid var(--line);
+  border-radius: var(--r-pill); padding: 3px 10px 3px 3px; font-size: var(--text-sm); font-weight: 600;
+}
+
+/* ================= AVATAR ================= */
+.av { position: relative; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; }
+.av-40 { width: 40px; height: 40px; font-size: 15px; }
+.av-32 { width: 32px; height: 32px; font-size: 13px; }
+.av-24 { width: 24px; height: 24px; font-size: 11px; }
+.av .ring { position: absolute; inset: -3px; border-radius: 50%; border: 2px solid var(--fc); }
+.av .dot {
+  position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px;
+  border-radius: 50%; border: 2.5px solid var(--ground-1);
+}
+.dot-online { background: var(--face-mint); } .dot-idle { background: var(--face-gold); }
+.dot-dnd { background: var(--face-coral); } .dot-off { background: var(--text-mute); }
+
+/* ================= MESSAGES — ROWS (space rooms) ================= */
+.msg-row { display: flex; gap: 12px; padding: var(--row-pad-y) 16px; position: relative; }
+.msg-row:hover { background: var(--ground-2); }
+.msg-row.cont { padding-top: var(--row-gap); }
+.msg-row.cont .av-slot { visibility: hidden; }
+.msg-row .av-slot { width: 40px; flex: none; }
+.msg-body { min-width: 0; flex: 1; }
+.author-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.author { font-weight: 700; color: var(--fc); }
+.stamp { font-size: var(--text-xs); color: var(--text-mute); }
+.badge {
+  font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--fc) 20%, transparent);
+  color: var(--fc); border: 1px solid color-mix(in oklab, var(--fc) 42%, transparent);
+}
+.msg-text { white-space: pre-wrap; word-break: break-word; }
+.msg-actions {
+  position: absolute; right: 14px; top: -12px; display: none; gap: 2px;
+  background: var(--ground-3); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 3px; box-shadow: var(--shadow-ambient);
+}
+.msg-row:hover .msg-actions { display: flex; }
+.msg-actions button {
+  border: 0; background: transparent; cursor: pointer; color: var(--text-dim);
+  padding: 4px 6px; border-radius: var(--r-xs); font-size: 14px; line-height: 1;
+}
+.msg-actions button:hover { background: var(--ground-4); color: var(--text); }
+
+/* ================= MESSAGES — BUBBLES (DMs) ================= */
+.bub-row { display: flex; gap: 10px; padding: 4px 16px; align-items: flex-end; }
+.bub-row.mine { flex-direction: row-reverse; }
+.bub {
+  max-width: 62%; padding: 9px 14px; border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--fc) 20%, var(--ground-2));
+  border: 1px solid color-mix(in oklab, var(--fc) 32%, transparent);
+}
+.bub-row.mine .bub { background: color-mix(in oklab, var(--fc) 28%, var(--ground-3)); }
+.bub .author-line { margin-bottom: 2px; }
+
+/* ================= ATTACHMENTS, REACTIONS, ANNOTATIONS ================= */
+.attach {
+  margin-top: 6px; border-radius: var(--r-md); overflow: hidden;
+  border: 1px solid var(--line); max-width: 340px;
+  background: linear-gradient(135deg, var(--face-violet), var(--face-aqua));
+  height: 150px; display: grid; place-items: center;
+  color: rgba(255,255,255,.9); font-size: var(--text-sm); font-weight: 600;
+}
+.reactions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.rx {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--ground-3); border: 1px solid var(--line);
+  border-radius: var(--r-pill); padding: 2px 9px; font-size: var(--text-sm);
+  cursor: pointer; transition: all var(--t-fast) var(--ease); color: var(--text);
+}
+.rx:hover { border-color: var(--brand); }
+.rx.on { background: color-mix(in oklab, var(--brand) 24%, transparent); border-color: var(--brand); }
+.rx .n { font-weight: 700; font-size: var(--text-xs); }
+.annot {
+  margin-top: 6px; border-left: 3px solid var(--face-aqua);
+  background: color-mix(in oklab, var(--face-aqua) 10%, transparent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0; padding: 7px 12px;
+}
+.annot .who { font-size: var(--text-xs); color: var(--face-aqua); font-weight: 700; margin-bottom: 2px; }
+
+/* ================= CAUGHT-UP RULE =================
+   A hairline that fades out at both ends. Replaces the papercraft sawtooth,
+   which is a distinctive piece of the reference's identity, not a vibe. */
+.caughtup { display: flex; align-items: center; gap: 14px; padding: 18px 16px 8px; }
+.fade-rule { flex: 1; height: 1px; }
+.fade-rule.l { background: linear-gradient(90deg, transparent, var(--line)); }
+.fade-rule.r { background: linear-gradient(90deg, var(--line), transparent); }
+.caughtup span { font-size: var(--text-xs); color: var(--text-mute); font-weight: 600; }
+
+/* ================= UNREAD INDICATOR =================
+   A plain dot. The reference used its star glyph here; the star is theirs. */
+.unread-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text); flex: none; }
+
+/* ================= COMPOSER ================= */
+.composer { padding: 12px 16px 16px; }
+.composer-box {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--ground-3); border: 2px solid var(--line);
+  border-radius: var(--r-pill); padding: 6px 6px 6px 14px;
+  transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+.composer-box:focus-within { border-color: var(--brand); box-shadow: var(--focus-ring); }
+.face-chip {
+  display: inline-flex; align-items: center; gap: 7px; flex: none;
+  background: color-mix(in oklab, var(--fc) 20%, transparent);
+  border: 1px solid color-mix(in oklab, var(--fc) 42%, transparent);
+  color: var(--fc); border-radius: var(--r-pill); padding: 3px 10px 3px 3px;
+  font-size: var(--text-sm); font-weight: 700; cursor: pointer; font-family: inherit;
+}
+.composer-input { flex: 1; background: transparent; border: 0; color: var(--text); font: inherit; padding: 8px 0; }
+.composer-input:focus { outline: none; }
+.composer-input::placeholder { color: var(--text-mute); }
+.icon-btn {
+  flex: none; width: 34px; height: 34px; border-radius: 50%;
+  border: 0; background: transparent; color: var(--text-dim);
+  cursor: pointer; display: grid; place-items: center; font-size: 16px;
+}
+.icon-btn:hover { background: var(--ground-4); color: var(--text); }
+.send-btn {
+  flex: none; width: 36px; height: 36px; border-radius: 50%;
+  background: linear-gradient(180deg, #8a51ed, #7b48d8);
+  border: 0; color: #fff; cursor: pointer; display: grid; place-items: center;
+  box-shadow: 0 2px 0 #55229e, var(--highlight-inset);
+}
+.send-btn:active { transform: translateY(2px); box-shadow: 0 0 0 #55229e; }
+
+
+/* ================= BADGE ALIGNMENT =================
+   Badges are boxes with padding sitting in a baseline-aligned flex row, so
+   they hang low against the text baseline. Centre them per-item instead of
+   changing the row's alignment (name and timestamp still share a baseline). */
+.author-line .badge, .author-line .badge-agent { align-self: center; position: relative; top: -1px; }
+.badge, .badge-agent { line-height: 1.45; }
+.mem .nm { display: flex; align-items: center; gap: 6px; }
+
+/* ================= NEW-MESSAGES DIVIDER ================= */
+.newline { display: flex; align-items: center; gap: 12px; padding: 8px 16px 4px; }
+.newline .r { flex: 1; height: 1px; background: color-mix(in oklab, var(--face-rose) 60%, transparent); }
+.newline span { font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--face-rose); }
+
+/* ================= JUMP TO LATEST ================= */
+.jump {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 80px; z-index: 6;
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--ground-3); border: 1px solid var(--line);
+  border-radius: var(--r-pill); padding: 6px 14px; cursor: pointer;
+  font-size: var(--text-sm); font-weight: 600; color: var(--text);
+  box-shadow: var(--shadow-panel);
+}
+
+/* ================= REPLY ================= */
+.replyto {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 3px;
+  font-size: var(--text-xs); color: var(--text-mute); cursor: pointer;
+}
+.replyto .who { font-weight: 700; color: var(--rc); }
+.replyto .snip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46ch; }
+.reply-banner {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--ground-2); border: 1px solid var(--line);
+  border-radius: var(--r-md) var(--r-md) 0 0; border-bottom: 0;
+  padding: 7px 14px; font-size: var(--text-sm); color: var(--text-mute);
+  margin: 0 0 -2px;
+}
+.reply-banner b { color: var(--text-dim); }
+
+/* ================= TYPING ================= */
+.typing { display: flex; align-items: center; gap: 8px; padding: 2px 16px 4px; font-size: var(--text-xs); color: var(--text-mute); }
+.typing .dots { display: inline-flex; gap: 3px; align-items: flex-end; height: 10px; }
+.typing .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--text-mute); animation: tp 1.3s infinite ease-in-out; }
+.typing .dots i:nth-child(2) { animation-delay: .18s; }
+.typing .dots i:nth-child(3) { animation-delay: .36s; }
+@keyframes tp { 0%, 65%, 100% { opacity: .35; transform: translateY(0); } 32% { opacity: 1; transform: translateY(-3px); } }
+
+/* ================= THREAD PANEL ================= */
+.thread { width: 100%; background: var(--ground-1); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.thread .th { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: var(--text-sm); }
+.thread .root { background: var(--ground-2); }
+.thread .count { font-size: var(--text-xs); color: var(--text-mute); padding: 6px 16px; }
+
+/* ================= EMPTY STATE ================= */
+.empty { text-align: center; padding: 40px 24px; }
+.empty h3 { font-family: var(--font-display); font-size: var(--display-1); font-weight: 600; margin: 0 0 6px; letter-spacing: -.02em; }
+.empty p { color: var(--text-mute); margin: 0 auto 18px; max-width: 42ch; font-size: var(--text-sm); }
+
+/* ================= WREN =================
+   She has an inbox, not a megaphone: notices land in a panel you open. The
+   ladder above it (dot, inline card, popup) is rationed — see docs/12. */
+.wren-av {
+  width: 34px; height: 34px; border-radius: 50%; flex: none; position: relative;
+  background: linear-gradient(160deg, var(--face-lilac), var(--face-violet));
+  display: grid; place-items: center; color: #fff; overflow: hidden;
+}
+.wren-av img { width: 100%; height: 100%; object-fit: cover; }
+.wren-av .sev {
+  position: absolute; right: -2px; top: -2px; width: 11px; height: 11px;
+  border-radius: 50%; border: 2px solid var(--ground-1);
+}
+.wren-panel { width: 340px; background: var(--ground-1); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow-panel); }
+.wren-head { padding: 12px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
+.wren-head .t { font-weight: 700; }
+.wren-head .s { font-size: var(--text-xs); color: var(--text-mute); }
+.notice { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; }
+.notice .pip2 { width: 6px; height: 6px; border-radius: 50%; background: var(--sv); margin-top: 6px; flex: none; }
+.notice .nt { font-weight: 700; font-size: var(--text-sm); }
+.notice .nb { font-size: var(--text-sm); color: var(--text-mute); margin: 2px 0 9px; }
+.notice .na { display: flex; gap: 8px; flex-wrap: wrap; }
+.wren-foot { padding: 10px 14px; display: flex; align-items: center; gap: 8px; }
+
+.wren-card {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: color-mix(in oklab, var(--face-lilac) 10%, transparent);
+  border: 1px solid color-mix(in oklab, var(--face-lilac) 34%, transparent);
+  border-radius: var(--r-md); padding: 14px 16px;
+}
+
+.popup {
+  width: 420px; background: var(--ground-2); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-panel); overflow: hidden;
+}
+.popup .pbody { padding: 18px; display: flex; gap: 12px; }
+.popup .pfoot { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; }
+.popup h4 { margin: 0 0 6px; font-size: var(--text-lg); font-weight: 700; }
+.popup p { margin: 0; font-size: var(--text-sm); color: var(--text-dim); }
+
+/* ================= COMMAND SURFACE ================= */
+.palette { width: 100%; max-width: 540px; background: var(--ground-2); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-panel); overflow: hidden; }
+.palette .pin { display: flex; align-items: center; gap: 10px; padding: 13px 15px; border-bottom: 1px solid var(--line); }
+.palette .pin input { flex: 1; background: transparent; border: 0; color: var(--text); font: inherit; }
+.palette .pin input:focus { outline: none; }
+.palette .grp { font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); padding: 10px 15px 4px; }
+.palette .row { display: flex; align-items: center; gap: 10px; padding: 8px 15px; font-size: var(--text-sm); }
+.palette .row.sel { background: var(--ground-3); }
+.palette .row .sp { flex: 1; }
+.kbd { font-family: var(--font-mono); font-size: 10px; background: var(--ground-4); border-radius: 4px; padding: 2px 6px; color: var(--text-dim); }
+
+
+/* ================= CALLS =================
+   A call is just a room being loud: same audience, same keys, same roster.
+   Speaking is a RING, never a reorder — a grid that reshuffles per utterance
+   is unusable in a four-way conversation. */
+.stage { background: var(--ground-0); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.stage-head { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: var(--text-sm); }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 14px; }
+.tile {
+  aspect-ratio: 4/3; border-radius: var(--r-md); position: relative;
+  background: var(--ground-2); border: 2px solid transparent;
+  display: grid; place-items: center; overflow: hidden;
+}
+.tile.speaking { border-color: var(--fc); box-shadow: 0 0 0 3px color-mix(in oklab, var(--fc) 25%, transparent); }
+.tile .nm2 { position: absolute; left: 8px; bottom: 7px; font-size: var(--text-xs); font-weight: 700; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); display: flex; align-items: center; gap: 5px; }
+.tile .mute { position: absolute; right: 8px; bottom: 7px; color: var(--text-mute); }
+.tile.problem { border-color: color-mix(in oklab, var(--face-coral) 60%, transparent); }
+/* The error slab occupies the bottom, so a problem tile moves its name to the
+   top — otherwise you can see something is broken but not who. */
+.tile.problem .nm2 { bottom: auto; top: 7px; }
+.tile-err {
+  position: absolute; inset: auto 0 0 0; background: color-mix(in oklab, var(--face-coral) 22%, var(--ground-3));
+  padding: 7px 9px; font-size: 11px; color: var(--text); line-height: 1.35;
+}
+.callbar { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 12px 14px 16px; }
+.cbtn {
+  width: 42px; height: 42px; border-radius: 50%; border: 0; cursor: pointer;
+  background: var(--ground-3); color: var(--text); display: grid; place-items: center;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.cbtn.off { background: var(--ground-4); color: var(--text-mute); }
+.cbtn.leave { background: linear-gradient(180deg, #e01868, #c82e6e); color: #fff; box-shadow: 0 var(--lift) 0 #9c1049; width: 56px; border-radius: var(--r-pill); }
+.incoming {
+  width: 300px; background: var(--ground-2); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 16px; box-shadow: var(--shadow-panel);
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px;
+}
+.vroom-occ { display: flex; gap: -6px; margin-left: 4px; }
+.vroom-occ .av { margin-left: -7px; border: 2px solid var(--ground-1); }
+
+/* ================= CRYPTO SURFACES ================= */
+.keyrow { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px dashed var(--line); }
+.keyrow:last-of-type { border-bottom: 0; }
+.keyrow .kn { font-weight: 600; min-width: 130px; }
+.keyrow .kv { color: var(--text-mute); font-size: var(--text-sm); flex: 1; }
+.safety {
+  font-family: var(--font-mono); font-size: 15px; letter-spacing: .06em; line-height: 1.9;
+  background: var(--ground-3); border-radius: var(--r-sm); padding: 12px 14px; text-align: center;
+}
+.qr {
+  width: 104px; height: 104px; flex: none; border-radius: var(--r-sm);
+  background:
+    repeating-linear-gradient(90deg, var(--text) 0 8px, transparent 8px 16px),
+    repeating-linear-gradient(0deg, var(--text) 0 8px, transparent 8px 16px);
+  background-color: var(--ground-1); opacity: .85;
+}
+.sees { border-left: 3px solid var(--face-mint); background: color-mix(in oklab, var(--face-mint) 8%, transparent); border-radius: 0 var(--r-md) var(--r-md) 0; padding: 14px 16px; }
+.sees .k2 { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--face-mint); margin-bottom: 6px; }
+
+
+/* ================= PHONE FRAME ================= */
+.phone {
+  width: 386px; height: 740px; flex: none; position: relative; overflow: hidden;
+  border-radius: 32px; border: 8px solid var(--ground-4);
+  background: var(--ground-0); box-shadow: var(--shadow-panel);
+  display: flex; flex-direction: column;
+}
+.phone-head { padding: 11px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; flex: none; }
+.phone-head .t { font-weight: 700; }
+.phone-body { flex: 1; overflow: hidden; padding: 8px 0; }
+.phone-foot { flex: none; padding: 8px 10px 12px; }
+.phone-drawer {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 296px; z-index: 6;
+  background: var(--ground-1); border-right: 1px solid var(--line);
+  box-shadow: 14px 0 40px rgba(0,0,0,.45); display: flex; flex-direction: column;
+}
+.phone-scrim { position: absolute; inset: 0; z-index: 5; background: var(--scrim); }
+.spaces-strip { display: flex; gap: 8px; padding: 12px 12px 10px; border-bottom: 1px solid var(--line); }
+.spaces-strip .rail-item { width: 40px; height: 40px; font-size: 14px; }
+.sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 7;
+  background: var(--ground-2); border-top: 1px solid var(--line);
+  border-radius: var(--r-lg) var(--r-lg) 0 0; padding: 8px 0 14px;
+  box-shadow: 0 -12px 40px rgba(0,0,0,.45);
+}
+.sheet .grab { width: 40px; height: 4px; border-radius: 2px; background: var(--ground-4); margin: 4px auto 10px; }
+.sheet-row { display: flex; align-items: center; gap: 12px; padding: 11px 18px; font-weight: 600; }
+.sheet-row.sel { background: var(--ground-3); }
+
+/* ================= PAIRING ================= */
+.pair-code {
+  font-family: var(--font-mono); font-size: 22px; font-weight: 600; letter-spacing: .14em;
+  background: var(--ground-3); border: 1px dashed var(--line); border-radius: var(--r-md);
+  padding: 14px 18px; text-align: center;
+}
+.cmd {
+  font-family: var(--font-mono); font-size: var(--text-sm);
+  background: var(--ground-0); border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 11px 14px; color: var(--text-dim); overflow-x: auto; white-space: nowrap;
+}
+.waiting { display: flex; align-items: center; gap: 9px; font-size: var(--text-sm); color: var(--text-mute); }
+.waiting .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--face-gold); animation: pl 1.4s infinite ease-in-out; }
+@keyframes pl { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+
+/* ================= APP SHELL ================= */
+.shell {
+  display: grid;
+  grid-template-columns: 76px 250px 1fr 240px;
+  height: 620px; border-radius: var(--r-lg); overflow: hidden;
+  border: 1px solid var(--line); background: var(--ground-0);
+  box-shadow: var(--shadow-panel);
+}
+.rail { background: var(--ground-1); padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 10px; border-right: 1px solid var(--line); }
+.rail-item {
+  width: 48px; height: 48px; border-radius: var(--r-md); cursor: pointer;
+  display: grid; place-items: center; font-weight: 800;
+  color: #fff; position: relative; transition: border-radius var(--t-base) var(--ease-toy);
+  border: 0; font-family: inherit; font-size: 16px;
+}
+.rail-item:hover { border-radius: var(--r-sm); }
+.rail-item.active::before {
+  content: ''; position: absolute; left: -14px; top: 50%; transform: translateY(-50%);
+  width: 4px; height: 26px; border-radius: var(--r-pill); background: var(--text);
+}
+.sidebar { background: var(--ground-1); border-right: 1px solid var(--line); display: flex; flex-direction: column; overflow: hidden; }
+.space-head {
+  padding: 14px 16px; border-bottom: 1px solid var(--line);
+  font-weight: 700; font-size: var(--text-lg);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.room-list { overflow-y: auto; padding: 10px 8px; flex: 1; }
+.cat { font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); padding: 12px 8px 4px; }
+.room {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 10px; border-radius: var(--r-sm); cursor: pointer;
+  color: var(--text-mute); border: 0; background: transparent;
+  font: inherit; font-weight: 600; text-align: left;
+}
+.room:hover { background: var(--ground-2); color: var(--text-dim); }
+.room.active { background: var(--ground-3); color: var(--text); }
+.room.unread { color: var(--text); }
+.room .glyph { opacity: .6; font-size: 15px; }
+.room .spacer { flex: 1; }
+.pill-count {
+  background: var(--face-rose); color: #fff; font-size: 11px; font-weight: 800;
+  border-radius: var(--r-pill); padding: 1px 7px;
+}
+.chat { display: flex; flex-direction: column; overflow: hidden; background: var(--ground-0); position: relative; }
+.chat-head {
+  padding: 12px 16px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 12px; flex: none;
+}
+.chat-head .title { font-weight: 700; font-size: var(--text-lg); }
+.chat-head .topic { color: var(--text-mute); font-size: var(--text-sm); border-left: 1px solid var(--line); padding-left: 12px; }
+.msgs { flex: 1; overflow-y: auto; padding: 12px 0; }
+.members { background: var(--ground-1); border-left: 1px solid var(--line); padding: 14px 12px; overflow-y: auto; }
+.mem { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-sm); cursor: pointer; }
+.mem:hover { background: var(--ground-2); }
+.mem .nm { font-weight: 600; font-size: var(--text-sm); color: var(--fc); }
+.mem .sub { font-size: 11px; color: var(--text-mute); }
+
+/* ================= BANNERS ================= */
+.banner {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 16px; border-radius: var(--r-md);
+  border: 1px solid color-mix(in oklab, var(--bc) 42%, transparent);
+  background: color-mix(in oklab, var(--bc) 12%, transparent);
+  margin-bottom: 10px;
+}
+.banner .pip { width: 8px; height: 8px; border-radius: 50%; background: var(--bc); flex: none; margin-top: 7px; }
+.banner .bt { font-weight: 700; color: var(--bc); }
+.banner .bd { font-size: var(--text-sm); color: var(--text-dim); }
+.banner .acts { margin-left: auto; display: flex; gap: 8px; flex: none; align-self: center; }
+
+/* ================= MOMENT SCREEN =================
+   Asymmetric and left-aligned, built from light, depth and type rather than
+   a borrowed set of props. Ambient haze, no cartoon clouds, no scattered
+   stars. What it keeps from the reference is the move that matters: blunt
+   small print sitting directly under the thing it qualifies. */
+.moment {
+  position: relative; overflow: hidden;
+  border-radius: var(--r-lg); border: 1px solid var(--line);
+  background: var(--moment-bg); padding: 64px 56px; min-height: 520px;
+  display: flex; align-items: center;
+}
+.moment .inner { position: relative; z-index: 2; max-width: 30rem; }
+.moment .eyebrow {
+  font-size: var(--text-sm); font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: color-mix(in oklab, var(--text) 62%, transparent);
+}
+.moment h1 {
+  font-family: var(--font-display); font-size: var(--display-3); line-height: .98;
+  margin: 10px 0 20px; font-weight: 600; letter-spacing: -.03em;
+}
+.moment p.lede { color: color-mix(in oklab, var(--text) 84%, transparent); margin: 0 0 26px; }
+.code-plate {
+  font-family: var(--font-mono); font-size: 20px; font-weight: 600; letter-spacing: .12em;
+  background: rgba(0,0,0,.26); border: 1px solid color-mix(in oklab, var(--text) 26%, transparent);
+  border-radius: var(--r-md); padding: 18px 22px; margin: 0 0 22px; word-spacing: .3em;
+}
+[data-theme='daylight'] .code-plate { background: rgba(255,255,255,.6); }
+.moment .smallprint { font-size: var(--text-sm); color: color-mix(in oklab, var(--text) 62%, transparent); margin-top: 24px; line-height: 1.7; }
+.haze { position: absolute; z-index: 0; border-radius: 50%; filter: blur(60px); pointer-events: none; opacity: .5; }
+/* Character art bleeds off the bottom edge and overlaps the panel, the way the
+   reference does it — she is IN the layout, not pasted onto it. */
+.art-slot {
+  position: absolute; right: 3%; bottom: 0; z-index: 2;
+  height: 440px; width: auto; object-fit: contain; object-position: bottom;
+  pointer-events: none;
+  /* The render has a black background and her hoodie is black too, so keying
+     it out would eat the character. Instead the frame edges are masked away
+     so she emerges from shadow rather than sitting in a visible rectangle.
+     The proper fix is a transparent-background render — see docs/20. */
+  -webkit-mask-image:
+    linear-gradient(to right, transparent 0%, #000 14%, #000 86%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, #000 18%, #000 100%);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent 0%, #000 14%, #000 86%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, #000 18%, #000 100%);
+  mask-composite: intersect;
+}
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 1000px) {
+  .two-col { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: 68px 1fr; }
+  .shell .members, .shell .sidebar { display: none; }
+  .art-slot { display: none; }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <!-- The mark: three discs, ringed in whatever's behind them so they stay
+       distinct where they overlap. A few people, together, all visible. -->
+  <symbol id="mark" viewBox="0 0 100 100">
+    <g stroke="var(--mark-stroke, #14102a)" stroke-width="7">
+      <circle cx="29.58" cy="42.08" r="21" fill="currentColor"/>
+      <circle cx="63.82" cy="30.96" r="21" fill="currentColor"/>
+      <circle cx="56.59" cy="66.96" r="21" fill="currentColor"/>
+    </g>
+  </symbol>
+
+  <!-- Icon set. 24x24, stroke-only, currentColor. No emoji anywhere in the
+       product's own chrome — emoji are user content, never UI furniture. -->
+  <symbol id="ic-attach" viewBox="0 0 24 24"><path d="M20.5 11.5l-8.4 8.4a4.6 4.6 0 0 1-6.5-6.5l8.7-8.7a3.1 3.1 0 0 1 4.4 4.4l-8.6 8.6a1.6 1.6 0 0 1-2.2-2.2l7.8-7.8"/></symbol>
+  <symbol id="ic-face" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.6 4.6 0 0 0 7 0"/><path d="M9 9.5h.01M15 9.5h.01"/></symbol>
+  <symbol id="ic-send" viewBox="0 0 24 24"><path d="M21 3L10.5 13.5"/><path d="M21 3l-6.8 18-3.7-7.5L3 9.8z"/></symbol>
+  <symbol id="ic-reply" viewBox="0 0 24 24"><path d="M10 9L5 14l5 5"/><path d="M5 14h9a5 5 0 0 0 5-5V6"/></symbol>
+  <symbol id="ic-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01"/></symbol>
+  <symbol id="ic-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="ic-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="ic-check" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></symbol>
+  <symbol id="ic-chevron" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+  <symbol id="ic-voice" viewBox="0 0 24 24"><path d="M4 9.5h3L12 5v14l-5-4.5H4z"/><path d="M16 9.5a4 4 0 0 1 0 5"/><path d="M18.8 7a8 8 0 0 1 0 10"/></symbol>
+  <symbol id="ic-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.2 9.5h17.6M3.2 14.5h17.6"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/></symbol>
+  <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4.4-4.4"/></symbol>
+  <symbol id="ic-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+  <symbol id="ic-thread" viewBox="0 0 24 24"><path d="M7 4v7a4 4 0 0 0 4 4h6"/><path d="M14 12l3 3-3 3"/></symbol>
+  <symbol id="ic-feather" viewBox="0 0 24 24"><path d="M20 4c-4.5-.6-9 1.5-11 5.5-1.2 2.4-1.4 5-1 7.5l7-7"/><path d="M4 20l5-5"/><path d="M9 15h4.5"/></symbol>
+  <symbol id="ic-key" viewBox="0 0 24 24"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3.5M15.5 12v2.5"/></symbol>
+  <symbol id="ic-mic" viewBox="0 0 24 24"><path d="M12 3.5a2.6 2.6 0 0 1 2.6 2.6v5.5a2.6 2.6 0 0 1-5.2 0V6.1A2.6 2.6 0 0 1 12 3.5z"/><path d="M5.5 11.2a6.5 6.5 0 0 0 13 0"/><path d="M12 17.7V20.5"/></symbol>
+  <symbol id="ic-mic-off" viewBox="0 0 24 24"><path d="M12 3.5a2.6 2.6 0 0 1 2.6 2.6v5.5a2.6 2.6 0 0 1-5.2 0V6.1A2.6 2.6 0 0 1 12 3.5z"/><path d="M5.5 11.2a6.5 6.5 0 0 0 13 0"/><path d="M12 17.7V20.5"/><path d="M4 4l16 16"/></symbol>
+  <symbol id="ic-video" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h9A1.5 1.5 0 0 1 15 7.5v9A1.5 1.5 0 0 1 13.5 18h-9A1.5 1.5 0 0 1 3 16.5z"/><path d="M15 11l6-3.5v9L15 13"/></symbol>
+  <symbol id="ic-screen" viewBox="0 0 24 24"><path d="M3 5.5h18v11H3z"/><path d="M8.5 20h7M12 16.5V20"/></symbol>
+  <symbol id="ic-hangup" viewBox="0 0 24 24"><g transform="rotate(135 12 12)"><path d="M6.5 3.5l3 1 1 4-2 1.5a12 12 0 0 0 5.5 5.5l1.5-2 4 1 1 3a2 2 0 0 1-2 2C11 19.5 4.5 13 4.5 5.5a2 2 0 0 1 2-2z"/></g></symbol>
+  <symbol id="ic-captions" viewBox="0 0 24 24"><path d="M3 5.5h18v13H3z"/><path d="M7 11h4M14 11h3M7 15h6"/></symbol>
+  <symbol id="ic-people" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.5"/><path d="M2.8 19.5a6.4 6.4 0 0 1 12.4 0"/><path d="M16.5 5.4a3.5 3.5 0 0 1 0 6.6"/><path d="M18 19.5a6.5 6.5 0 0 0-1.6-4.3"/></symbol>
+
+  <!-- Face-coloured variant: the same cluster, drawn from the face palette. -->
+  <symbol id="mark-faces" viewBox="0 0 100 100">
+    <g stroke="var(--mark-stroke, #14102a)" stroke-width="7">
+      <circle cx="29.58" cy="42.08" r="21" fill="var(--face-aqua)"/>
+      <circle cx="63.82" cy="30.96" r="21" fill="var(--face-gold)"/>
+      <circle cx="56.59" cy="66.96" r="21" fill="var(--face-rose)"/>
+    </g>
+  </symbol>
+</svg>
+
+<div class="toolbar">
+  <div class="grp">
+    <label>Theme</label>
+    <div class="seg" id="theme-seg">
+      <button data-v="dusk" aria-pressed="true">Dusk</button>
+      <button data-v="midnight" aria-pressed="false">Midnight</button>
+      <button data-v="daylight" aria-pressed="false">Daylight</button>
+    </div>
+  </div>
+  <div class="grp">
+    <label>Density</label>
+    <div class="seg" id="density-seg">
+      <button data-v="cozy" aria-pressed="true">Cozy</button>
+      <button data-v="compact" aria-pressed="false">Compact</button>
+    </div>
+  </div>
+  <div class="grp">
+    <label>Personality</label>
+    <div class="seg" id="personality-seg">
+      <button data-v="full" aria-pressed="true">Full</button>
+      <button data-v="calm" aria-pressed="false">Calm</button>
+    </div>
+  </div>
+  <div class="grp">
+    <label>Motion</label>
+    <div class="seg" id="motion-seg">
+      <button data-v="on" aria-pressed="true">On</button>
+      <button data-v="off" aria-pressed="false">Reduced</button>
+    </div>
+  </div>
+</div>
+
+<main>
+
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="haze" style="width:520px;height:520px;background:var(--face-violet);left:-160px;top:-140px"></div>
+    <div class="haze" style="width:380px;height:380px;background:var(--face-rose);right:26%;bottom:-180px;opacity:.3"></div>
+    <div class="haze" style="width:300px;height:300px;background:var(--face-aqua);left:34%;top:-150px;opacity:.26"></div>
+    <img class="hero-art" src="wren/wren-portrait-01.png" alt="Wren">
+    <div class="inner">
+      <div class="wm">
+        <span class="mark" style="color:var(--text);width:30px"><svg width="30" height="30"><use href="#mark"/></svg></span>
+        <span class="n">Revel</span>
+      </div>
+      <h1>Somewhere to actually talk.</h1>
+      <p class="sub">Every room is end to end encrypted, with no cleartext path and no exceptions. Your headmates and your computer friends are members here, not features. And anything that can read a room is sitting in the member list where you can see it.</p>
+      <div class="cta">
+        <button class="btn btn-primary">Make an account</button>
+        <button class="btn btn-secondary">Run your own</button>
+      </div>
+      <div class="fine">
+        We can't read your messages.<br>
+        We also can't search them for you, recover them, or tell you what you missed.<br>
+        That's the trade, and we'd rather say it now than in a support email.
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============ PRINCIPLES ============ -->
+  <section>
+    <h2 class="sec">What this is</h2>
+    <p class="sec-note">The visual system for Revel. Every rule here exists because of a decision recorded in <code style="font-family:var(--font-mono)">docs/07-design-language.md</code> — this page is the running version of it, so if the two disagree, believe this one.</p>
+    <div class="two-col">
+      <div class="panel">
+        <div style="font-weight:700;margin-bottom:8px">The register</div>
+        <div style="font-size:var(--text-sm);color:var(--text-dim)">
+          Grounds that are tinted and warm, never neutral grey. Saturated jewel
+          darks. Bright candy accents used for <em>people</em>, not just ornament.
+          Controls that feel like objects you press. Generous rounding. Glow used
+          with restraint. And above all the tone: playful on the surface, blunt
+          about limits in the small print directly underneath.
+        </div>
+      </div>
+      <div class="panel">
+        <div style="font-weight:700;margin-bottom:8px">The identity</div>
+        <div style="font-size:var(--text-sm);color:var(--text-dim)">
+          A mark of three overlapping discs — a few people in a place, everyone
+          visible, which is the product's thesis rather than an ornament. A plain
+          dot for unread. A hairline that fades at the ends for "caught up".
+          Ambient haze rather than props. A raised button whose lift is a darker
+          shade of its own hue, with no heavy outline. Fraunces for voice.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MARK ============ -->
+  <section>
+    <h2 class="sec">The mark</h2>
+    <p class="sec-note">Three overlapping discs, each ringed in whatever's behind it so they stay legible where they cross. It reads as a small group in a room — many faces, one place, nobody hidden. Works at 16px and in one colour; the face-palette variant ties the logo to the actual people in your rooms. Rotated 18 degrees about its centroid — a stable triangle is a diagram of a group; a tilted one is a moment. Sizes run 48 / 32 / 24 / 16 / 12px; the tilt reads down to about 12px, where it becomes a cluster anyway.</p>
+    <div class="panel" style="display:flex;align-items:center;gap:40px;flex-wrap:wrap">
+      <div class="applogo"><span class="mark" style="width:32px"><svg width="32" height="32"><use href="#mark-faces"/></svg></span></div>
+      <div class="wordmark"><span class="mark" style="color:var(--face-violet);width:30px"><svg width="30" height="30"><use href="#mark"/></svg></span>Revel</div>
+      <div style="display:flex;gap:22px;align-items:flex-end">
+        <span class="mark" style="color:var(--text);width:48px"><svg width="48" height="48"><use href="#mark"/></svg></span>
+        <span class="mark" style="color:var(--face-aqua);width:32px"><svg width="32" height="32"><use href="#mark"/></svg></span>
+        <span class="mark" style="width:24px"><svg width="24" height="24"><use href="#mark-faces"/></svg></span>
+        <span class="mark" style="color:var(--text-mute);width:16px"><svg width="16" height="16"><use href="#mark"/></svg></span>
+        <span class="mark" style="color:var(--text-mute);width:12px"><svg width="12" height="12"><use href="#mark"/></svg></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ COLOUR ============ -->
+  <section>
+    <h2 class="sec">Colour</h2>
+    <p class="sec-note">Grounds are violet- or navy-tinted, never neutral grey — that one decision is most of why the reference feels warm and why most chat apps feel like an office. The candy accents are shared between decoration and the face palette: every headmate and member picks one, and it drives their name colour, avatar ring and bubble tint.</p>
+    <div class="panel">
+      <div style="font-weight:700;margin-bottom:10px">Surfaces</div>
+      <div class="grounds" id="grounds"></div>
+      <div style="font-weight:700;margin:22px 0 10px">Candy accents <span style="color:var(--text-mute);font-weight:500;font-size:var(--text-sm)">— fill on top, text-safe ink below where they differ. The ratio measures the <em>ink</em> against <code style="font-family:var(--font-mono)">--ground-0</code>: 4.5 = body text, 3.0 = large only. Switch to Daylight to see the split appear.</span></div>
+      <div class="swatches" id="swatches"></div>
+    </div>
+  </section>
+
+  <!-- ============ TYPE ============ -->
+  <section>
+    <h2 class="sec">Type</h2>
+    <p class="sec-note">Two families. Figtree does all the reading work — it stays legible at 15px for hours. Fraunces is the voice: section headings and moment screens. The first draft used a rounded geometric for display, which is the reference's own lane and made our work look like a copy of hers.</p>
+    <div class="panel">
+      <div class="type-row"><span class="tag">Fraunces 56 / moment</span><span class="moment-word">Save this.</span></div>
+      <div class="type-row"><span class="tag">Fraunces 40 / display</span><span style="font-family:var(--font-display);font-size:var(--display-2);font-weight:600;letter-spacing:-.025em">A place to be a person</span></div>
+      <div class="type-row"><span class="tag">Fraunces 24 / heading</span><span style="font-family:var(--font-display);font-size:var(--text-xl);font-weight:600">Room settings</span></div>
+      <div class="type-row"><span class="tag">Figtree 700 / 18 UI title</span><span style="font-size:var(--text-lg);font-weight:700">design</span></div>
+      <div class="type-row"><span class="tag">Figtree 400 / 15 body</span><span>Computers can be heartwarming and supportive. Not in escapism, but in friendship.</span></div>
+      <div class="type-row"><span class="tag">Figtree 600 / 13 label</span><span style="font-size:var(--text-sm);font-weight:600;color:var(--text-dim)">New members can read past messages</span></div>
+      <div class="type-row"><span class="tag">Figtree 400 / 12 small print</span><span style="font-size:var(--text-xs);color:var(--text-mute)">We can't reset your password. That's the point, but it does mean this matters.</span></div>
+      <div class="type-row"><span class="tag">JetBrains Mono / secrets</span><span style="font-family:var(--font-mono)">SPQR-4K7M-XN2A-9WTD</span></div>
+    </div>
+  </section>
+
+  <!-- ============ BUTTONS ============ -->
+  <section>
+    <h2 class="sec">Buttons and controls</h2>
+    <p class="sec-note">Raised, and they press down — tactility is the idea worth keeping. What changed is the costume: the lift is a short offset in a darker shade of the button's own hue, with no heavy near-black outline. Primary actions only; everything else stays flat so the important thing looks important. Under <em>calm</em> the lift goes to zero and it degrades to a clean flat button.</p>
+    <div class="panel">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:20px">
+        <button class="btn btn-primary">I have a code</button>
+        <button class="btn btn-brand">Create a space</button>
+        <button class="btn btn-gold">Join our community</button>
+        <button class="btn btn-secondary">Learn more</button>
+        <button class="btn btn-ghost">Not now</button>
+        <button class="btn btn-primary" disabled>Disabled</button>
+        <button class="btn btn-secondary btn-sm">Small</button>
+      </div>
+      <div class="two-col">
+        <div>
+          <label class="field">
+            <span class="lbl">Handle</span>
+            <input class="input" placeholder="viola@revel.chat">
+            <span class="hint">Your name lives with an identity provider. You can move it later without losing your account.</span>
+          </label>
+          <label class="field">
+            <span class="lbl">Password</span>
+            <input class="input" type="password" value="hunter2hunter2">
+          </label>
+        </div>
+        <div>
+          <div class="toggle">
+            <button class="switch" aria-checked="true" role="switch" aria-label="History on"></button>
+            <div><div class="t-name">New members can read past messages</div><div class="t-desc">Anyone who joins later gets the full backlog. Turning this off only affects future joins — it can't un-send what people already have.</div></div>
+          </div>
+          <div class="toggle">
+            <button class="switch" aria-checked="false" role="switch" aria-label="Previews off"></button>
+            <div><div class="t-name">Show message previews on your lock screen</div><div class="t-desc">Your phone decrypts it locally. We never send the text in a notification, but your lock screen is a screen anyone can look at.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MESSAGES ============ -->
+  <section>
+    <h2 class="sec">Two message styles</h2>
+    <p class="sec-note"><strong>There is not one emoji on this page.</strong> Every glyph is a drawn icon, and the reaction chips are custom emotes — images a community uploaded. Emoji are user content: they appear in the picker, in a reaction someone chose, and in text someone typed, and nowhere else in the product. The reference shows bubbles; a busy room wants grouped rows. Both are built, and the default follows the room kind — bubbles for DMs, rows for space rooms — with a per-room override. Note the rows: two consecutive messages from <strong>the same account, different faces</strong>. That's the plurality model rendering as an ordinary thing rather than a bot trick.</p>
+    <div class="two-col">
+      <div class="panel" style="padding:14px 0">
+        <div style="padding:0 16px 10px;font-weight:700">Rows — space rooms</div>
+        <div class="msg-row" style="--fc:var(--face-sky)">
+          <div class="av-slot"><div class="av av-40" style="background:var(--face-sky)">E<span class="ring"></span><span class="dot dot-online"></span></div></div>
+          <div class="msg-body">
+            <div class="author-line"><span class="author">Emeri</span><span class="stamp">2 mins ago</span></div>
+            <div class="msg-text">Hello! This is a test message. I hope it reaches someone... anyone...</div>
+          </div>
+          <div class="msg-actions"><button title="React"><svg class="ic"><use href="#ic-plus"/></svg></button><button title="Reply"><svg class="ic"><use href="#ic-reply"/></svg></button><button title="Translate"><svg class="ic"><use href="#ic-globe"/></svg></button><button title="More"><svg class="ic"><use href="#ic-more"/></svg></button></div>
+        </div>
+        <div class="msg-row cont" style="--fc:var(--face-sky)">
+          <div class="av-slot"></div>
+          <div class="msg-body">
+            <div class="msg-text">Still hoping...</div>
+            <div class="reactions">
+              <button class="rx on"><span class="emote" style="--e:var(--rose)"></span><span class="n">3</span></button>
+              <button class="rx"><span class="emote" style="--e:var(--sky)"></span><span class="n">1</span></button>
+            </div>
+          </div>
+        </div>
+        <div class="msg-row" style="--fc:var(--face-rose)">
+          <div class="av-slot"><div class="av av-40" style="background:var(--face-rose)">R<span class="ring"></span><span class="dot dot-dnd"></span></div></div>
+          <div class="msg-body">
+            <div class="author-line"><span class="author">Rae</span><span class="stamp">just now</span></div>
+            <div class="msg-text">Oh my god, sorry, I forgot my phone on DND.</div>
+          </div>
+        </div>
+        <div class="msg-row" style="--fc:var(--face-mint)">
+          <div class="av-slot"><div class="av av-40" style="background:var(--face-mint)">J<span class="ring"></span></div></div>
+          <div class="msg-body">
+            <div class="author-line">
+              <span class="author">June</span>
+              <span class="badge">same system</span>
+              <span class="stamp">just now</span>
+            </div>
+            <div class="msg-text">she does this every single time</div>
+            <div class="attach">image attachment</div>
+            <div class="annot">
+              <div class="who">Kiko &middot; note</div>
+              <div style="font-size:var(--text-sm)">for the record, she does not do this every single time</div>
+            </div>
+          </div>
+        </div>
+        <div class="caughtup"><div class="fade-rule l"></div><span>You're all caught up</span><div class="fade-rule r"></div></div>
+      </div>
+
+      <div class="panel" style="padding:14px 0">
+        <div style="padding:0 16px 10px;font-weight:700">Bubbles — DMs</div>
+        <div class="bub-row" style="--fc:var(--face-lilac)">
+          <div class="av av-32" style="background:var(--face-lilac)">A</div>
+          <div class="bub">
+            <div class="author-line"><span class="author" style="font-size:var(--text-sm)">Ash</span><span class="stamp">2:14</span></div>
+            <div class="msg-text">hey! are you around later? i want to show you the thing</div>
+          </div>
+        </div>
+        <div class="bub-row mine" style="--fc:var(--face-aqua)">
+          <div class="av av-32" style="background:var(--face-aqua)">V</div>
+          <div class="bub"><div class="msg-text">yes. bring the thing.</div></div>
+        </div>
+        <div class="bub-row mine" style="--fc:var(--face-aqua)">
+          <div class="av av-32" style="visibility:hidden"></div>
+          <div class="bub">
+            <div class="msg-text">actually wait, is it the cursed thing</div>
+            <div class="reactions"><button class="rx on"><span class="emote" style="--e:var(--gold)"></span><span class="n">1</span></button></div>
+          </div>
+        </div>
+        <div class="bub-row" style="--fc:var(--face-lilac)">
+          <div class="av av-32" style="background:var(--face-lilac)">A</div>
+          <div class="bub"><div class="msg-text">it is absolutely the cursed thing</div></div>
+        </div>
+        <div class="composer" style="--fc:var(--face-aqua)">
+          <div class="composer-box">
+            <button class="face-chip"><span class="av av-24" style="background:var(--face-aqua)">V</span>Viola</button>
+            <input class="composer-input" placeholder="Message Ash">
+            <button class="icon-btn" title="Attach"><svg class="ic ic-lg"><use href="#ic-attach"/></svg></button>
+            <button class="icon-btn" title="Emoji"><svg class="ic ic-lg"><use href="#ic-face"/></svg></button>
+            <button class="send-btn" title="Send"><svg class="ic ic-lg"><use href="#ic-send"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ EVERYDAY UX ============ -->
+  <section>
+    <h2 class="sec">Everyday UX</h2>
+    <p class="sec-note">The parts you touch a thousand times a day, which is where an app is actually won or lost. None of this is novel — it is the set of small affordances that every good chat client has and that a rewrite always forgets until month six, so it is specified now.</p>
+    <div class="two-col">
+      <div class="panel" style="padding:14px 0">
+        <div style="padding:0 16px 10px;font-weight:700">Finding your place</div>
+        <div class="msg-row" style="--fc:var(--face-sky)">
+          <div class="av-slot"><div class="av av-40" style="background:var(--face-sky)">E<span class="ring"></span></div></div>
+          <div class="msg-body">
+            <div class="author-line"><span class="author">Emeri</span><span class="stamp">08:12</span></div>
+            <div class="msg-text">read this when you wake up</div>
+          </div>
+        </div>
+        <div class="newline"><div class="r"></div><span>New</span><div class="r"></div></div>
+        <div class="msg-row" style="--fc:var(--face-rose)">
+          <div class="av-slot"><div class="av av-40" style="background:var(--face-rose)">R<span class="ring"></span></div></div>
+          <div class="msg-body">
+            <div class="replyto" style="--rc:var(--face-sky)"><svg class="ic"><use href="#ic-reply"/></svg><span class="who">Emeri</span><span class="snip">read this when you wake up</span></div>
+            <div class="author-line"><span class="author">Rae</span><span class="stamp">09:30</span></div>
+            <div class="msg-text">I am awake. I have read it. I have opinions.</div>
+          </div>
+        </div>
+        <div class="typing"><span class="dots"><i></i><i></i><i></i></span> Emeri is typing</div>
+        <div style="padding:8px 16px 0;font-size:var(--text-sm);color:var(--text-mute)">
+          A <strong>New</strong> line that survives reload and sits where you actually stopped
+          reading — not where the app last rendered. A reply shows a one-line
+          preview that jumps to its target. Typing is an ephemeral event, never
+          stored, and never wakes a phone.
+        </div>
+      </div>
+
+      <div class="panel">
+        <div style="font-weight:700;margin-bottom:10px">Replying, and threads</div>
+        <div style="margin-bottom:16px">
+          <div class="reply-banner"><svg class="ic"><use href="#ic-reply"/></svg> Replying to <b>Rae</b><span style="flex:1"></span><svg class="ic"><use href="#ic-close"/></svg></div>
+          <div class="composer-box" style="--fc:var(--face-mint);border-radius:0 0 var(--r-md) var(--r-md)">
+            <button class="face-chip"><span class="av av-24" style="background:var(--face-mint)">J</span>June</button>
+            <input class="composer-input" placeholder="Message #design">
+            <button class="send-btn"><svg class="ic ic-lg"><use href="#ic-send"/></svg></button>
+          </div>
+        </div>
+        <div class="thread">
+          <div class="th"><svg class="ic"><use href="#ic-thread"/></svg> Thread<span style="flex:1"></span><span style="font-weight:500;color:var(--text-mute);font-size:var(--text-xs)">4 replies</span></div>
+          <div class="msg-row root" style="--fc:var(--face-rose)">
+            <div class="av-slot"><div class="av av-40" style="background:var(--face-rose)">R<span class="ring"></span></div></div>
+            <div class="msg-body">
+              <div class="author-line"><span class="author">Rae</span><span class="stamp">11:02</span></div>
+              <div class="msg-text">the buttons need to feel like you can press them.</div>
+            </div>
+          </div>
+          <div class="count">4 replies</div>
+          <div class="msg-row" style="--fc:var(--face-aqua)">
+            <div class="av-slot"><div class="av av-40" style="background:var(--face-aqua)">V<span class="ring"></span></div></div>
+            <div class="msg-body">
+              <div class="author-line"><span class="author">Viola</span><span class="stamp">11:04</span></div>
+              <div class="msg-text">hard shadow, no blur</div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:var(--text-sm);color:var(--text-mute);margin-top:12px">
+          Threads open beside the room on desktop and as a pushed view on a phone.
+          The room keeps a one-line "4 replies" stub so a thread never hides
+          activity from people not in it.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:18px">
+      <div style="font-weight:700;margin-bottom:12px">An empty room</div>
+      <div class="empty">
+        <h3>Nothing here yet</h3>
+        <p>This is yours. Say something, or invite someone — nobody can read it but the people you put in it.</p>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-brand">Invite someone</button>
+          <button class="btn btn-secondary">Room settings</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TRANSLATION ============ -->
+  <section>
+    <h2 class="sec">Translation</h2>
+    <p class="sec-note">Built in, and it can only work one way: the server can't read messages, so translation happens <strong>on this device</strong> or it's posted by a member who is visibly in the roster. Cloud translation is never an option — shipping a decrypted message to Google Translate would undo the entire product. Chrome and Edge now expose an on-device <code style="font-family:var(--font-mono)">Translator</code> API; everything else falls back to bundled Marian models. Full design in <code style="font-family:var(--font-mono)">docs/10-translation.md</code>.</p>
+    <div class="two-col">
+      <div class="panel" style="padding:14px 0">
+        <div style="padding:0 16px 10px;font-weight:700">Local — private, nothing posted</div>
+        <div class="msg-row" style="--fc:var(--face-coral)">
+          <div class="av-slot"><div class="av av-40" style="background:var(--face-coral)">M<span class="ring"></span><span class="dot dot-online"></span></div></div>
+          <div class="msg-body">
+            <div class="author-line"><span class="author">Mika</span><span class="stamp">09:41</span></div>
+            <div class="tr">
+              <div class="msg-text">I can't make it tonight, my train is cancelled. Tomorrow instead?</div>
+              <div class="src"><svg class="ic"><use href="#ic-globe"/></svg> Translated on this device &middot; German to English &middot; <span style="color:var(--text-dim);text-decoration:underline">Show original</span></div>
+              <div class="orig">Ich schaffe es heute Abend nicht, mein Zug ist ausgefallen. Stattdessen morgen?</div>
+            </div>
+          </div>
+        </div>
+        <div style="padding:12px 16px 4px;font-weight:700">The one-time offer</div>
+        <div class="msg-row" style="--fc:var(--face-lilac)">
+          <div class="av-slot"><div class="av av-40" style="background:var(--face-lilac)">S<span class="ring"></span></div></div>
+          <div class="msg-body">
+            <div class="author-line"><span class="author">Sanne</span><span class="stamp">09:43</span></div>
+            <div class="msg-text">Geen probleem, morgen is prima.</div>
+            <div class="offer">
+              <svg class="ic"><use href="#ic-globe"/></svg>
+              <span>This is in Dutch.</span>
+              <button class="btn btn-secondary btn-sm">Translate once</button>
+              <button class="btn btn-secondary btn-sm">Always in this room</button>
+              <button class="btn btn-ghost btn-sm">No, stop asking</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="padding:14px 0">
+        <div style="padding:0 16px 10px;font-weight:700">Shared — posted by a member, visible to all</div>
+        <div class="msg-row" style="--fc:var(--face-mint)">
+          <div class="av-slot"><div class="av av-40" style="background:var(--face-mint)">J<span class="ring"></span></div></div>
+          <div class="msg-body">
+            <div class="author-line"><span class="author">June</span><span class="stamp">just now</span></div>
+            <div class="msg-text">she does this every single time</div>
+            <div class="annot">
+              <div class="who"><svg class="ic" style="display:inline-block;vertical-align:-3px"><use href="#ic-globe"/></svg> Translated by Translator &middot; German</div>
+              <div style="font-size:var(--text-sm)">sie macht das wirklich jedes Mal</div>
+            </div>
+          </div>
+        </div>
+        <div style="padding:14px 16px 8px;font-weight:700">Room header, while active</div>
+        <div style="padding:0 16px 14px;display:flex;gap:10px;flex-wrap:wrap">
+          <span class="lang-chip"><svg class="ic"><use href="#ic-globe"/></svg> Translating to English</span>
+          <span class="lang-chip">Show originals <svg class="ic"><use href="#ic-chevron"/></svg></span>
+        </div>
+        <div style="padding:0 16px;font-size:var(--text-sm);color:var(--text-mute)">
+          Three levels of control, all off by default: per message from the hover
+          actions, per room from the header, and a global "translate anything I
+          don't read". "No, stop asking" is permanent for that room — the
+          discussion thread asked for a real off switch, so it's a real one.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FACES AND AGENTS ============ -->
+  <section>
+    <h2 class="sec">Faces, and what is software</h2>
+    <p class="sec-note">Two problems, one rule each. <strong>Plurality is invisible until you use it</strong> — a singlet sees no face switcher, no "system" vocabulary, nothing. And <strong>every agent wears an agent badge</strong>, always, with the owner choosing only the word inside it. Full design in <code style="font-family:var(--font-mono)">docs/11-people-and-agents.md</code>.</p>
+
+    <div class="two-col" style="margin-bottom:18px">
+      <div class="panel">
+        <div style="font-weight:700;margin-bottom:4px">One face — a singlet</div>
+        <div style="font-size:var(--text-sm);color:var(--text-mute);margin-bottom:12px">No chip. No switcher. No mention anywhere that faces exist. It is just a chat app.</div>
+        <div class="composer" style="padding:0">
+          <div class="composer-box">
+            <input class="composer-input" placeholder="Message #design">
+            <button class="icon-btn" title="Attach"><svg class="ic ic-lg"><use href="#ic-attach"/></svg></button>
+            <button class="icon-btn" title="Emoji"><svg class="ic ic-lg"><use href="#ic-face"/></svg></button>
+            <button class="send-btn" title="Send"><svg class="ic ic-lg"><use href="#ic-send"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="--fc:var(--face-mint)">
+        <div style="font-weight:700;margin-bottom:4px">Several faces — a plural system</div>
+        <div style="font-size:var(--text-sm);color:var(--text-mute);margin-bottom:12px">The chip appears the moment a second face exists, and vanishes if you go back to one.</div>
+        <div class="composer" style="padding:0">
+          <div class="composer-box">
+            <button class="face-chip"><span class="av av-24" style="background:var(--face-mint)">J</span>June <svg class="ic"><use href="#ic-chevron"/></svg></button>
+            <input class="composer-input" placeholder="Message #design">
+            <button class="icon-btn" title="Attach"><svg class="ic ic-lg"><use href="#ic-attach"/></svg></button>
+            <button class="send-btn" title="Send"><svg class="ic ic-lg"><use href="#ic-send"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="panel">
+        <div style="font-weight:700;margin-bottom:10px">The profile card</div>
+        <div class="pcard" style="--fc:var(--face-mint)">
+          <div class="top">
+            <div class="av av-40" style="background:var(--face-mint)">J<span class="ring"></span><span class="dot dot-online"></span></div>
+            <div>
+              <div class="nm">June</div>
+              <div class="sub">she/her</div>
+              <div class="bio">does the actual work</div>
+            </div>
+          </div>
+          <div class="block">
+            <div class="k">Part of Viola's account</div>
+            <span class="facepill"><span class="av av-24" style="background:var(--face-aqua)">V</span>Viola</span>
+            <span class="facepill"><span class="av av-24" style="background:var(--face-lilac)">A</span>Ash</span>
+            <div style="font-size:11px;color:var(--text-mute);margin-top:4px">Only faces present in this room are listed.</div>
+          </div>
+          <div class="block">
+            <div class="k">In this room</div>
+            <div style="font-size:var(--text-sm)">Since 12 March &middot; Member, Designer</div>
+          </div>
+          <div class="block" style="display:flex;gap:8px">
+            <button class="btn btn-secondary btn-sm">Message</button>
+            <button class="btn btn-secondary btn-sm">Verify encryption</button>
+          </div>
+        </div>
+        <div style="font-size:var(--text-sm);color:var(--text-mute);margin-top:12px">
+          The linked block only appears if the account turned on <em>"link my faces
+          publicly"</em>, which is <strong>off by default</strong>. With it off, faces read as
+          independent people — and because faces live inside the ciphertext, the
+          server never learns the connection either. Some systems are out; some
+          very much are not.
+        </div>
+      </div>
+
+      <div class="panel">
+        <div style="font-weight:700;margin-bottom:10px">Agent badges</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+          <span class="badge-agent">Agent</span>
+          <span class="badge-agent">Bot</span>
+          <span class="badge-agent">Friend</span>
+          <span class="badge-agent">Assistant</span>
+          <span class="badge-agent">Companion</span>
+          <span class="badge-agent">Service</span>
+        </div>
+        <div style="font-size:var(--text-sm);color:var(--text-mute);margin-bottom:16px">
+          One treatment, six words. The owner picks the word — a moderation bot
+          is not a "friend" and should not have to pretend — but the treatment
+          never changes, so you can always tell it is software at a glance. Fixed
+          vocabulary, no free text: "Verified" and "Staff" are the first things
+          someone would try.
+        </div>
+        <div style="font-weight:700;margin-bottom:8px">In the roster</div>
+        <div class="mem" style="--fc:var(--face-gold)">
+          <div class="av av-32" style="background:var(--face-gold)">T<span class="dot dot-idle"></span></div>
+          <div><div class="nm">Translator <span class="badge-agent" style="margin-left:4px">Service</span></div><div class="agent-line">can read this room</div></div>
+        </div>
+        <div class="mem" style="--fc:var(--face-lilac)">
+          <div class="av av-32" style="background:var(--face-lilac)">K<span class="dot dot-online"></span></div>
+          <div><div class="nm">Kiko <span class="badge-agent" style="margin-left:4px">Friend</span></div><div class="agent-line">can read this room</div></div>
+        </div>
+        <div style="font-size:var(--text-sm);color:var(--text-mute);margin-top:14px">
+          <strong>can read this room</strong> is not customisable, not stylable and
+          not removable. The badge is flavour; that line is the security
+          statement, and it is what makes "no ghost readers" checkable by a person
+          instead of by a cryptographer.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WORKSPACE ============ -->
+  <section>
+    <h2 class="sec">The workspace</h2>
+    <p class="sec-note">No floating decoration, no gradient ground, no ambient glow — personality survives here as tinted surfaces, rounded geometry and candy face colours. The roster is where the "no ghost readers" promise gets cashed: the translator bot is listed like a person, with a plain line saying it can read the room.</p>
+    <div class="shell">
+      <div class="rail">
+        <button class="rail-item active" style="background:linear-gradient(160deg,var(--face-violet),var(--face-rose))">S</button>
+        <button class="rail-item" style="background:linear-gradient(160deg,var(--face-aqua),var(--face-sky))">B</button>
+        <button class="rail-item" style="background:linear-gradient(160deg,var(--face-mint),var(--face-aqua))">A</button>
+        <button class="rail-item" style="background:var(--ground-3);color:var(--text-mute);font-size:22px">+</button>
+      </div>
+      <div class="sidebar">
+        <div class="space-head">Solexsis</div>
+        <div class="room-list">
+          <div class="cat">General</div>
+          <button class="room unread"><span class="glyph">#</span>general<span class="spacer"></span><span class="unread-dot"></span></button>
+          <button class="room active"><span class="glyph">#</span>design<span class="spacer"></span><span class="pill-count">3</span></button>
+          <button class="room"><span class="glyph">#</span>off-topic</button>
+          <div class="cat">Build</div>
+          <button class="room"><span class="glyph">#</span>crypto-review</button>
+          <button class="room"><span class="glyph">#</span>ci-noise</button>
+          <div class="cat">Voice</div>
+          <button class="room"><span class="glyph"><svg class="ic"><use href="#ic-voice"/></svg></span>the couch</button>
+        </div>
+      </div>
+      <div class="chat">
+        <div class="chat-head">
+          <span class="glyph" style="color:var(--text-mute)">#</span>
+          <span class="title">design</span>
+          <span class="topic">shapes, colours, and arguing about radii</span>
+        </div>
+        <div class="msgs">
+          <div class="msg-row" style="--fc:var(--face-rose)">
+            <div class="av-slot"><div class="av av-40" style="background:var(--face-rose)">R<span class="ring"></span><span class="dot dot-online"></span></div></div>
+            <div class="msg-body">
+              <div class="author-line"><span class="author">Rae</span><span class="stamp">11:02</span></div>
+              <div class="msg-text">the buttons need to feel like you can press them. that's the whole thing.</div>
+            </div>
+            <div class="msg-actions"><button title="React"><svg class="ic"><use href="#ic-plus"/></svg></button><button title="Reply"><svg class="ic"><use href="#ic-reply"/></svg></button><button title="Translate"><svg class="ic"><use href="#ic-globe"/></svg></button><button title="More"><svg class="ic"><use href="#ic-more"/></svg></button></div>
+          </div>
+          <div class="msg-row" style="--fc:var(--face-aqua)">
+            <div class="av-slot"><div class="av av-40" style="background:var(--face-aqua)">V<span class="ring"></span><span class="dot dot-online"></span></div></div>
+            <div class="msg-body">
+              <div class="replyto" style="--rc:var(--face-rose)"><svg class="ic"><use href="#ic-reply"/></svg><span class="who">Rae</span><span class="snip">the buttons need to feel like you can press them.</span></div>
+              <div class="author-line"><span class="author">Viola</span><span class="stamp">11:04</span></div>
+              <div class="msg-text">agreed on the feel. but the outline-plus-hard-shadow is your look, not a generic one — we should get there our own way</div>
+              <div class="reactions">
+                <button class="rx on"><span class="emote" style="--e:var(--mint)"></span><span class="n">2</span></button>
+              </div>
+            </div>
+          </div>
+          <div class="newline"><div class="r"></div><span>New</span><div class="r"></div></div>
+          <div class="msg-row" style="--fc:var(--face-lilac)">
+            <div class="av-slot"><div class="av av-40" style="background:var(--face-lilac)">K<span class="ring"></span><span class="dot dot-online"></span></div></div>
+            <div class="msg-body">
+              <div class="author-line">
+                <span class="author">Kiko</span>
+                <span class="badge-agent">Friend</span>
+                <span class="stamp">11:05</span>
+              </div>
+              <div class="msg-text">I ran the contrast numbers on the candy palette against all three grounds. On daylight six of the eight fall under 3:1 — as name colours they'd be unreadable. The bright values are fine as fills; they just can't be ink.</div>
+            </div>
+          </div>
+          <div class="msg-row cont" style="--fc:var(--face-lilac)">
+            <div class="av-slot"></div>
+            <div class="msg-body"><div class="msg-text">Cheapest fix is a darkened ink twin per hue, swapped by theme. Want me to generate them?</div></div>
+          </div>
+        </div>
+        <div class="typing"><span class="dots"><i></i><i></i><i></i></span> Rae is typing</div>
+        <button class="jump"><svg class="ic"><use href="#ic-arrow-down"/></svg> 3 new messages</button>
+        <div class="composer" style="--fc:var(--face-mint)">
+          <div class="composer-box">
+            <button class="face-chip" title="Speaking as — click to switch face"><span class="av av-24" style="background:var(--face-mint)">J</span>June</button>
+            <input class="composer-input" placeholder="Message #design">
+            <button class="icon-btn" title="Attach"><svg class="ic ic-lg"><use href="#ic-attach"/></svg></button>
+            <button class="icon-btn" title="Expression"><svg class="ic ic-lg"><use href="#ic-face"/></svg></button>
+            <button class="send-btn" title="Send"><svg class="ic ic-lg"><use href="#ic-send"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="members">
+        <div class="cat" style="padding-left:8px">In this room — 5</div>
+        <div class="mem" style="--fc:var(--face-rose)"><div class="av av-32" style="background:var(--face-rose)">R<span class="dot dot-online"></span></div><div><div class="nm">Rae</div><div class="sub">designing</div></div></div>
+        <div class="mem" style="--fc:var(--face-aqua)"><div class="av av-32" style="background:var(--face-aqua)">V<span class="dot dot-online"></span></div><div><div class="nm">Viola</div><div class="sub">3 faces here</div></div></div>
+        <div class="mem" style="--fc:var(--face-mint)"><div class="av av-32" style="background:var(--face-mint)">J<span class="dot dot-online"></span></div><div><div class="nm">June</div><div class="sub">same system as Viola</div></div></div>
+        <div class="cat" style="padding-left:8px">Friends — 2</div>
+        <div class="mem" style="--fc:var(--face-lilac)"><div class="av av-32" style="background:var(--face-lilac)">K<span class="dot dot-online"></span></div><div><div class="nm">Kiko</div><div class="agent-line">can read this room</div></div></div>
+        <div class="mem" style="--fc:var(--face-gold)"><div class="av av-32" style="background:var(--face-gold)">T<span class="dot dot-idle"></span></div><div><div class="nm">Translator</div><div class="agent-line">can read this room</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ BANNERS ============ -->
+  <section>
+    <h2 class="sec">When something's wrong</h2>
+    <p class="sec-note">Every crypto failure gets a banner with a button — never a permanent tombstone on a message, never a modal. "Unable to decrypt" with no way forward is the single thing that made people give up on Matrix, and it's the bar we have to clear. Final copy lives in <code style="font-family:var(--font-mono)">docs/08-voice-and-copy.md</code>; these are the shapes.</p>
+    <div class="panel">
+      <div class="banner" style="--bc:var(--face-sky)">
+        <span class="pip"></span>
+        <div><div class="bt">This device can't read messages here yet</div><div class="bd">It joined a moment ago and is still catching up on keys.</div></div>
+        <div class="acts"><button class="btn btn-secondary btn-sm">Sync now</button></div>
+      </div>
+      <div class="banner" style="--bc:var(--text-mute)">
+        <span class="pip"></span>
+        <div><div class="bt" style="color:var(--text-dim)">History is off for you in this room</div><div class="bd">You can read everything from when you joined. Messages before that were never yours to read.</div></div>
+      </div>
+      <div class="banner" style="--bc:var(--face-gold)">
+        <span class="pip"></span>
+        <div><div class="bt">Ash is using a new device</div><div class="bd">Their key changed. That's normal when someone gets a new phone — but it's also what an attack would look like.</div></div>
+        <div class="acts"><button class="btn btn-secondary btn-sm">Compare codes</button><button class="btn btn-ghost btn-sm">Looks fine</button></div>
+      </div>
+      <div class="banner" style="--bc:var(--face-coral)">
+        <span class="pip"></span>
+        <div><div class="bt">You and Emeri have drifted apart</div><div class="bd">Your apps disagree about this conversation's keys, so new messages won't arrive. Resetting fixes it; everything you already have stays readable.</div></div>
+        <div class="acts"><button class="btn btn-primary btn-sm">Reset this chat</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WREN ============ -->
+  <section>
+    <h2 class="sec">Wren</h2>
+    <p class="sec-note">The guide. A proactive helper with heuristics and popups is structurally Clippy, so the design has to earn the proactivity back. Two inversions do most of the work: <strong>she has an inbox, not a megaphone</strong> — everything she notices lands in a panel you open — and <strong>she acts rather than advises</strong>, so every notice carries a button that does the thing. System design in <code style="font-family:var(--font-mono)">docs/12-wren-as-guide.md</code>, her copy in <code style="font-family:var(--font-mono)">docs/13-wren-notices.md</code>.</p>
+
+    <div class="two-col">
+      <div class="panel">
+        <div style="font-weight:700;margin-bottom:4px">Rung 1 — the panel</div>
+        <div style="font-size:var(--text-sm);color:var(--text-mute);margin-bottom:14px">Where almost everything lives. Nothing here interrupted you to get here.</div>
+        <div class="wren-panel">
+          <div class="wren-head">
+            <div class="wren-av"><img src="wren/wren-avatar-01.png" alt="Wren"><span class="sev" style="background:var(--face-gold)"></span></div>
+            <div><div class="t">Wren</div><div class="s">three things worth a minute</div></div>
+          </div>
+          <div class="notice" style="--sv:var(--face-gold)">
+            <span class="pip2"></span>
+            <div>
+              <div class="nt">You don't have a safety net yet</div>
+              <div class="nb">If you forget your password and haven't saved your recovery code, that's the account. I can't get you back in. Nobody can.</div>
+              <div class="na"><button class="btn btn-primary btn-sm">Save recovery code</button><button class="btn btn-ghost btn-sm">Later</button></div>
+            </div>
+          </div>
+          <div class="notice" style="--sv:var(--face-sky)">
+            <span class="pip2"></span>
+            <div>
+              <div class="nt">#design is mostly in German</div>
+              <div class="nb">I can translate it on this device. Nothing gets sent anywhere and nobody in the room finds out.</div>
+              <div class="na"><button class="btn btn-secondary btn-sm">Translate this room</button><button class="btn btn-ghost btn-sm">No thanks</button></div>
+            </div>
+          </div>
+          <div class="notice" style="--sv:var(--text-mute)">
+            <span class="pip2"></span>
+            <div>
+              <div class="nt">A device hasn't checked in since May</div>
+              <div class="nb">"iPad" last connected 94 days ago. If you're not using it, revoking it is tidy.</div>
+              <div class="na"><button class="btn btn-secondary btn-sm">Revoke it</button><button class="btn btn-ghost btn-sm">Keep it</button></div>
+            </div>
+          </div>
+          <div class="wren-foot">
+            <span class="lang-chip">Quiet</span><span class="lang-chip" style="border-color:var(--brand);color:var(--text)">Normal</span><span class="lang-chip">Chatty</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel" style="margin-bottom:18px">
+          <div style="font-weight:700;margin-bottom:4px">Rung 3 — an inline card</div>
+          <div style="font-size:var(--text-sm);color:var(--text-mute);margin-bottom:14px">Rendered into a gap you were already looking at. Never an overlay.</div>
+          <div class="wren-card">
+            <div class="wren-av"><img src="wren/wren-avatar-01.png" alt="Wren"></div>
+            <div>
+              <div style="font-weight:700;margin-bottom:3px">Want to know what the server can see here?</div>
+              <div style="font-size:var(--text-sm);color:var(--text-dim);margin-bottom:10px">That this room exists, who's in it, and that 4,182 messages have been sent — sizes and times. Not one word of what any of them say, including the room's name.</div>
+              <button class="btn btn-secondary btn-sm">Show me the full list</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div style="font-weight:700;margin-bottom:4px">Rung 4 — an interruption</div>
+          <div style="font-size:var(--text-sm);color:var(--text-mute);margin-bottom:14px">Three categories only: irreversible, a live safety condition, or a genuine cliff edge. One per session, three per week. Over budget it demotes rather than disappears.</div>
+          <div class="popup">
+            <div class="pbody">
+              <div class="wren-av" style="background:linear-gradient(160deg,var(--face-coral),var(--face-rose))"><svg class="ic"><use href="#ic-key"/></svg></div>
+              <div>
+                <h4>Ash's key changed, mid-conversation</h4>
+                <p>Usually that means a new phone. It is also exactly what an attack looks like, and you're talking to them right now — so I'd rather you check than not.</p>
+              </div>
+            </div>
+            <div class="pfoot">
+              <button class="btn btn-ghost btn-sm">It's fine</button>
+              <button class="btn btn-primary btn-sm">Compare codes</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:18px">
+      <div style="font-weight:700;margin-bottom:4px">She is also the command surface</div>
+      <div style="font-size:var(--text-sm);color:var(--text-mute);margin-bottom:14px">Asking Wren and the palette are one thing, not two. She drives the app through the same code paths you do — no privileged backdoor, and anything irreversible confirms.</div>
+      <div class="palette">
+        <div class="pin"><svg class="ic ic-lg"><use href="#ic-search"/></svg><input value="what can the server see" readonly><span class="kbd">esc</span></div>
+        <div class="grp">Explain</div>
+        <div class="row sel"><svg class="ic"><use href="#ic-feather"/></svg><span class="sp">What the server can see about #design</span><span class="kbd">enter</span></div>
+        <div class="row"><svg class="ic"><use href="#ic-feather"/></svg><span class="sp">What everyone in this room can read</span></div>
+        <div class="grp">Do</div>
+        <div class="row"><svg class="ic"><use href="#ic-key"/></svg><span class="sp">Turn off server-visible threads here</span></div>
+        <div class="row"><svg class="ic"><use href="#ic-globe"/></svg><span class="sp">Translate this room to English</span></div>
+        <div class="row"><svg class="ic"><use href="#ic-people"/></svg><span class="sp">Invite someone to #design</span></div>
+      </div>
+      <div style="font-size:var(--text-sm);color:var(--text-mute);margin-top:12px">
+        <strong>Explaining is a first-class capability.</strong> "What can the server see here?"
+        is a question people genuinely have about an encrypted app and nobody
+        answers it well. Her answer is generated from the room's real
+        configuration, so it stays true when the settings change.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VOICE ============ -->
+  <section>
+    <h2 class="sec">Voice and calls</h2>
+    <p class="sec-note">A call is just a room being loud — same audience, same keys, same roster. Who can hear you is exactly who can read the room, which means "no ghost readers" carries into audio for free: the transcriber agent gets a tile like anyone else. Media is encrypted with insertable streams keyed from the room's exporter, so the SFU forwards frames it cannot decode. Full design in <code style="font-family:var(--font-mono)">docs/21-voice-ux.md</code>.</p>
+    <div class="stage" style="margin-bottom:18px">
+      <div class="stage-head"><svg class="ic"><use href="#ic-voice"/></svg> the couch <span style="color:var(--text-mute);font-weight:500">· 4 people</span><span style="flex:1"></span><span class="lang-chip"><svg class="ic"><use href="#ic-captions"/></svg> Captions</span></div>
+      <div class="tiles">
+        <div class="tile speaking" style="--fc:var(--face-rose)">
+          <div class="av av-40" style="background:var(--face-rose)">R</div>
+          <div class="nm2">Rae</div>
+        </div>
+        <div class="tile" style="--fc:var(--face-aqua)">
+          <div class="av av-40" style="background:var(--face-aqua)">V</div>
+          <div class="nm2">Viola</div>
+        </div>
+        <div class="tile" style="--fc:var(--face-mint)">
+          <div class="av av-40" style="background:var(--face-mint)">J</div>
+          <div class="nm2">June</div><div class="mute"><svg class="ic"><use href="#ic-mic-off"/></svg></div>
+        </div>
+        <div class="tile problem" style="--fc:var(--face-gold)">
+          <div class="av av-40" style="background:var(--face-gold)">T</div>
+          <div class="nm2">Transcriber <span class="badge-agent" style="font-size:9px">Service</span></div>
+          <div class="tile-err"><strong>You can't hear this.</strong> Your apps disagree about the call's keys. <span style="text-decoration:underline">Reconnect audio</span></div>
+        </div>
+      </div>
+      <div class="callbar">
+        <button class="cbtn" title="Mute"><svg class="ic ic-lg"><use href="#ic-mic"/></svg></button>
+        <button class="cbtn off" title="Camera"><svg class="ic ic-lg"><use href="#ic-video"/></svg></button>
+        <button class="cbtn" title="Share screen"><svg class="ic ic-lg"><use href="#ic-screen"/></svg></button>
+        <button class="cbtn" title="More"><svg class="ic ic-lg"><use href="#ic-more"/></svg></button>
+        <button class="cbtn leave" title="Leave"><svg class="ic ic-lg"><use href="#ic-hangup"/></svg></button>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div style="font-weight:700;margin-bottom:4px">A voice room, before you join</div>
+        <div style="font-size:var(--text-sm);color:var(--text-mute);margin-bottom:12px">Occupants show inline so you can see who's in there without committing. Joining puts you in <strong>muted by default</strong> — arriving already broadcasting into a conversation you haven't heard is a small hostile act.</div>
+        <div style="background:var(--ground-1);border:1px solid var(--line);border-radius:var(--r-md);padding:8px">
+          <button class="room"><span class="glyph"><svg class="ic"><use href="#ic-voice"/></svg></span>the couch<span class="spacer"></span>
+            <span class="vroom-occ">
+              <span class="av av-24" style="background:var(--face-rose)">R</span>
+              <span class="av av-24" style="background:var(--face-aqua)">V</span>
+              <span class="av av-24" style="background:var(--face-mint)">J</span>
+            </span>
+          </button>
+          <button class="room"><span class="glyph"><svg class="ic"><use href="#ic-voice"/></svg></span>focus room</button>
+        </div>
+      </div>
+      <div class="panel" style="display:flex;justify-content:center">
+        <div class="incoming">
+          <div class="av av-40" style="background:var(--face-lilac);width:56px;height:56px;font-size:20px">A</div>
+          <div style="font-weight:700;font-size:var(--text-lg);margin-top:6px">Ash</div>
+          <div style="font-size:var(--text-sm);color:var(--text-mute);margin-bottom:12px">is calling</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+            <button class="btn btn-primary btn-sm">Answer</button>
+            <button class="btn btn-secondary btn-sm">Answer muted</button>
+            <button class="btn btn-ghost btn-sm">Decline</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CRYPTO SURFACES ============ -->
+  <section>
+    <h2 class="sec">The crypto surfaces</h2>
+    <p class="sec-note"><strong>There is no lock icon anywhere in this product.</strong> Everything is encrypted, so a badge saying so carries zero information — it is decoration that trains people to ignore it, which makes it useless on the day it matters. Signal shows one because it also carries unencrypted SMS; we have no such distinction to draw. These are the rare screens where crypto becomes visible. Full design in <code style="font-family:var(--font-mono)">docs/22-crypto-ux.md</code>.</p>
+    <div class="two-col">
+      <div class="panel">
+        <div style="font-weight:700;margin-bottom:10px">Verify encryption</div>
+        <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:12px">
+          <div class="qr"></div>
+          <div style="font-size:var(--text-sm);color:var(--text-dim)">If these match on both screens, nobody is in the middle. Together? Scan it. Apart? Read it out — an attacker would have to fake your voice live.
+          <div style="color:var(--text-mute);margin-top:8px">This checks <strong>Viola's account</strong>, not one face. Keys belong to accounts.</div></div>
+        </div>
+        <div class="safety">04821 77390 15264<br>88015 42907 63118</div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary btn-sm">They match</button>
+          <button class="btn btn-ghost btn-sm">Not now</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel" style="margin-bottom:18px">
+          <div style="font-weight:700;margin-bottom:6px">Your ways back in</div>
+          <div class="keyrow"><span class="kn">Password</span><span class="kv">set</span><button class="btn btn-secondary btn-sm">Change</button></div>
+          <div class="keyrow"><span class="kn">Recovery code</span><span class="kv">saved 27 Aug</span><button class="btn btn-secondary btn-sm">Show</button><button class="btn btn-ghost btn-sm">Replace</button></div>
+          <div class="keyrow"><span class="kn">Passkeys</span><span class="kv">1 registered</span><button class="btn btn-secondary btn-sm">Manage</button></div>
+          <div style="font-size:var(--text-sm);color:var(--text-mute);margin-top:12px">Any one of these gets you back in. Lose all three and the account is gone — we can't recover it, and neither can anyone else.</div>
+        </div>
+        <div class="panel">
+          <div style="font-weight:700;margin-bottom:10px">What the server can see about #design</div>
+          <div class="sees">
+            <div class="k2">Generated from this room's real settings</div>
+            <div style="font-size:var(--text-sm);color:var(--text-dim)">That it exists, who's in it, and that 4,182 messages have been sent — with their sizes and timestamps. Not a word of what any of them say, including the room's name and topic. Threads here are server-visible, so it also sees which messages group together. Kiko and Translator can read everything, and both are in the member list.</div>
+          </div>
+          <div style="font-size:var(--text-sm);color:var(--text-mute);margin-top:12px">Generated, never canned — a hardcoded reassurance that silently stops matching reality is worse than none.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ AGENTS ============ -->
+  <section>
+    <h2 class="sec">Making an agent</h2>
+    <p class="sec-note">Under encryption there is no stateless webhook bot — the server has no plaintext to POST. So an agent is <strong>an account with a device</strong>, and the device is a process someone runs. That's more setup than pasting a webhook URL and pretending otherwise would be dishonest; the job is to make the extra step feel ordinary. Full lifecycle in <code style="font-family:var(--font-mono)">docs/23-agents-ux.md</code>.</p>
+    <div class="two-col">
+      <div class="panel">
+        <div style="font-weight:700;margin-bottom:12px">1 — Create it</div>
+        <label class="field"><span class="lbl">Name</span><input class="input" value="Translator"></label>
+        <label class="field"><span class="lbl">Label</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <span class="badge-agent">Agent</span><span class="badge-agent">Bot</span>
+            <span class="badge-agent" style="border-color:var(--brand);color:var(--text)">Service</span>
+            <span class="badge-agent">Friend</span>
+          </div>
+        </label>
+        <div style="font-size:var(--text-sm);color:var(--text-mute);margin-top:14px;line-height:1.6">
+          This is a real account with its own keys. You own it, you can delete it,
+          and it will appear in the member list of every room you add it to.
+          <br><br>It needs somewhere to run — the next step.
+        </div>
+      </div>
+      <div class="panel">
+        <div style="font-weight:700;margin-bottom:12px">2 — Give it somewhere to live</div>
+        <div style="font-size:var(--text-sm);color:var(--text-mute);margin-bottom:10px">Run this where the agent should live:</div>
+        <div class="cmd">revel-agent pair 4K7M-XN2A</div>
+        <div style="margin:12px 0"><div class="pair-code">4K7M-XN2A</div></div>
+        <div class="waiting"><span class="pulse"></span> Waiting for Translator to connect…</div>
+        <div style="font-size:var(--text-sm);color:var(--text-mute);margin-top:14px;line-height:1.6">
+          Pairing is the <strong>same device-enrolment flow people already use</strong>. No token
+          pasting, no secret in an env var — the credential never touches a
+          clipboard.
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:18px">
+      <div style="font-weight:700;margin-bottom:10px">3 — Add it to a room</div>
+      <div class="popup" style="width:100%;max-width:520px">
+        <div class="pbody">
+          <div class="av av-40" style="background:var(--face-gold)">T</div>
+          <div>
+            <h4>Add Translator to #design?</h4>
+            <p><strong>It will be able to read everything in #design from now on</strong> — and everything sent before it joined, because this room shares history with new members.<br><br>It will appear in the member list. Anyone in the room can see it's there.</p>
+          </div>
+        </div>
+        <div class="pfoot"><button class="btn btn-ghost btn-sm">Cancel</button><button class="btn btn-primary btn-sm">Add Translator</button></div>
+      </div>
+      <div style="font-size:var(--text-sm);color:var(--text-mute);margin-top:12px">
+        The history clause is generated from the room's real setting, so it tells
+        the truth per room rather than reciting a general disclaimer.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MOBILE ============ -->
+  <section>
+    <h2 class="sec">On a phone</h2>
+    <p class="sec-note">Not a scaled-down desktop — one column and two drawers, with chat as the only permanent view. The left drawer merges the space rail and the room list into one panel, because two nested drawers is a maze. Drawers track your thumb 1:1 and commit past halfway; threads push a new view rather than opening a panel. Full design, including the honest push-notification table, in <code style="font-family:var(--font-mono)">docs/24-mobile-ux.md</code>.</p>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center">
+
+      <div class="phone">
+        <div class="phone-head">
+          <button class="icon-btn"><svg class="ic ic-lg"><use href="#ic-more"/></svg></button>
+          <span class="glyph" style="color:var(--text-mute)">#</span>
+          <span class="t">design</span>
+          <span style="flex:1"></span>
+          <button class="icon-btn"><svg class="ic ic-lg"><use href="#ic-people"/></svg></button>
+        </div>
+        <div class="phone-body">
+          <div class="msg-row" style="--fc:var(--face-rose)">
+            <div class="av-slot" style="width:32px"><div class="av av-32" style="background:var(--face-rose)">R<span class="ring"></span></div></div>
+            <div class="msg-body">
+              <div class="author-line"><span class="author" style="font-size:var(--text-sm)">Rae</span><span class="stamp">11:02</span></div>
+              <div class="msg-text" style="font-size:var(--text-sm)">the buttons need to feel like you can press them</div>
+            </div>
+          </div>
+          <div class="msg-row" style="--fc:var(--face-aqua)">
+            <div class="av-slot" style="width:32px"><div class="av av-32" style="background:var(--face-aqua)">V<span class="ring"></span></div></div>
+            <div class="msg-body">
+              <div class="author-line"><span class="author" style="font-size:var(--text-sm)">Viola</span><span class="stamp">11:04</span></div>
+              <div class="msg-text" style="font-size:var(--text-sm)">agreed. swipe one of these to reply</div>
+              <div class="reactions"><button class="rx on"><span class="emote" style="--e:var(--mint)"></span><span class="n">2</span></button></div>
+            </div>
+          </div>
+          <div class="newline"><div class="r"></div><span>New</span><div class="r"></div></div>
+          <div class="msg-row" style="--fc:var(--face-mint)">
+            <div class="av-slot" style="width:32px"><div class="av av-32" style="background:var(--face-mint)">J<span class="ring"></span></div></div>
+            <div class="msg-body">
+              <div class="author-line"><span class="author" style="font-size:var(--text-sm)">June</span><span class="stamp">now</span></div>
+              <div class="msg-text" style="font-size:var(--text-sm)">she does this every single time</div>
+            </div>
+          </div>
+          <div class="typing"><span class="dots"><i></i><i></i><i></i></span> Rae is typing</div>
+        </div>
+        <div class="phone-foot" style="--fc:var(--face-mint)">
+          <div class="composer-box">
+            <button class="face-chip"><span class="av av-24" style="background:var(--face-mint)">J</span></button>
+            <input class="composer-input" placeholder="Message">
+            <button class="icon-btn"><svg class="ic ic-lg"><use href="#ic-attach"/></svg></button>
+            <button class="send-btn"><svg class="ic ic-lg"><use href="#ic-send"/></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="phone">
+        <div class="phone-head">
+          <button class="icon-btn"><svg class="ic ic-lg"><use href="#ic-more"/></svg></button>
+          <span class="glyph" style="color:var(--text-mute)">#</span>
+          <span class="t">design</span>
+        </div>
+        <div class="phone-body">
+          <div class="msg-row" style="--fc:var(--face-rose)">
+            <div class="av-slot" style="width:32px"><div class="av av-32" style="background:var(--face-rose)">R<span class="ring"></span></div></div>
+            <div class="msg-body"><div class="msg-text" style="font-size:var(--text-sm)">the buttons need to feel…</div></div>
+          </div>
+        </div>
+        <div class="phone-scrim"></div>
+        <div class="phone-drawer">
+          <div class="spaces-strip">
+            <button class="rail-item active" style="background:linear-gradient(160deg,var(--face-violet),var(--face-rose))">S</button>
+            <button class="rail-item" style="background:linear-gradient(160deg,var(--face-aqua),var(--face-sky))">B</button>
+            <button class="rail-item" style="background:linear-gradient(160deg,var(--face-mint),var(--face-aqua))">A</button>
+            <button class="rail-item" style="background:var(--ground-3);color:var(--text-mute);font-size:19px">+</button>
+          </div>
+          <div class="room-list">
+            <div class="cat">General</div>
+            <button class="room unread"><span class="glyph">#</span>general<span class="spacer"></span><span class="unread-dot"></span></button>
+            <button class="room active"><span class="glyph">#</span>design<span class="spacer"></span><span class="pill-count">3</span></button>
+            <button class="room"><span class="glyph">#</span>off-topic</button>
+            <div class="cat">Voice</div>
+            <button class="room"><span class="glyph"><svg class="ic"><use href="#ic-voice"/></svg></span>the couch<span class="spacer"></span>
+              <span class="vroom-occ"><span class="av av-24" style="background:var(--face-rose)">R</span><span class="av av-24" style="background:var(--face-aqua)">V</span></span>
+            </button>
+            <div class="cat">Direct</div>
+            <button class="room"><span class="av av-24" style="background:var(--face-lilac)">A</span>Ash</button>
+            <button class="room"><span class="av av-24" style="overflow:hidden;background:var(--face-lilac)"><img src="wren/wren-avatar-01.png" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></span>Wren</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="phone">
+        <div class="phone-head">
+          <button class="icon-btn"><svg class="ic ic-lg"><use href="#ic-more"/></svg></button>
+          <span class="glyph" style="color:var(--text-mute)">#</span>
+          <span class="t">design</span>
+        </div>
+        <div class="phone-body">
+          <div class="msg-row" style="--fc:var(--face-rose)">
+            <div class="av-slot" style="width:32px"><div class="av av-32" style="background:var(--face-rose)">R<span class="ring"></span></div></div>
+            <div class="msg-body">
+              <div class="author-line"><span class="author" style="font-size:var(--text-sm)">Rae</span><span class="stamp">11:02</span></div>
+              <div class="msg-text" style="font-size:var(--text-sm)">the buttons need to feel like you can press them</div>
+            </div>
+          </div>
+          <div class="msg-row" style="--fc:var(--face-aqua)">
+            <div class="av-slot" style="width:32px"><div class="av av-32" style="background:var(--face-aqua)">V<span class="ring"></span></div></div>
+            <div class="msg-body">
+              <div class="author-line"><span class="author" style="font-size:var(--text-sm)">Viola</span><span class="stamp">11:04</span></div>
+              <div class="msg-text" style="font-size:var(--text-sm)">agreed</div>
+            </div>
+          </div>
+        </div>
+        <div class="phone-scrim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div style="padding:0 18px 6px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--text-mute)">Speaking as</div>
+          <div class="sheet-row sel" style="--fc:var(--face-mint)"><span class="av av-32" style="background:var(--face-mint)">J</span>June <svg class="ic"><use href="#ic-check"/></svg></div>
+          <div class="sheet-row" style="--fc:var(--face-aqua)"><span class="av av-32" style="background:var(--face-aqua)">V</span>Viola</div>
+          <div class="sheet-row" style="--fc:var(--face-lilac)"><span class="av av-32" style="background:var(--face-lilac)">A</span>Ash</div>
+        </div>
+      </div>
+
+    </div>
+    <div class="panel" style="margin-top:20px">
+      <div style="font-weight:700;margin-bottom:8px">Push notifications, honestly</div>
+      <table style="width:100%;border-collapse:collapse;font-size:var(--text-sm)">
+        <tr style="color:var(--text-mute);text-align:left"><th style="padding:6px 10px 6px 0;font-weight:600"></th><th style="padding:6px 10px;font-weight:600">Android PWA</th><th style="padding:6px 10px;font-weight:600">iOS PWA</th><th style="padding:6px 10px;font-weight:600">Native later</th></tr>
+        <tr style="border-top:1px solid var(--line)"><td style="padding:8px 10px 8px 0;font-weight:600">Push</td><td style="padding:8px 10px;color:var(--face-mint)">works</td><td style="padding:8px 10px;color:var(--face-coral)">home-screen install only, and not at all in the EU</td><td style="padding:8px 10px;color:var(--face-mint)">works</td></tr>
+        <tr style="border-top:1px solid var(--line)"><td style="padding:8px 10px 8px 0;font-weight:600">Reliability</td><td style="padding:8px 10px;color:var(--face-mint)">good</td><td style="padding:8px 10px;color:var(--face-coral)">drops after restarts</td><td style="padding:8px 10px;color:var(--face-mint)">good</td></tr>
+        <tr style="border-top:1px solid var(--line)"><td style="padding:8px 10px 8px 0;font-weight:600">Background sync</td><td style="padding:8px 10px;color:var(--face-mint)">yes</td><td style="padding:8px 10px;color:var(--face-coral)">no</td><td style="padding:8px 10px;color:var(--face-mint)">yes</td></tr>
+      </table>
+      <div style="font-size:var(--text-sm);color:var(--text-mute);margin-top:12px">
+        The mitigation is real but not a substitute: <strong>reconcile on open</strong> means a
+        missed push is a late message, never a lost one. On iOS the settings screen
+        states the limitation instead of showing a toggle that silently does
+        nothing — including the EU case, which isn't the user's fault and shouldn't
+        look like their misconfiguration.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MOMENT ============ -->
+  <section>
+    <h2 class="sec">A moment screen</h2>
+    <p class="sec-note">Full personality — but built from light, depth and type rather than borrowed props. Asymmetric and left-aligned, ambient haze instead of cartoon clouds, no scattered stars. What it does keep from the reference is the move that actually matters: the blunt small print sitting directly under the thing it qualifies. Wren stands in it — she overlaps the panel and bleeds off the bottom edge, in the layout rather than pasted onto it. See <code style="font-family:var(--font-mono)">docs/09-mascot.md</code> and <code style="font-family:var(--font-mono)">docs/20-wren-art.md</code>.</p>
+    <div class="moment">
+      <div class="haze" style="width:420px;height:420px;background:var(--violet);left:-120px;top:-80px"></div>
+      <div class="haze" style="width:340px;height:340px;background:var(--rose);right:24%;bottom:-140px;opacity:.3"></div>
+      <div class="haze" style="width:260px;height:260px;background:var(--aqua);left:38%;top:-130px;opacity:.26"></div>
+
+      <img class="art-slot" src="wren/wren-fullbody-01.png" alt="Wren, standing, hands in her hoodie pockets">
+
+      <div class="inner">
+        <div class="eyebrow">Your recovery code</div>
+        <h1>Save this.</h1>
+        <p class="lede">It's the only way back into your account if you forget your password. We can't send it to you again, because we don't have it.</p>
+        <div class="code-plate">SPQR 4K7M XN2A 9WTD</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <button class="btn btn-primary">I've saved it</button>
+          <button class="btn btn-secondary">Copy</button>
+          <button class="btn btn-secondary">Download</button>
+        </div>
+        <div class="smallprint">
+          We can't reset your password.<br>
+          We can't recover your messages.<br>
+          That's the point, but it does mean this matters.
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+// ---- toolbar wiring. Each segmented control writes one attribute on <html>,
+//      which is exactly how the real customisation seam works (see 05 §7).
+function seg(id, apply) {
+  const root = document.getElementById(id);
+  root.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    for (const b of root.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === btn));
+    apply(btn.dataset.v);
+  });
+}
+const html = document.documentElement;
+
+// Deep-link support: ?theme=daylight&density=compact&personality=calm
+const qs = new URLSearchParams(location.search);
+for (const [key, id] of [['theme','theme-seg'],['density','density-seg'],['personality','personality-seg']]) {
+  const v = qs.get(key);
+  if (!v) continue;
+  const btn = document.querySelector(`#${id} button[data-v="${v}"]`);
+  if (!btn) continue;
+  for (const b of btn.parentElement.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === btn));
+  html.dataset[key] = v;
+}
+
+seg('theme-seg', v => { html.dataset.theme = v; paintColour(); });
+seg('density-seg', v => { html.dataset.density = v; });
+seg('personality-seg', v => { html.dataset.personality = v; });
+seg('motion-seg', v => { document.body.classList.toggle('reduce-motion', v === 'off'); });
+
+// ---- live contrast checking. A palette that isn't measured is a guess —
+//      this is what caught the light-theme failure in the first draft.
+function readVar(n) { return getComputedStyle(html).getPropertyValue(n).trim(); }
+function toRgb(hex) {
+  const h = hex.replace('#', '');
+  const f = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  return [0, 2, 4].map(i => parseInt(f.slice(i, i + 2), 16));
+}
+function lum(hex) {
+  const [r, g, b] = toRgb(hex).map(v => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function ratio(a, b) {
+  const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
+
+const CANDY = ['gold', 'rose', 'violet', 'sky', 'mint', 'coral', 'lilac', 'aqua'];
+function paintColour() {
+  const base = readVar('--ground-0');
+  document.getElementById('swatches').innerHTML = CANDY.map(name => {
+    const fill = readVar('--' + name);
+    const ink = readVar('--face-' + name);
+    // Measure the INK twin — that's the one that has to carry a member's name.
+    const r = ratio(ink, base);
+    const cls = r >= 4.5 ? 'pass' : r >= 3 ? 'warn' : 'fail';
+    const verdict = r >= 4.5 ? 'body + large' : r >= 3 ? 'large only' : 'decoration only';
+    const same = fill.toLowerCase() === ink.toLowerCase();
+    return `<div class="sw">
+      <div class="chip" style="background:${fill}">${same ? '' :
+        `<div style="height:50%;background:${ink}"></div>`}</div>
+      <div class="meta">
+        <div class="name">${name}</div>
+        <div class="hex">${fill}${same ? '' : ' / ' + ink}</div>
+        <div class="ratio ${cls}">${r.toFixed(2)}:1 &middot; ${verdict}</div>
+      </div></div>`;
+  }).join('');
+
+  document.getElementById('grounds').innerHTML = [0, 1, 2, 3, 4].map(i => {
+    const hex = readVar('--ground-' + i);
+    return `<div style="background:${hex};color:${ratio('#ffffff', hex) > 3 ? '#fff' : '#1b1533'}">
+      ground-${i}<br>${hex}</div>`;
+  }).join('');
+}
+paintColour();
+</script>
+</body>
+</html>

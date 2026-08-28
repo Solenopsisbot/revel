@@ -1,0 +1,237 @@
+# Phase 0 results — measured, not assumed
+
+Everything here came out of running code in `crates/revel-crypto`. Measured on a
+2025-class laptop CPU with `mls-rs 0.56.0`, release build — the hardware is worth
+stating only so the absolute numbers can be interpreted; the ratios are what
+matter. Reproduce with:
+
+```
+cargo test -p revel-crypto
+cargo run --release -p revel-crypto --example bench
+cargo run --release -p revel-crypto --features pq --example bench_pq
+```
+
+---
+
+## 1. The gating question: per-device leaves — **answered, yes**
+
+`06-roadmap.md` called this "the one thing Kith never did; it gates Phase 1".
+Nine tests now hold it down:
+
+- **Several devices of one account are independent leaves.** Two of Viola's
+  devices plus Ash sit as three leaves in one group and all exchange messages.
+  Kith's shared-key model is what forced its reload-with-retry hack; that whole
+  class of bug is gone by construction.
+- **Device certificates bind a leaf to an account.** The account key signs the
+  device's MLS signature key, domain-separated. Tested against: another account
+  claiming your device, device-key substitution, **label tampering** (the label
+  shows in the devices screen, so a device that could rename itself "laptop"
+  after the fact would be a live spoofing surface), and malformed input.
+- **Revocation is real.** Remove the leaf, commit, and the revoked device cannot
+  read the next epoch while remaining members can. Had this failed, "sign out
+  this device" would have been a lie.
+- **Forged certificates are refused by the protocol**, not by the caller
+  (`identity.rs`). One forgetful call site can no longer admit an
+  unauthenticated device.
+
+### The bug worth remembering
+
+`IdentityProvider::identity()` first returned the **account** key, on the
+reasoning that an account's devices "are" one member. MLS uses that value to
+detect duplicates, so both of Viola's devices looked like the same member and
+the second Add failed with `DuplicateLeafData`.
+
+**Identity is per device; the same-person relation lives in `valid_successor`.**
+So a device can rotate its signature key and stay itself, and cannot silently
+become somebody else. Exactly backwards from the first attempt, and the kind of
+thing only a running test catches.
+
+---
+
+## 2. Group scaling — and a measurement mistake worth recording
+
+First pass, with mls-rs defaults:
+
+| leaves | build (batched) | 1 add | welcome | 1 remove | encrypt |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 2 | 1 ms | 9.7 ms | 1.0 KiB | 0.7 ms | 66 µs |
+| 50 | 9 ms | 0.9 ms | 21.0 KiB | 1.7 ms | 48 µs |
+| 500 | 81 ms | 4.8 ms | 209.0 KiB | 13.7 ms | 49 µs |
+| 2000 | 774 ms | 18.5 ms | 836.9 KiB | 39.8 ms | 51 µs |
+
+**Sending is flat** — ~50 µs regardless of group size. A message costs the same
+in a DM as in a 2,000-person room. **Commits are cheap** — 18.5 ms to add at
+2,000 leaves against the 500 ms budget in `29` §5.
+
+### The mistake
+
+`mls-rs` defaults `ratchet_tree_extension` to **true**, inlining the whole
+ratchet tree into every Welcome. `03` §5 explicitly says we *don't* do that —
+the tree is public, so the Host serves it separately. So the table above
+measures a configuration our own design rejects, and the Welcome column is
+roughly 4× worse than reality:
+
+| leaves | welcome (tree inlined) | welcome (tree out of band) | tree, served separately |
+| ---: | ---: | ---: | ---: |
+| 50 | 21.0 KiB | **5.9 KiB** | 15.1 KiB |
+| 500 | 209.0 KiB | **57.7 KiB** | 151.3 KiB |
+| 2000 | 836.9 KiB | **230.6 KiB** | 606.3 KiB |
+
+### What a single joiner actually downloads
+
+Batch-adding 500 people at once puts 500 members' secrets in one Welcome —
+realistic for a migration, not for someone joining a room. The normal case:
+
+| | leaves | welcome | tree (cacheable) | total, first join |
+| --- | ---: | ---: | ---: | ---: |
+| classical | 50 | 0.4 KiB | 15.9 KiB | **16 KiB** |
+| PQ hybrid | 50 | 1.4 KiB | 74.9 KiB | **76 KiB** |
+| classical | 500 | 0.4 KiB | 156.5 KiB | **157 KiB** |
+| PQ hybrid | 500 | 1.4 KiB | 736.2 KiB | **738 KiB** |
+| classical | 2000 | 0.4 KiB | 626.2 KiB | **627 KiB** |
+| PQ hybrid | 2000 | 1.4 KiB | 2941.8 KiB | **2.9 MB** |
+
+**The Welcome is constant** — 0.4 KiB classical, 1.4 KiB PQ, at any group size.
+Every byte that scales with the room is the ratchet tree, which is **public,
+identical for every joiner at that epoch, and therefore cacheable**. That is the
+whole justification for the out-of-band decision, now with numbers.
+
+So the ~2,000-leaf ceiling in `03` §11 is **not** a bandwidth limit. A first
+join at 2,000 members is 627 KiB classical or 2.9 MB post-quantum — one photo,
+once per device per room. The ceiling should be justified by commit-storm and
+committer-availability concerns, or dropped; it should not cite Welcome size.
+
+---
+
+## 3. Post-quantum — **yes, everywhere. Not per group.**
+
+Against **ML-KEM-768 + X25519**, the X-Wing-style hybrid — the only sensible PQ
+choice, since it holds if *either* primitive holds and so isn't a bet on
+lattices.
+
+| | classical | PQ hybrid | cost |
+| --- | ---: | ---: | ---: |
+| encrypt a message | 15 µs | 15 µs | **free** |
+| 1 add @ 500 | 2.5 ms | 4.3 ms | 1.7× |
+| build @ 500 | 39 ms | 45 ms | 1.2× |
+| KeyPackage | 423 B | 2,793 B | 6.6× |
+| welcome, single join | 0.4 KiB | 1.4 KiB | 1 KiB |
+| tree @ 2000 (cacheable) | 626 KiB | 2.9 MB | 4.7× |
+
+**Ship the PQ hybrid uniformly** — *if it can run everywhere. It currently
+cannot; §3a below supersedes this.*
+
+An earlier draft of this doc recommended choosing the ciphersuite *per group* —
+PQ for small rooms, classical for large ones — on the basis that a PQ Welcome
+was 1.3 MB. That number came from the flawed measurement above (batched adds,
+tree inlined). Corrected, the entire PQ overhead on a join is **1 KiB of
+Welcome plus a larger cacheable tree**, and messaging is free.
+
+A per-group split would have bought very little and cost a lot: rooms with
+different cryptographic strength, no way for a user to tell which is which, and
+a policy axis to explain in a product whose whole pitch is that you don't have
+to think about this. Uniform is simpler, and simplicity in crypto configuration
+is itself a security property.
+
+This settles the open question in `03` §12 and the conditional in `README.md`.
+
+---
+
+## 3a. …but post-quantum does not currently work on the web
+
+Found immediately after, and it qualifies everything above.
+
+| target | classical core | PQ (AWS-LC) |
+| --- | --- | --- |
+| native (macOS/Linux/iOS/Android) | builds | builds |
+| **`wasm32-unknown-unknown`** | **builds** | **fails** |
+
+`mls-rs-crypto-awslc` wraps **AWS-LC, a C library**, and `aws-lc-sys` cannot
+build for `wasm32`. The pure-Rust stack (`mls-rs` + `mls-rs-crypto-rustcrypto`)
+compiles to wasm32 fine — but has no PQ ciphersuites at all.
+
+Since the web client is the v1 product (`05` §5), PQ can't ship uniformly today.
+And the obvious fallback is worse than it looks: a ciphersuite is fixed **per
+group**, so "PQ on native, classical on web" would mean any group containing one
+web member must be classical — a room's cryptographic strength would depend,
+invisibly, on which clients its members happen to use. Strictly worse than the
+per-room split already rejected.
+
+### Options
+
+**A. Ship classical now; add PQ when a wasm-capable hybrid exists.** ← recommended.
+Harvest-now-decrypt-later is real but not urgent at friends-and-communities
+scale. The migration path is already written (`29` §1 — a ciphersuite change
+means new groups, not an upgrade), and it's the same mechanism any crypto change
+would use.
+
+**B. Wire an existing pure-Rust hybrid into mls-rs.** Smaller than first stated.
+An earlier draft of this section implied there were no pure-Rust PQ libraries;
+that was wrong. There are several, and the relevant ones **build for wasm32**
+(verified, not assumed):
+
+| crate | what it is |
+| --- | --- |
+| **`x-wing` 0.1** | pure-Rust X-Wing KEM — exactly the hybrid construction we want. **Builds for wasm32.** |
+| `rxwing` | X-Wing, tracking draft 10 |
+| `ml-kem` 0.3 | RustCrypto's pure-Rust ML-KEM. **Builds for wasm32.** |
+| `libcrux-ml-kem` | formally verified ML-KEM |
+| `kyberlib` | FIPS 203 ML-KEM |
+
+So the missing piece is **not** the cryptography — it is the *adapter*: nothing
+implements mls-rs's `KemType` over any of them. `mls-rs-crypto-hpke`'s
+`CombinedKem<KEM1, KEM2, H, VH, F>` is generic over its KEMs, so the work is a
+trait impl plus a provider that swaps the KEM into the existing RustCrypto
+provider — real, testable, and far short of writing a KEM.
+
+It still lands in audit scope (`27` §3), because a wrong adapter is as bad as
+wrong primitives. But "wire two audited crates together behind a trait" is a
+different proposition from "write our own KEM", and the earlier wording
+overstated it.
+
+**Also worth noting:** `mls-rs-crypto-webcrypto` exists — a SubtleCrypto-backed
+provider for browsers. It won't help with PQ (SubtleCrypto has no PQ suites), but
+it's a relevant option for the web target generally and wasn't on the radar.
+
+**C. Wait for upstream.** `mls-rs-crypto-rustcrypto` gaining PQ suites makes it
+free. No signal on timing.
+
+**Recommendation: A now, B as a near-term spike** — it is smaller than it first
+looked, and getting PQ before launch is much cheaper than migrating groups after.
+Keep the PQ benchmarks in the repo so this can be revisited with numbers, and
+don't let web and native diverge cryptographically in the meantime.
+
+## 3b. The one-core bet — half proven
+
+`26` claims one Rust core serves every platform: `wasm-bindgen` for web, UniFFI
+for native. Tested rather than assumed:
+
+| target | result |
+| --- | --- |
+| `wasm32-unknown-unknown` (classical core) | **compiles** |
+| `wasm32-unknown-unknown` (PQ / AWS-LC) | fails — see §3a |
+| **Swift via UniFFI** | **compiles and runs — 7 checks passed** |
+
+The Swift test is not a smoke test that merely links: it generates an account
+key, issues and verifies a device certificate, confirms a tampered certificate
+is refused, checks that a wrong-length key surfaces as a **typed Swift error**
+rather than a crash, and confirms two devices of one account share an account id.
+Same Rust code the web will call.
+
+Still to do: `wasm-bindgen` wrappers plus a Node test running a real two-device
+MLS flow through the compiled artifact. Compiling is not the same as working.
+
+---
+
+## 4. Toolchain notes
+
+- **`mls-rs 0.56.0` + `mls-rs-crypto-rustcrypto 0.22.1`**, both on
+  `mls-rs-core 0.27.0`. Older combinations resolve to *two different*
+  `mls-rs-core` versions and the provider then fails to satisfy mls-rs's own
+  `CryptoProvider` bound. Check `cargo tree` if that error appears.
+- **AWS-LC built with no Go or perl** — `cmake` and Apple clang were enough on
+  macOS/aarch64. PQ is behind the `pq` feature so the default build stays pure
+  Rust.
+- `mls-rs 0.44` → `0.56` changed several method arities (`create_group`,
+  `join_group`, `generate_key_package_message` all take a trailing
+  `Option<MlsTime>`).
