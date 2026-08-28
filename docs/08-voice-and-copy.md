@@ -222,6 +222,13 @@ no DMs yet. The main chat area shows:
 
 ### First-run: welcome bot message
 
+> **Superseded for onboarding.** First run is now a single overlay with Wren
+> (`19-app-shell-ux.md` §Onboarding), not a DM. The copy below still stands as
+> the model for how *an actual agent* introduces itself — the "you can see me
+> in the member list right now" move is exactly right for something that is in
+> the roster. It is just not Wren, who is the client and cannot be in a room
+> (`09-mascot.md`).
+
 The welcome bot is a real agent account, visible in the member roster with
 the bot badge. Its first DM to the user:
 

@@ -13,6 +13,8 @@
   import CallBar from '$lib/voice/CallBar.svelte';
   import CallStage from '$lib/voice/CallStage.svelte';
   import IncomingCall from '$lib/voice/IncomingCall.svelte';
+  import Onboarding from '$lib/onboarding/Onboarding.svelte';
+  import { onboarding } from '$lib/onboarding/onboarding.svelte.js';
   import { contextMenu } from '$lib/contextmenu.svelte.js';
   import { roomMenu, spaceMenu, memberMenu } from '$lib/menus.js';
   import { voice } from '$lib/voice/voice.svelte.js';
@@ -373,6 +375,8 @@
   <ContextMenu />
 
   {#if voice.incoming}<IncomingCall />{/if}
+
+  {#if onboarding.open}<Onboarding onclose={() => onboarding.dismiss()} />{/if}
 
   {#if core.profileFor}
     <ProfileCard

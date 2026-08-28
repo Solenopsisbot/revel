@@ -136,15 +136,35 @@ itself rather than living in a help page nobody opens.
 The three cliffs (`05` §3) cover the crypto. The rest of the first run:
 
 1. Handle, password, recovery code (`08` copy) — the only mandatory steps.
-2. **You land in a DM with Wren.** Not a tour, not a checklist: a real
-   conversation with a real account visibly in the roster. She says what she is,
-   that she lives on this device, and that you can ignore her. First
-   demonstration that agents are members, done by doing rather than explaining.
+2. **One overlay, with Wren.** She says what she is, that she lives on this
+   device, and that you can ignore her — and then gives you the button that
+   turns her down, because advising you a setting exists is the Clippy move
+   and doing the thing is her own rule (`12`).
 3. One inline card: *"Spaces you're invited to appear here. Or make one — it
    takes a second."* Dismissible, gone forever once you have a space.
 4. Nothing else. No tour, no coach marks, no progress ring. The three-cliff
    screens already spent the user's patience on the things that genuinely
    can't be recovered from, and that budget is finite.
+
+### Why an overlay and not a DM with Wren
+
+This step used to read *"you land in a DM with Wren — a real conversation with
+a real account visibly in the roster."* That was wrong, and wrong in a way that
+mattered: `09-mascot.md` §"Why she can't be a room bot" is explicit that Wren
+**cannot be in a room**. A mascot who can read your conversations is precisely
+the ghost reader the product swears doesn't exist, and shipping her as one
+would have burned the thesis down to make onboarding friendlier.
+
+An overlay is the honest surface — it is the client talking to you, on your
+device, in the one place that is not a room. It also lets her introduction make
+a claim a welcome *bot* never could. `08`'s bot leads with "you can see me in
+the member list right now"; Wren leads with **"I'm not in your rooms. I can't
+be."** Hers is the stronger sentence, and it is the product's whole argument in
+six words.
+
+If someone wants Wren *in* a room she can be added as an agent account, with a
+real leaf in the group and a real roster entry — a separate instance, sharing
+no state, per `09` §"The agent account".
 
 ## Accessibility, concretely
 
