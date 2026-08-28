@@ -13,7 +13,7 @@
  * actually see here?" is a question nobody answers well and we can answer it
  * from the room's real configuration.
  */
-import { core } from '../fake/core.svelte.js';
+import { core, MY_ACCOUNT } from '../fake/core.svelte.js';
 import { theme, THEMES } from '../theme.svelte.js';
 import { voice } from '../voice/voice.svelte.js';
 import { wren } from '../wren/wren.svelte.js';
@@ -110,6 +110,18 @@ export function buildCommands(ctx: Ctx): Command[] {
     });
   }
 
+  for (const dm of core.dms) {
+    out.push({
+      id: `dm:${dm.id}`,
+      label: dm.name ?? core.dmTitle(dm),
+      hint: dm.kind === 'group' ? 'Group' : 'Direct message',
+      icon: 'send',
+      group: 'Go to',
+      keywords: 'dm direct message conversation chat',
+      run: () => void core.openHome(dm.id),
+    });
+  }
+
   for (const face of core.roster) {
     out.push({
       id: `face:${face.id}`,
@@ -119,6 +131,27 @@ export function buildCommands(ctx: Ctx): Command[] {
       group: 'Go to',
       keywords: 'profile person member',
       run: () => void (core.profileFor = face.id),
+    });
+  }
+
+  // Anyone you share a room with is someone you can start a conversation
+  // with. Agents are excluded: you talk to an agent in the room it is in.
+  const dmTargets = new Set<string>();
+  for (const space of core.spaces) {
+    for (const room of space.rooms) {
+      for (const id of core.rosterFor(room.id)) dmTargets.add(id);
+    }
+  }
+  for (const id of dmTargets) {
+    const face = core.faces[id];
+    if (!face || face.agent || face.accountId === MY_ACCOUNT) continue;
+    out.push({
+      id: `message:${id}`,
+      label: `Message ${face.name}`,
+      icon: 'send',
+      group: 'Create',
+      keywords: 'dm direct new conversation start',
+      run: () => void core.openDm(id),
     });
   }
 
@@ -217,6 +250,19 @@ export function buildCommands(ctx: Ctx): Command[] {
       run: () => void wren.setVolume('quiet'),
     },
   );
+
+  // A call in the DM you're looking at. It rings rather than being a place
+  // you walk into, so it is a distinct verb from joining a voice room.
+  if (core.scope === 'home' && core.dm) {
+    out.push({
+      id: 'call-dm',
+      label: `Call ${core.dm.name ?? core.dmTitle(core.dm)}`,
+      icon: 'voice',
+      group: 'Configure',
+      keywords: 'ring phone voice dm',
+      run: () => voice.startCall(core.dm!.id),
+    });
+  }
 
   // Voice rooms you can drop into.
   for (const space of core.spaces) {

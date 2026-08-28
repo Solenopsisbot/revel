@@ -25,7 +25,19 @@
     m,
     grouped,
     unreadAbove = false,
-  }: { m: Message; grouped: boolean; unreadAbove?: boolean } = $props();
+    bubble = false,
+  }: {
+    m: Message;
+    grouped: boolean;
+    unreadAbove?: boolean;
+    /**
+     * Bubble style (`docs/07` §"Two message styles"). DMs get it by default;
+     * a space room can be switched to it and a busy DM can be switched off it.
+     * Everything inside the row is unchanged — the same avatar, author line,
+     * rich text, reactions and menus. Only the frame differs.
+     */
+    bubble?: boolean;
+  } = $props();
 
   const face = $derived(core.faces[m.faceId]!);
   const mine = $derived(core.mine(m));
@@ -119,6 +131,8 @@
 <article
   id="m-{m.id}"
   class="row"
+  class:bubble
+  class:mine
   class:grouped={grouped && !unreadAbove}
   class:pending={m.pending}
   class:editing
@@ -495,4 +509,56 @@
   .unread-line::before { flex: 1; }
   .unread-line::after { flex: 0 0 24px; }
   .unread-line span { flex: none; }
+
+  /* ---- bubbles -----------------------------------------------------------
+     A DM is a conversation between two or three people, so the useful visual
+     job is "who said this" rather than "scan a wall fast" — which is the job
+     rows are for. The bubble carries the sender's face colour, the same one
+     that names them everywhere else.
+
+     Own messages sit on the right. `docs/07` doesn't specify that, but a
+     two-person conversation where both sides are left-aligned makes you read
+     the name on every line to know who is talking, and the convention exists
+     because it works. */
+  .row.bubble {
+    padding: 3px 16px;
+    align-items: flex-end;
+  }
+  .row.bubble.grouped { padding-top: 1px; }
+  .row.bubble::before { display: none; }
+  .row.bubble:hover { background: transparent; }
+
+  .row.bubble .gutter { align-self: flex-end; }
+  .row.bubble .stamp { display: none; }
+
+  .row.bubble .body {
+    background: var(--ground-2);
+    border-radius: 16px 16px 16px 5px;
+    padding: 8px 13px;
+    max-width: min(74%, 46rem);
+    width: fit-content;
+  }
+  .row.bubble.grouped .body { border-top-left-radius: 16px; }
+
+  /* Tinted in the sender's colour, lightly — enough to be theirs, not enough
+     to fight the text on top of it. */
+  .row.bubble:not(.mine) .body {
+    background: color-mix(in oklab, var(--fc) 14%, var(--ground-2));
+  }
+
+  .row.bubble.mine {
+    flex-direction: row-reverse;
+  }
+  .row.bubble.mine .body {
+    background: color-mix(in oklab, var(--brand) 26%, var(--ground-2));
+    border-radius: 16px 16px 5px 16px;
+    margin-left: auto;
+  }
+  .row.bubble.mine.grouped .body { border-top-right-radius: 16px; }
+  .row.bubble.mine .author-line { flex-direction: row-reverse; }
+  .row.bubble.mine .actions { left: 16px; right: auto; }
+
+  /* The avatar only appears on the first message of a run; the rest indent to
+     match so the column stays straight. */
+  .row.bubble.grouped .gutter { visibility: hidden; }
 </style>

@@ -23,6 +23,8 @@ export interface Participant {
   /** Drives the speaking ring. Never reorders tiles. */
   speaking: boolean;
   quality: Quality;
+  /** Called but not yet answered. Only ever true in a DM call. */
+  ringing?: boolean;
   /**
    * Our two clients disagree about this call's keys, so their audio decodes to
    * nothing. `docs/21` calls this out as the worst failure mode because it
@@ -52,21 +54,43 @@ class Voice {
       working rather than as a glitch. */
   rekeying = $state(false);
 
+  /**
+   * An incoming DM call, waiting to be answered.
+   *
+   * The other shape of call (`docs/21`): a voice room is a place you walk
+   * into, a DM call rings. Same in-call UI either way — they differ only in
+   * how you arrive.
+   */
+  incoming = $state<{ dmId: string; fromFaceId: string } | null>(null);
+  /** You called them and they haven't picked up. */
+  ringingOut = $state(false);
+
   private speakingTimer: ReturnType<typeof setInterval> | null = null;
 
   get inCall() {
     return this.roomId !== null;
   }
 
+  /** The voice room, when the call is one. A DM call has no space room. */
   get room() {
     if (!this.spaceId || !this.roomId) return undefined;
     return core.spaces.find((s) => s.id === this.spaceId)?.rooms.find((r) => r.id === this.roomId);
   }
 
+  /** What to call this call, whichever shape it is. */
+  get title() {
+    if (this.room) return this.room.name;
+    const dm = core.dms.find((d) => d.id === this.roomId);
+    return dm ? (dm.name ?? core.dmTitle(dm)) : 'Call';
+  }
+
   /** The room you are in, only when you are also *looking* at it. Decides
       whether the shell shows the stage or the persistent bar. */
   get viewingCall() {
-    return this.inCall && core.currentSpaceId === this.spaceId && core.currentRoomId === this.roomId;
+    if (!this.inCall) return false;
+    // A DM call has no space to match on; being in the room is enough.
+    if (!this.spaceId) return core.currentRoomId === this.roomId;
+    return core.currentSpaceId === this.spaceId && core.currentRoomId === this.roomId;
   }
 
   join(spaceId: string, roomId: string) {
@@ -99,6 +123,7 @@ class Voice {
   }
 
   leave() {
+    this.ringingOut = false;
     const room = this.room;
     if (room) {
       room.inCall = (room.inCall ?? []).filter((id) => id !== core.speakingAs);
@@ -112,6 +137,76 @@ class Voice {
     this.cameraOn = false;
     this.sharing = false;
     this.deafened = false;
+  }
+
+  /**
+   * Start a call in a DM. You are in immediately and muted; the other side
+   * rings. There is no "connecting" modal — joining is a two-second operation
+   * and whatever device you used last time is used again (`docs/21`).
+   */
+  startCall(dmId: string) {
+    const dm = core.dms.find((d) => d.id === dmId);
+    if (!dm) return;
+    this.spaceId = null;
+    this.roomId = dmId;
+    this.micMuted = true;
+    this.ringingOut = true;
+    this.participants = [
+      { faceId: core.speakingAs, muted: true, speaking: false, quality: 'good' },
+      ...dm.withIds.map((faceId) => ({
+        faceId,
+        muted: false,
+        speaking: false,
+        quality: 'good' as Quality,
+        ringing: true,
+      })),
+    ];
+    this.startChatter();
+    // They pick up. In a real client this is their join event arriving.
+    setTimeout(() => {
+      this.ringingOut = false;
+      for (const p of this.participants) p.ringing = false;
+      this.bumpEpoch();
+    }, 2600);
+  }
+
+  /** Somebody is calling you. The demo hook for the receiving side. */
+  simulateIncoming(dmId?: string) {
+    const dm = dmId ? core.dms.find((d) => d.id === dmId) : core.dms[0];
+    if (!dm) return;
+    this.incoming = { dmId: dm.id, fromFaceId: dm.withIds[0]! };
+  }
+
+  /**
+   * `muted` is the option people actually want when they're not sure what
+   * they're walking into, so it is a first-class answer rather than something
+   * you fix after arriving.
+   */
+  answer(muted = true) {
+    const call = this.incoming;
+    if (!call) return;
+    this.incoming = null;
+    const dm = core.dms.find((d) => d.id === call.dmId);
+    if (!dm) return;
+    this.spaceId = null;
+    this.roomId = dm.id;
+    this.micMuted = muted;
+    this.participants = [
+      { faceId: core.speakingAs, muted, speaking: false, quality: 'good' },
+      ...dm.withIds.map((faceId) => ({
+        faceId,
+        muted: false,
+        speaking: false,
+        quality: 'good' as Quality,
+      })),
+    ];
+    core.openHome(dm.id);
+    this.bumpEpoch();
+    this.startChatter();
+  }
+
+  decline() {
+    this.incoming = null;
   }
 
   toggleMic() {

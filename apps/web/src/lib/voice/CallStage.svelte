@@ -36,9 +36,11 @@
 <div class="stage">
   <header>
     <Icon name="voice" size={17} />
-    <h2>{voice.room?.name}</h2>
+    <h2>{voice.title}</h2>
     <span class="count">{voice.participants.length} {voice.participants.length === 1 ? 'person' : 'people'}</span>
-    {#if voice.rekeying}
+    {#if voice.ringingOut}
+      <span class="rekey ringing" role="status">ringing</span>
+    {:else if voice.rekeying}
       <!-- A half-second audio gap with no explanation reads as a glitch; with
            one, it reads as security working. -->
       <span class="rekey" role="status">keys updated</span>
@@ -111,6 +113,7 @@
   header { display: flex; align-items: center; gap: 9px; color: var(--text-dim); }
   h2 { font-size: var(--text-base); font-weight: 700; margin: 0; color: var(--text); }
   .count { font-size: var(--text-sm); color: var(--text-mute); }
+  .rekey.ringing { color: var(--text-mute); background: var(--ground-3); }
   .rekey {
     font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
     color: var(--face-mint); background: color-mix(in oklab, var(--face-mint) 16%, transparent);

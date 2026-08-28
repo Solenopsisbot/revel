@@ -12,6 +12,7 @@
   import SpaceSettings from '$lib/space/SpaceSettings.svelte';
   import CallBar from '$lib/voice/CallBar.svelte';
   import CallStage from '$lib/voice/CallStage.svelte';
+  import IncomingCall from '$lib/voice/IncomingCall.svelte';
   import { contextMenu } from '$lib/contextmenu.svelte.js';
   import { roomMenu, spaceMenu, memberMenu } from '$lib/menus.js';
   import { voice } from '$lib/voice/voice.svelte.js';
@@ -108,6 +109,37 @@
     );
   }
 
+  /** Unread anywhere in Home, for the rail dot. */
+  const dmUnread = $derived(core.dms.some((d) => d.unread));
+
+  function openDmMenu(e: MouseEvent, id: string) {
+    const dm = core.dms.find((d) => d.id === id);
+    if (!dm) return;
+    const level = dm.notify ?? core.notifications.global;
+    contextMenu.open(
+      e,
+      [
+        { id: 'notify:inherit', label: 'Use the default', header: 'Notifications', checked: !dm.notify },
+        { id: 'notify:all', label: 'Everything', checked: dm.notify === 'all' },
+        { id: 'notify:mentions', label: 'Mentions', checked: dm.notify === 'mentions' },
+        { id: 'notify:none', label: 'Nothing', checked: dm.notify === 'none' },
+        { id: 'mark-read', label: 'Mark as read', icon: 'check', header: 'Conversation', disabled: !dm.unread },
+        { id: 'call', label: 'Start a call', icon: 'voice' },
+        { id: 'close', label: 'Close conversation', icon: 'x', danger: true },
+      ],
+      (picked) => {
+        const [verb, arg] = picked.split(':');
+        if (verb === 'notify') dm.notify = arg === 'inherit' ? undefined : (arg as 'all' | 'mentions' | 'none');
+        if (picked === 'mark-read') { dm.unread = undefined; dm.mention = false; }
+        if (picked === 'call') voice.startCall(dm.id);
+        // Closing hides the conversation; it does not delete anything, and
+        // messaging them again brings the same room back (the id is derived).
+        if (picked === 'close') core.closeDm(dm.id);
+      },
+      dm.name ?? core.dmTitle(dm),
+    );
+  }
+
   function openMemberMenu(e: MouseEvent, faceId: string) {
     const face = core.faces[faceId];
     if (!face) return;
@@ -116,6 +148,7 @@
       memberMenu({ name: face.name, isAgent: !!face.agent, isMe: faceId === core.speakingAs }),
       (id) => {
         if (id === 'profile' || id === 'agent-info') core.profileFor = faceId;
+        if (id === 'dm') core.openDm(faceId);
         if (id === 'block') cmdCtx.openSettings('privacy');
         if (id === 'verify') cmdCtx.openSettings('devices');
       },
@@ -145,6 +178,18 @@
 
 <div class="shell" class:no-members={!core.membersOpen}>
   <nav class="rail" aria-label="Spaces">
+    <button
+      class="home"
+      class:active={core.scope === 'home'}
+      onclick={() => core.openHome()}
+      title="Direct messages"
+      aria-label="Direct messages"
+    >
+      <Icon name="send" size={19} />
+      {#if dmUnread}<span class="rail-dot" aria-label="unread"></span>{/if}
+    </button>
+    <hr class="rail-sep" />
+
     {#each core.spaces as space (space.id)}
       <button
         class="space"
@@ -159,6 +204,41 @@
   </nav>
 
   <aside class="sidebar">
+    {#if core.scope === 'home'}
+      <header class="space-head static"><span class="sh-nm">Direct messages</span></header>
+      <div class="rooms">
+        {#each core.dms as dm (dm.id)}
+          <button
+            class="room dm"
+            class:active={dm.id === core.currentRoomId}
+            class:unread={!!dm.unread}
+            onclick={() => core.openHome(dm.id)}
+            oncontextmenu={(e) => openDmMenu(e, dm.id)}
+          >
+            {#if dm.kind === 'group'}
+              <span class="stack">
+                {#each dm.withIds.slice(0, 2) as id (id)}
+                  <Avatar face={core.faces[id]!} size={20} />
+                {/each}
+              </span>
+            {:else}
+              <Avatar face={core.faces[dm.withIds[0]!]!} size={24} dot />
+            {/if}
+            <span class="name">{dm.name ?? core.dmTitle(dm)}</span>
+            {#if dm.mention}
+              <span class="pill">{dm.unread}</span>
+            {:else if dm.unread}
+              <span class="dot" aria-label="unread"></span>
+            {/if}
+          </button>
+        {:else}
+          <div class="no-dms">
+            <b>No conversations yet.</b>
+            <span>When someone messages you or you message them, it'll show up here.</span>
+          </div>
+        {/each}
+      </div>
+    {:else}
     <button
       class="space-head"
       bind:this={spaceHead}
@@ -219,6 +299,8 @@
         {/each}
       {/each}
     </div>
+    {/if}
+
     {#if voice.inCall && !voice.viewingCall}
       <CallBar />
     {/if}
@@ -242,12 +324,22 @@
 
   <main class="chat">
     <header class="chat-head">
-      <span class="glyph">{#if core.room.kind === 'voice'}<Icon name="voice" />{:else}#{/if}</span>
+      <span class="glyph">
+        {#if core.scope === 'home'}<Icon name="send" size={17} />
+        {:else if core.room.kind === 'voice'}<Icon name="voice" />
+        {:else}#{/if}
+      </span>
       <h1>{core.room.name}</h1>
       <div class="spacer"></div>
       {#if core.room.kind === 'voice' && voice.roomId !== core.currentRoomId}
         <button class="join" onclick={() => voice.join(core.currentSpaceId, core.currentRoomId)}>
           <Icon name="voice" size={15} /> Join
+        </button>
+      {:else if core.scope === 'home' && voice.roomId !== core.currentRoomId}
+        <!-- A DM call rings rather than being somewhere you walk into
+             (`docs/21`), so the affordance is Call, not Join. -->
+        <button class="join" onclick={() => voice.startCall(core.currentRoomId)}>
+          <Icon name="voice" size={15} /> Call
         </button>
       {/if}
       <button
@@ -279,6 +371,8 @@
   <SpaceSettings bind:open={spaceOpen} bind:tab={spaceTab} bind:room={spaceRoom} />
   <CommandBar bind:open={commandOpen} ctx={cmdCtx} />
   <ContextMenu />
+
+  {#if voice.incoming}<IncomingCall />{/if}
 
   {#if core.profileFor}
     <ProfileCard
@@ -425,6 +519,34 @@
   /* A room set to notify about nothing still counts unread, it just reads
      quieter in the list. Otherwise the setting is invisible. */
   .room.quiet { opacity: .55; }
+
+  /* Home is a peer of the spaces, not one of them, so it sits above a rule
+     rather than in the same run of icons. */
+  .home {
+    position: relative; width: 48px; height: 48px; flex: none; margin-bottom: 4px;
+    display: grid; place-items: center; border: 0; cursor: pointer;
+    border-radius: var(--r-lg); background: var(--ground-3); color: var(--text-dim);
+    transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease),
+      border-radius var(--t-base) var(--ease);
+  }
+  .home:hover { border-radius: var(--r-md); color: var(--text); }
+  .home.active { background: var(--brand); color: #fff; border-radius: var(--r-md); }
+  .rail-sep { width: 24px; border: 0; border-top: 1px solid var(--line); margin: 4px 0 8px; }
+  .rail-dot {
+    position: absolute; right: 4px; top: 4px; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--face-rose);
+    box-shadow: 0 0 0 2px var(--ground-0);
+  }
+
+  .space-head.static { cursor: default; }
+  .room.dm { gap: 9px; }
+  /* Two overlapping avatars for a group, so a group reads as one at a glance. */
+  .stack { display: flex; flex: none; }
+  .stack > :global(*:last-child) { margin-left: -8px; box-shadow: 0 0 0 2px var(--ground-1); }
+
+  .no-dms { padding: 22px 14px; text-align: center; }
+  .no-dms b { display: block; font-size: var(--text-sm); margin-bottom: 4px; }
+  .no-dms span { font-size: 12px; color: var(--text-mute); line-height: 1.5; }
 
   .incall { display: flex; flex-direction: column; gap: 1px; margin: 0 0 4px 30px; }
   .occupant {

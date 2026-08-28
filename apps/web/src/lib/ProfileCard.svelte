@@ -101,7 +101,9 @@
       {:else if face.agent}
         <button class="alt" onclick={onclose}>View in member list</button>
       {:else}
-        <button class="go"><Icon name="send" size={14} /> Message</button>
+        <button class="go" onclick={() => { core.openDm(face.id); onclose(); }}>
+          <Icon name="send" size={14} /> Message
+        </button>
         <button class="alt"><Icon name="shield" size={14} /> Verify</button>
       {/if}
     </div>

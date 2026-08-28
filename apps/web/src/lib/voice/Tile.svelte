@@ -23,6 +23,7 @@
   class="tile"
   class:speaking={p.speaking && !p.diverged}
   class:diverged={p.diverged}
+  class:ringing={p.ringing}
   style="--ring: var(--face-{face.colour})"
 >
   <Avatar {face} size={56} />
@@ -38,7 +39,10 @@
   {/if}
 
   <div class="state">
-    {#if p.muted}
+    {#if p.ringing}
+      <span class="chip">Ringing</span>
+    {/if}
+    {#if p.muted && !p.ringing}
       <span class="chip muted"><Icon name="mic-off" size={12} /> Muted</span>
     {/if}
     {#if p.sharing}
@@ -68,6 +72,9 @@
   }
   .tile.speaking { box-shadow: inset 0 0 0 2px var(--ring); }
   .tile.diverged { border-color: color-mix(in oklab, var(--face-coral) 55%, var(--line)); }
+  /* Not yet answered. Dimmed rather than absent, so you can see who you're
+     waiting on. */
+  .tile.ringing { opacity: .55; }
 
   .name { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); font-weight: 600; }
   .you { font-weight: 400; font-size: 11px; color: var(--text-mute); }

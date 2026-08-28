@@ -23,7 +23,7 @@
   <button class="back" onclick={() => voice.spaceId && voice.roomId && core.openRoom(voice.spaceId, voice.roomId)}>
     <span class="pip" aria-hidden="true"></span>
     <span class="meta">
-      <span class="nm"><Icon name="voice" size={13} /> {voice.room?.name}</span>
+      <span class="nm"><Icon name="voice" size={13} /> {voice.title}</span>
       <span class="sub">
         {#if broken}
           Someone's audio is broken

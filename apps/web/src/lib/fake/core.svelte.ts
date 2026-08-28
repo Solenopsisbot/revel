@@ -9,6 +9,8 @@
 import {
   account,
   devices,
+  dmId,
+  dms,
   faces as seedFaces,
   keyChanges,
   language,
@@ -20,10 +22,12 @@ import {
   rosters,
   spaces,
   storage,
+  type Dm,
   type Face,
   type FaceColour,
   type Message,
   type NotifyLevel,
+  type Room,
 } from './data.js';
 import { untoned } from '../emoji.js';
 
@@ -48,8 +52,21 @@ class Core {
    */
   faces: Record<string, Face> = $state(seedFaces);
   spaces = $state(spaces);
+  dms = $state(structuredClone(dms));
   currentSpaceId = $state('solexsis');
+  /**
+   * What you are looking at. A DM's id sits here exactly like a room's does,
+   * because a DM *is* a room (`docs/16`) — keeping one "current thing" id is
+   * what lets the message list, composer, roster and member panel work in a
+   * DM without knowing DMs exist.
+   */
   currentRoomId = $state('design');
+  /**
+   * Home is where rooms-without-a-space live (`docs/05` §2). It is a peer of
+   * the space rail rather than a space itself, because a DM belongs to no
+   * space and pretending otherwise would need a fake one.
+   */
+  scope = $state<'space' | 'home'>('space');
   /** Which face you are speaking as. Only surfaced when you have several. */
   speakingAs = $state('june');
   messages = $state<Record<string, Message[]>>(structuredClone(messages));
@@ -110,13 +127,53 @@ class Core {
   get space() {
     return this.spaces.find((s) => s.id === this.currentSpaceId) ?? this.spaces[0]!;
   }
-  get room() {
+  /** The DM you are in, if you are in one. */
+  get dm(): Dm | undefined {
+    return this.scope === 'home' ? this.dms.find((d) => d.id === this.currentRoomId) : undefined;
+  }
+
+  /**
+   * The open conversation, as a `Room`.
+   *
+   * A DM is presented as a synthesized room rather than a separate type, so
+   * every consumer — header, message list, composer, the "what can the server
+   * see" explainer — keeps working without a branch. Its audience is the
+   * explicit participant list, which is literally true.
+   */
+  get room(): Room {
+    const dm = this.dm;
+    if (dm) {
+      return {
+        id: dm.id,
+        name: dm.name ?? this.dmTitle(dm),
+        kind: 'text',
+        category: 'Direct messages',
+        notify: dm.notify,
+        // Bubbles, per `docs/07`: DMs and group DMs get them by default.
+        style: 'bubbles',
+        audience: { kind: 'picked', faceIds: [this.speakingAs, ...dm.withIds] },
+      };
+    }
     return this.space.rooms.find((r) => r.id === this.currentRoomId) ?? this.space.rooms[0]!;
+  }
+
+  /** "Rae", or "Rae and Emeri" for an unnamed group. */
+  dmTitle(dm: Dm) {
+    const names = dm.withIds.map((id) => this.faces[id]?.name ?? id);
+    if (names.length <= 2) return names.join(' and ');
+    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
   }
   get thread() {
     return this.messages[this.currentRoomId] ?? [];
   }
+  /** Who is in a given room, without opening it. */
+  rosterFor(roomId: string) {
+    return rosters[roomId] ?? [];
+  }
+
   get roster() {
+    const dm = this.dm;
+    if (dm) return [this.faces[this.speakingAs]!, ...dm.withIds.map((id) => this.faces[id]!)];
     return (rosters[this.currentRoomId] ?? []).map((id) => this.faces[id]!);
   }
   get myFaces() {
@@ -137,7 +194,65 @@ class Core {
     return this.thread.find((m) => m.id === id);
   }
 
+  /**
+   * Open a conversation with someone, creating it if it doesn't exist.
+   *
+   * Idempotent by construction: the id comes from the sorted account pair, so
+   * opening the same person's DM twice lands in the same room rather than
+   * making a second one (`docs/03`).
+   */
+  openDm(faceId: string) {
+    const face = this.faces[faceId];
+    if (!face || face.accountId === MY_ACCOUNT) return;
+    const id = dmId(MY_ACCOUNT, face.accountId);
+    let dm = this.dms.find((d) => d.id === id);
+    if (!dm) {
+      dm = { id, kind: 'dm', withIds: [faceId] };
+      this.dms.push(dm);
+      this.messages[id] ??= [];
+    }
+    this.scope = 'home';
+    this.currentRoomId = id;
+    dm.unread = undefined;
+    dm.mention = false;
+    this.replyTo = null;
+    this.editing = null;
+    this.profileFor = null;
+  }
+
+  /**
+   * Hide a conversation from Home.
+   *
+   * Not a delete: the messages stay, and messaging them again brings the same
+   * room back because the id is derived from the account pair rather than
+   * stored. Calling it "close" rather than "delete" is the honest label for
+   * what it does.
+   */
+  closeDm(id: string) {
+    this.dms = this.dms.filter((d) => d.id !== id);
+    if (this.currentRoomId === id) {
+      if (this.dms.length) this.openHome(this.dms[0]!.id);
+      else this.openRoom(this.currentSpaceId, this.space.rooms[0]!.id);
+    }
+  }
+
+  openHome(dmId?: string) {
+    this.scope = 'home';
+    const target = dmId ?? this.dms[0]?.id;
+    if (target) {
+      this.currentRoomId = target;
+      const dm = this.dms.find((d) => d.id === target);
+      if (dm) {
+        dm.unread = undefined;
+        dm.mention = false;
+      }
+    }
+    this.replyTo = null;
+    this.editing = null;
+  }
+
   openRoom(spaceId: string, roomId: string) {
+    this.scope = 'space';
     this.currentSpaceId = spaceId;
     this.currentRoomId = roomId;
     this.replyTo = null;

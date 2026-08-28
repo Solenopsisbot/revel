@@ -135,6 +135,13 @@ export interface Room {
   /** Roughly how many messages arrived here this week. Counts, never content. */
   weekly?: number;
   /**
+   * How messages are drawn (`docs/07` §"Two message styles"). Absent means the
+   * room's kind decides: bubbles for DMs, rows for space rooms. Set explicitly
+   * it overrides that, because "a busy room wants rows" is true of some DMs
+   * and false of some space rooms.
+   */
+  style?: 'bubbles' | 'rows';
+  /**
    * "Always translate this room." Distinct from `language`, which is what the
    * room is written in — one is an observation, the other is your choice
    * about it (`docs/10` §The controls).
@@ -370,12 +377,30 @@ export const messages: Record<string, Message[]> = {
     { id: 'c1', faceId: 'kiko', body: 'A revoked device cannot read the next epoch. 30 tests hold it down.', at: t(200), pinned: true },
   ],
   'ci-noise': [],
+  'dm-acct-r~acct-v': [
+    { id: 'dm1', faceId: 'rae', body: 'did you see the contrast thing kiko posted', at: t(180) },
+    { id: 'dm2', faceId: 'viola', body: 'yeah. he\u2019s right and i hate it', at: t(174) },
+    { id: 'dm3', faceId: 'rae', body: 'the ink twins fix is fine though. genuinely', at: t(170) },
+    { id: 'dm4', faceId: 'rae', body: 'anyway are you around later? want to argue about radii in person', at: t(12) },
+  ],
+  'dm-acct-e~acct-v': [
+    { id: 'dm5', faceId: 'emeri', body: 'train\u2019s cancelled, so tonight is off from my end', at: t(240) },
+  ],
+  'dm-group-shapes': [
+    { id: 'dm6', faceId: 'emeri', body: 'making this so we stop derailing #design', at: t(400) },
+    { id: 'dm7', faceId: 'rae', body: 'we will absolutely still derail #design', at: t(396) },
+  ],
   papers: [],
   runs: [{ id: 'r1', faceId: 'viola', body: 'loss curve looks sane finally', at: t(30) }],
 };
 
 /** Who is in a given room, for the member list. */
 export const rosters: Record<string, string[]> = {
+  // DMs carry their roster the same way a room does — the audience is an
+  // explicit list, so there is nothing special to look up.
+  'dm-acct-r~acct-v': ['viola', 'rae'],
+  'dm-acct-e~acct-v': ['viola', 'emeri'],
+  'dm-group-shapes': ['viola', 'rae', 'emeri'],
   design: ['rae', 'viola', 'june', 'kiko', 'emeri', 'translator'],
   general: ['rae', 'viola', 'emeri'],
   'crypto-review': ['viola', 'kiko'],
@@ -595,4 +620,42 @@ export const INTERFACE_LANGUAGES = [
 /** Languages the on-device models can handle, for the "languages I read" list. */
 export const READABLE_LANGUAGES = [
   'English', 'German', 'French', 'Spanish', 'Portuguese', 'Japanese', 'Korean', 'Dutch',
+];
+
+// ---------------------------------------------------------------------------
+// Direct messages
+//
+// A DM is a room with no space and an explicit-list audience (`docs/03` §4).
+// Structurally identical to a space room — one group, one event log — which is
+// why they share `Room`, the message list, the composer and everything else.
+// The only differences are where they are listed and how they are styled.
+// ---------------------------------------------------------------------------
+
+/**
+ * The id of a 1:1 conversation, derived from the sorted account pair.
+ *
+ * Deterministic on purpose (`docs/03`, Kith's trick): opening a DM with
+ * someone is idempotent, so two people starting one at the same moment land in
+ * the same room instead of creating two half-conversations.
+ */
+export function dmId(accountA: string, accountB: string) {
+  return `dm-${[accountA, accountB].sort().join('~')}`;
+}
+
+export interface Dm {
+  id: string;
+  kind: 'dm' | 'group';
+  /** Faces in the conversation, not counting you. */
+  withIds: string[];
+  /** Group DMs can be named; 1:1s are named by whoever is in them. */
+  name?: string;
+  unread?: number;
+  mention?: boolean;
+  notify?: NotifyLevel;
+}
+
+export const dms: Dm[] = [
+  { id: dmId('acct-v', 'acct-r'), kind: 'dm', withIds: ['rae'], unread: 2, mention: true },
+  { id: dmId('acct-v', 'acct-e'), kind: 'dm', withIds: ['emeri'] },
+  { id: 'dm-group-shapes', kind: 'group', withIds: ['rae', 'emeri'], name: 'shapes and complaints' },
 ];

@@ -87,6 +87,10 @@
   });
 
   const typingNames = $derived(core.typing.map((f) => core.faces[f]?.name ?? f));
+
+  /** Bubbles or rows (`docs/07`): the room's explicit choice if it has one,
+      otherwise its kind decides. */
+  const bubble = $derived(core.room.style === 'bubbles');
 </script>
 
 <div class="pane">
@@ -106,7 +110,7 @@
       {#if dayBreak}
         <div class="day" role="separator"><span>{dayLabel(m.at)}</span></div>
       {/if}
-      <MessageRow {m} grouped={grouped && !unreadAbove} {unreadAbove} />
+      <MessageRow {m} grouped={grouped && !unreadAbove} {unreadAbove} {bubble} />
     {/each}
   </div>
 
