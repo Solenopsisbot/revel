@@ -5,6 +5,7 @@
   import MessageList from '$lib/MessageList.svelte';
   import Composer from '$lib/Composer.svelte';
   import SettingsOverlay from '$lib/settings/SettingsOverlay.svelte';
+  import WrenSurface from '$lib/wren/WrenSurface.svelte';
   import { page } from '$app/state';
 
   // ?settings=<section> opens straight to a pane, so any of them can be
@@ -14,6 +15,16 @@
   let settingsSection = $state(deepLink ?? 'account');
 
   const me = $derived(faces[core.speakingAs]!);
+
+  /** Where one of Wren's actions wants to take you. She uses the same routes
+      the chrome does — there is no screen she can reach that you can't. */
+  function route(to: { settings?: string; members?: boolean }) {
+    if (to.settings) {
+      settingsSection = to.settings;
+      settingsOpen = true;
+    }
+    if (to.members) core.membersOpen = true;
+  }
 
   const categories = $derived(
     core.space.rooms.reduce<Record<string, typeof core.space.rooms>>((acc, r) => {
@@ -84,6 +95,7 @@
       <span class="glyph">{#if core.room.kind === 'voice'}<Icon name="voice" />{:else}#{/if}</span>
       <h1>{core.room.name}</h1>
       <div class="spacer"></div>
+      <WrenSurface onroute={route} />
       <button
         class="icon-btn"
         aria-pressed={core.membersOpen}

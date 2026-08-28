@@ -116,6 +116,14 @@ export interface Room {
   muted?: boolean;
   /** Slow mode, in seconds. 0 is off. */
   slow?: number;
+  /**
+   * The language most of this room is written in, detected on-device
+   * (`docs/10`). Absent means "the language you read", which is the common
+   * case and shouldn't need stating.
+   */
+  language?: string;
+  /** Roughly how many messages arrived here this week. Counts, never content. */
+  weekly?: number;
 }
 
 export interface Space {
@@ -178,8 +186,8 @@ export const spaces: Space[] = [
     from: 'aqua',
     to: 'sky',
     rooms: [
-      { id: 'papers', name: 'papers', kind: 'text', category: 'General' },
-      { id: 'runs', name: 'runs', kind: 'text', category: 'General', topic: 'Loss curves and disappointment', unread: 7 },
+      { id: 'papers', name: 'papers', kind: 'text', category: 'General', language: 'Japanese', weekly: 210 },
+      { id: 'runs', name: 'runs', kind: 'text', category: 'General', topic: 'Loss curves and disappointment', unread: 7, weekly: 340 },
     ],
   },
 ];
@@ -333,4 +341,116 @@ export const rosters: Record<string, string[]> = {
  */
 export const lastRead: Record<string, string> = {
   design: 'd3',
+};
+
+// ---------------------------------------------------------------------------
+// Account, devices and local storage
+//
+// These live here rather than inside the settings components because Wren
+// reads them too (`docs/12`: device and key state is explicitly on her
+// charter). A notice that says "you have one device" while the Devices screen
+// lists four is the kind of thing that destroys trust in the whole feature, so
+// there is one source and both surfaces read it.
+// ---------------------------------------------------------------------------
+
+export interface Device {
+  id: string;
+  name: string;
+  platform: string;
+  /** Human label for the list. */
+  seen: string;
+  /** Days since last contact. Drives the 90-day heuristic; 0 is now. */
+  seenDays: number;
+  /** The device you are reading this on. Cannot be signed out from itself. */
+  current?: boolean;
+  /** This device runs an agent, so signing it out also stops the agent. */
+  agent?: string;
+  fingerprint: string;
+}
+
+export const devices: Device[] = [
+  { id: 'd-mac', name: 'This device', platform: 'macOS', seen: 'now', seenDays: 0, current: true, fingerprint: '4f2a 9c31 88de 05b7 · a1c4 77f0 2be9 6d13' },
+  { id: 'd-phone', name: 'Phone', platform: 'iOS', seen: '2 hours ago', seenDays: 0, fingerprint: '77b1 04ce 9a25 f3d8 · 6e02 bb47 1c90 aa35' },
+  { id: 'd-ipad', name: 'iPad', platform: 'iPadOS', seen: '94 days ago', seenDays: 94, fingerprint: '2d5f a8b0 3e71 cc94 · 90fa 15d3 6b28 e047' },
+  { id: 'd-agent', name: 'Agent host', platform: 'Linux', seen: '5 minutes ago', seenDays: 0, agent: 'Kiko', fingerprint: 'c013 6ea9 47bd 2f85 · 38c1 0d76 b5e2 9147' },
+];
+
+export interface Account {
+  handle: string;
+  address: string;
+  provider: string;
+  /**
+   * Whether the recovery code has been confirmed saved. False by default and
+   * deliberately so: it is the state a real new account is in, and it is the
+   * one Wren most needs to be able to see.
+   */
+  recoveryCodeConfirmed: boolean;
+  /** This browser can do WebAuthn. */
+  passkeySupported: boolean;
+  passkeyEnrolled: boolean;
+  /** Faces linked publicly to each other (`docs/11`). Off by default. */
+  facesLinkedPublicly: boolean;
+}
+
+export const account: Account = {
+  handle: 'viola',
+  address: 'viola@revel.chat',
+  provider: 'revel.chat',
+  recoveryCodeConfirmed: false,
+  passkeySupported: true,
+  passkeyEnrolled: false,
+  facesLinkedPublicly: false,
+};
+
+/**
+ * A contact whose key changed. `live` means it happened in a conversation you
+ * are currently in, which is the one event allowed past the interruption
+ * budget (`docs/12`).
+ */
+export interface KeyChange {
+  faceId: string;
+  when: string;
+  live: boolean;
+  acknowledged: boolean;
+}
+
+export const keyChanges: KeyChange[] = [
+  { faceId: 'rae', when: 'yesterday', live: false, acknowledged: false },
+];
+
+/** Local database sizes, in megabytes. The Storage screen renders these. */
+export interface Storage {
+  messages: number;
+  media: number;
+  index: number;
+  models: number;
+  /** Soft limit this device is willing to give the app, in MB. */
+  limit: number;
+  bySpace: { id: string; name: string; mb: number }[];
+  /** Rooms you left whose decrypted history is still on this device. */
+  leftRooms: { name: string; mb: number }[];
+  /** Downloaded translation models (`docs/10`). */
+  models_: { id: string; name: string; mb: number; lastUsed: string | null }[];
+}
+
+export const storage: Storage = {
+  messages: 410,
+  media: 1700,
+  index: 90,
+  models: 210,
+  limit: 4000,
+  bySpace: [
+    { id: 'solexsis', name: 'Solexsis', mb: 1100 },
+    { id: 'braid', name: 'Braid', mb: 840 },
+    { id: 'dms', name: 'Direct messages', mb: 460 },
+  ],
+  leftRooms: [
+    { name: 'kith-migration', mb: 74 },
+    { name: 'launch-planning', mb: 38 },
+    { name: 'old-standup', mb: 21 },
+  ],
+  models_: [
+    { id: 'ja-en', name: 'Japanese → English', mb: 120, lastUsed: null },
+    { id: 'de-en', name: 'German → English', mb: 90, lastUsed: '3 days ago' },
+  ],
 };

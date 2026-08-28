@@ -21,7 +21,7 @@ export const SECTIONS: Section[] = [
   { id: 'about', name: 'About', blurb: 'Version, and what the server can see', built: true },
   { id: 'notifications', name: 'Notifications', blurb: 'Per room and space, quiet hours, previews', built: false },
   { id: 'language', name: 'Language', blurb: 'Interface language and on-device translation', built: false },
-  { id: 'wren', name: 'Wren', blurb: 'How much she speaks up, and what she has silenced', built: false },
+  { id: 'wren', name: 'Wren', blurb: 'How much she speaks up, and what she has silenced', built: true },
   { id: 'privacy', name: 'Privacy & safety', blurb: 'Who can reach you, blocking, receipts', built: false },
   { id: 'storage', name: 'Storage & data', blurb: 'What is on this device, export, clearing it', built: false },
 ];

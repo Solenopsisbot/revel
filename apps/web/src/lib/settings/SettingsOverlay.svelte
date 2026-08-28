@@ -6,6 +6,7 @@
   import Devices from '$lib/settings/Devices.svelte';
   import Appearance from '$lib/settings/Appearance.svelte';
   import About from '$lib/settings/About.svelte';
+  import Wren from '$lib/settings/Wren.svelte';
 
   let { open = $bindable(false), section = $bindable('account') }: {
     open?: boolean;
@@ -75,6 +76,8 @@
             <Appearance />
           {:else if section === 'about'}
             <About />
+          {:else if section === 'wren'}
+            <Wren />
           {:else}
             <h2>{meta.name}</h2>
             <p class="lede">{meta.blurb}</p>

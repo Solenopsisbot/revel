@@ -7,12 +7,16 @@
  * implementation should not touch a single component.
  */
 import {
+  account,
+  devices,
   faces,
+  keyChanges,
   lastRead,
   messages,
   myFaces,
   rosters,
   spaces,
+  storage,
   type Message,
 } from './data.js';
 import { untoned } from '../emoji.js';
@@ -50,6 +54,22 @@ class Core {
   recentEmoji = $state<string[]>(['👍', '🔥', '💯', '👀', '😂', '❤️']);
   /** Fitzpatrick index, 0 = none. Applies to the hands and people groups. */
   emojiTone = $state(0);
+
+  // --- account, keys and devices -------------------------------------------
+  // Wren reads all of this (`docs/12`), and so do the settings screens. One
+  // source, so her notices can never contradict the panel next to them.
+  account = $state(structuredClone(account));
+  devices = $state(structuredClone(devices));
+  keyChanges = $state(structuredClone(keyChanges));
+  storage = $state(structuredClone(storage));
+  /** Whether the command surface has ever been opened on this device. */
+  commandSurfaceUsed = $state(false);
+  /**
+   * Rooms you have posted in this session. Wren's "you may have forgotten
+   * this bot is here" notice needs a trigger — without one it fires on mere
+   * presence, never resolves, and becomes wallpaper.
+   */
+  postedIn = $state<string[]>([]);
 
   constructor() {
     if (typeof localStorage === 'undefined') return;
@@ -116,6 +136,9 @@ class Core {
   send(body: string) {
     const trimmed = body.trim();
     if (!trimmed) return;
+    if (!this.postedIn.includes(this.currentRoomId)) {
+      this.postedIn = [...this.postedIn, this.currentRoomId];
+    }
     const id = `local-${crypto.randomUUID()}`;
     const list = this.messages[this.currentRoomId] ?? [];
     list.push({
@@ -218,6 +241,56 @@ class Core {
     } catch {
       /* private mode; the choice just won't persist */
     }
+  }
+
+  // --- actions Wren's buttons call -----------------------------------------
+  // Every one of these is the same method the settings UI calls. Wren gets no
+  // privileged path (`docs/12`): if she can do it, you can do it by hand.
+
+  /** Marks the recovery code confirmed saved. The honest version of this in a
+      real client is "the user pressed the button on the code screen". */
+  confirmRecoveryCode() {
+    this.account.recoveryCodeConfirmed = true;
+  }
+
+  enrolPasskey() {
+    this.account.passkeyEnrolled = true;
+  }
+
+  /** Signs a device out. The current device cannot revoke itself — that is
+      "sign out", which is a different action with a different consequence. */
+  revokeDevice(id: string) {
+    this.devices = this.devices.filter((d) => d.id !== id || d.current);
+  }
+
+  /** "It's fine" on a stale device: stop asking without signing it out. */
+  keepDevice(id: string) {
+    const d = this.devices.find((x) => x.id === id);
+    if (d) d.seenDays = 0;
+  }
+
+  /** Acknowledge a contact's key change, either way. Verifying and expecting
+      it resolve the same state; what differs is what you did about it. */
+  acknowledgeKeyChange(faceId: string) {
+    const k = this.keyChanges.find((c) => c.faceId === faceId);
+    if (k) k.acknowledged = true;
+  }
+
+  /** Reversible: cached media re-downloads on demand. Said so in the UI. */
+  clearCachedMedia() {
+    this.storage.media = 0;
+  }
+
+  /** Not reversible: this drops decrypted history the room may not re-serve. */
+  clearLeftRoomHistory() {
+    this.storage.leftRooms = [];
+  }
+
+  deleteModel(id: string) {
+    const m = this.storage.models_.find((x) => x.id === id);
+    if (!m) return;
+    this.storage.models = Math.max(0, this.storage.models - m.mb);
+    this.storage.models_ = this.storage.models_.filter((x) => x.id !== id);
   }
 
   /** Someone else typing, so the indicator has something to show. */

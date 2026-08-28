@@ -1,10 +1,12 @@
 <script lang="ts">
-  const devices = [
-    { name: 'This device', platform: 'macOS', seen: 'now', current: true },
-    { name: 'Phone', platform: 'iOS', seen: '2 hours ago', current: false },
-    { name: 'iPad', platform: 'iPadOS', seen: '94 days ago', current: false, stale: true },
-    { name: 'Agent host', platform: 'Linux', seen: '5 minutes ago', current: false, agent: 'Kiko' },
-  ];
+  /**
+   * The device list reads `core`, not a local array, because Wren reads the
+   * same list to decide whether to mention a device nobody has touched in
+   * three months. Revoking one from her panel has to make it disappear from
+   * here, and vice versa — two copies would drift within a week.
+   */
+  import { core } from '$lib/fake/core.svelte.js';
+
   let fingerprints = $state(false);
 </script>
 
@@ -14,8 +16,8 @@
   sent from then on.
 </p>
 
-{#each devices as d (d.name)}
-  <div class="device" class:stale={d.stale}>
+{#each core.devices as d (d.id)}
+  <div class="device" class:stale={d.seenDays >= 90}>
     <div class="meta">
       <div class="nm">
         {d.name}
@@ -23,10 +25,14 @@
       </div>
       <div class="sub">{d.platform} · last seen {d.seen}</div>
       {#if fingerprints}
-        <div class="fp">4f2a 9c31 88de 05b7 · a1c4 77f0 2be9 6d13</div>
+        <div class="fp">{d.fingerprint}</div>
       {/if}
     </div>
-    {#if !d.current}<button class="out">Sign out</button>{/if}
+    <!-- The current device cannot revoke itself. That is "sign out", which
+         lives under Account and means something different. -->
+    {#if !d.current}
+      <button class="out" onclick={() => core.revokeDevice(d.id)}>Sign out</button>
+    {/if}
   </div>
 {/each}
 
