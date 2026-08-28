@@ -35,10 +35,14 @@ for why a community is a "space" and not a "server".
 ## Running what exists
 
 ```sh
-cargo test -p revel-crypto                                   # 9 tests
+cargo test -p revel-crypto                                   # 30 tests, native
+cargo test -p revel-crypto --target wasm32-unknown-unknown --test wasm   # 4 in Node
 cargo run --release -p revel-crypto --example bench          # group scaling
-cargo run --release -p revel-crypto --features pq --example bench_join
+cargo run --release -p revel-crypto --features pq --example bench_join   # PQ cost
 ```
+
+The same crypto core runs natively, in wasm, and from Swift through UniFFI —
+[`docs/31-phase0-results.md`](docs/31-phase0-results.md) §3b.
 
 Measured results, including the ones that contradicted the design:
 [`docs/31-phase0-results.md`](docs/31-phase0-results.md).

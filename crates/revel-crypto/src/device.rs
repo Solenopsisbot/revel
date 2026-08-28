@@ -185,7 +185,9 @@ mod tests {
     }
 
     // ---- property tests (docs/29 §4) --------------------------------------
+    // proptest is native-only; wasm coverage lives in tests/wasm.rs.
 
+    #[cfg(not(target_arch = "wasm32"))]
     proptest::proptest! {
         /// Any certificate we issue must survive the wire form unchanged and
         /// still verify — for arbitrary labels and device keys, including

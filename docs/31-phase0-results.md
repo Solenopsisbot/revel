@@ -208,9 +208,10 @@ for native. Tested rather than assumed:
 
 | target | result |
 | --- | --- |
-| `wasm32-unknown-unknown` (classical core) | **compiles** |
-| `wasm32-unknown-unknown` (PQ / AWS-LC) | fails — see §3a |
-| **Swift via UniFFI** | **compiles and runs — 7 checks passed** |
+| native | **30 tests pass** |
+| **`wasm32-unknown-unknown`, in Node** | **4 tests pass** — including a full two-device MLS exchange and revocation |
+| **Swift via UniFFI** | **7 checks pass**, including typed errors across the boundary |
+| `wasm32` with PQ / AWS-LC | fails — see §3a |
 
 The Swift test is not a smoke test that merely links: it generates an account
 key, issues and verifies a device certificate, confirms a tampered certificate
@@ -218,8 +219,20 @@ is refused, checks that a wrong-length key surfaces as a **typed Swift error**
 rather than a crash, and confirms two devices of one account share an account id.
 Same Rust code the web will call.
 
-Still to do: `wasm-bindgen` wrappers plus a Node test running a real two-device
-MLS flow through the compiled artifact. Compiling is not the same as working.
+Compiling is not the same as working, so the wasm suite runs the actual flows —
+entropy, certificates, a two-device exchange, and revocation — in Node against
+the built `.wasm`. **The bet holds: one core, three platforms.**
+
+Two things wasm needed that native didn't, both recorded in `.cargo/config.toml`
+and the manifest:
+
+- **Entropy.** `getrandom` 0.3 refuses to pick a wasm32 backend implicitly (so a
+  target with no entropy source fails loudly instead of returning predictable
+  bytes). It needs the `wasm_js` feature *and* `--cfg getrandom_backend="wasm_js"`.
+  Both 0.2 and 0.3 are in the tree, configured differently.
+- **Target-scoped dependencies.** UniFFI and proptest are native-only, so they
+  are declared under `cfg(not(target_arch = "wasm32"))`. Without that, a
+  transitive dependency of proptest breaks the wasm build entirely.
 
 ---
 

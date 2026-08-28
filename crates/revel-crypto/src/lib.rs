@@ -5,9 +5,13 @@
 //! desktop, UniFFI for iOS and Android. It is also the single thing a future
 //! audit has to cover.
 
+#[cfg(not(target_arch = "wasm32"))]
 uniffi::setup_scaffolding!();
 
 pub mod device;
+/// Native FFI surface (Swift/Kotlin). Not built for wasm — the web reaches the
+/// same core through wasm-bindgen instead.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod ffi;
 pub mod identity;
 pub use device::{CertError, DeviceCert};
