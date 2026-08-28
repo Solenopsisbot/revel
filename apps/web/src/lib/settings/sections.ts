@@ -19,9 +19,9 @@ export const SECTIONS: Section[] = [
   { id: 'devices', name: 'Devices', blurb: 'What is signed in, and signing it out', built: true },
   { id: 'appearance', name: 'Appearance', blurb: 'Theme, density, personality, motion', built: true },
   { id: 'about', name: 'About', blurb: 'Version, and what the server can see', built: true },
-  { id: 'notifications', name: 'Notifications', blurb: 'Per room and space, quiet hours, previews', built: false },
-  { id: 'language', name: 'Language', blurb: 'Interface language and on-device translation', built: false },
+  { id: 'notifications', name: 'Notifications', blurb: 'Per room and space, quiet hours, previews', built: true },
+  { id: 'language', name: 'Language', blurb: 'Interface language and on-device translation', built: true },
   { id: 'wren', name: 'Wren', blurb: 'How much she speaks up, and what she has silenced', built: true },
-  { id: 'privacy', name: 'Privacy & safety', blurb: 'Who can reach you, blocking, receipts', built: false },
-  { id: 'storage', name: 'Storage & data', blurb: 'What is on this device, export, clearing it', built: false },
+  { id: 'privacy', name: 'Privacy & safety', blurb: 'Who can reach you, blocking, receipts', built: true },
+  { id: 'storage', name: 'Storage & data', blurb: 'What is on this device, export, clearing it', built: true },
 ];

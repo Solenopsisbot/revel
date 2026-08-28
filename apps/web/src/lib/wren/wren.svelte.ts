@@ -413,6 +413,37 @@ class Wren {
     return this.notices.filter((n) => this.rungFor(n) === 3);
   }
 
+  /**
+   * Confirm an irreversible action, in her voice, naming the consequence.
+   *
+   * This is the first of the three legitimate popups (`docs/12`) and the only
+   * one that is *requested* rather than noticed — you pressed a button and she
+   * is checking. That is why it does not spend interruption budget: the budget
+   * exists to stop her interrupting you, and this is not an interruption.
+   *
+   * It is also not silenceable. A confirmation you can permanently turn off is
+   * a confirmation that stops existing, which is a different feature.
+   */
+  confirm(req: { title: string; body: string; confirm: string; cancel?: string; onConfirm: () => void }) {
+    this.pendingConfirm = req.onConfirm;
+    this.popup = {
+      id: 'confirm',
+      category: 'keys',
+      severity: 'coral',
+      ceiling: 4,
+      exemptFromBudget: true,
+      title: req.title,
+      body: req.body,
+      actions: [
+        { id: 'confirm-yes', label: req.confirm, destructive: true },
+        { id: 'confirm-no', label: req.cancel ?? 'Go back', dismissive: true },
+      ],
+    };
+  }
+
+  /** The callback a pending confirmation will run if you say yes. */
+  private pendingConfirm: (() => void) | null = null;
+
   /** Raise a notice as a popup, spending budget unless it is exempt. */
   interrupt(n: Notice) {
     if (this.rungFor(n) !== 4) return false;
@@ -442,6 +473,15 @@ class Wren {
     this.popup = null;
 
     switch (verb) {
+      case 'confirm-yes': {
+        const run = this.pendingConfirm;
+        this.pendingConfirm = null;
+        run?.();
+        return;
+      }
+      case 'confirm-no':
+        this.pendingConfirm = null;
+        return;
       case 'save-code':
         core.confirmRecoveryCode();
         return { settings: 'account' };
@@ -492,6 +532,10 @@ class Wren {
 
   /** "It's fine", "No thanks", "Got it" — resolve without doing the thing. */
   dismiss(id: string) {
+    // A confirmation is synthetic and one-shot. Recording "Go back" as a
+    // permanent dismissal would quietly disable the next confirmation and
+    // leave a phantom entry in the restore list.
+    if (id === 'confirm') return;
     if (this.dismissed.includes(id)) return;
     this.dismissed = [...this.dismissed, id];
     this.persist();

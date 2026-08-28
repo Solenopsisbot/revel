@@ -101,6 +101,12 @@ export interface Reaction {
   by: string[];
 }
 
+/**
+ * How loudly a scope notifies. `mentions` is the useful middle and the one
+ * most people actually want; `none` still counts unread, it just doesn't push.
+ */
+export type NotifyLevel = 'all' | 'mentions' | 'none';
+
 export interface Room {
   id: string;
   name: string;
@@ -112,8 +118,12 @@ export interface Room {
   mention?: boolean;
   /** Voice rooms: who is currently in them, shown under the room in the list. */
   inCall?: string[];
-  /** Muted rooms still count, they just don't shout. */
-  muted?: boolean;
+  /**
+   * Per-room notification override. Absent means "whatever the space says",
+   * which is the case for almost every room — an explicit level is a choice
+   * someone made, and the settings UI shows it as one.
+   */
+  notify?: NotifyLevel;
   /** Slow mode, in seconds. 0 is off. */
   slow?: number;
   /**
@@ -124,6 +134,12 @@ export interface Room {
   language?: string;
   /** Roughly how many messages arrived here this week. Counts, never content. */
   weekly?: number;
+  /**
+   * "Always translate this room." Distinct from `language`, which is what the
+   * room is written in — one is an observation, the other is your choice
+   * about it (`docs/10` §The controls).
+   */
+  translate?: boolean;
 }
 
 export interface Space {
@@ -174,7 +190,7 @@ export const spaces: Space[] = [
       { id: 'design', name: 'design', kind: 'text', category: 'General', topic: 'Shapes, colour, and arguing about radii', unread: 3, mention: true },
       { id: 'off-topic', name: 'off-topic', kind: 'text', category: 'General' },
       { id: 'crypto-review', name: 'crypto-review', kind: 'text', category: 'Build', topic: 'Read the threat model before posting', slow: 30 },
-      { id: 'ci-noise', name: 'ci-noise', kind: 'text', category: 'Build', muted: true },
+      { id: 'ci-noise', name: 'ci-noise', kind: 'text', category: 'Build', notify: 'none' },
       { id: 'the-couch', name: 'the couch', kind: 'voice', category: 'Voice', inCall: ['rae', 'emeri'] },
       { id: 'focus', name: 'focus', kind: 'voice', category: 'Voice' },
     ],
@@ -454,3 +470,98 @@ export const storage: Storage = {
     { id: 'de-en', name: 'German → English', mb: 90, lastUsed: '3 days ago' },
   ],
 };
+
+/**
+ * Notification preferences.
+ *
+ * Scoped rather than flat: a global default, per-space overrides, and
+ * per-room overrides on the `Room` itself. Resolution is
+ * room → space → global, and the settings UI shows which level a room is
+ * actually getting and where it came from, because "why is this room quiet"
+ * is the only question anyone ever asks of this screen.
+ */
+export interface Notifications {
+  global: NotifyLevel;
+  /** Space id → level. Absent means it follows the global default. */
+  spaces: Record<string, NotifyLevel>;
+  quietHours: { on: boolean; from: string; to: string };
+  /**
+   * Whether the lock screen shows message content. Off by default: the push
+   * itself carries no content, so the preview is decrypted locally and is
+   * genuinely the user's choice rather than ours.
+   */
+  previews: boolean;
+  sound: boolean;
+}
+
+export const notifications: Notifications = {
+  global: 'mentions',
+  spaces: { braid: 'all' },
+  quietHours: { on: true, from: '23:00', to: '08:00' },
+  previews: false,
+  sound: true,
+};
+
+/**
+ * Privacy and safety (`docs/19`). Read receipts and typing live here rather
+ * than under Appearance because they are disclosures about you, not
+ * preferences about the app.
+ */
+export interface Privacy {
+  /** Who may start a direct conversation with you. */
+  dms: 'anyone' | 'shared-spaces' | 'nobody';
+  /** Who may add you to a space without asking. */
+  spaceInvites: 'anyone' | 'shared-spaces' | 'nobody';
+  readReceipts: boolean;
+  typingIndicators: boolean;
+  /** Whether your online status is visible at all. */
+  presence: boolean;
+  blocked: { handle: string; when: string }[];
+}
+
+export const privacy: Privacy = {
+  dms: 'shared-spaces',
+  spaceInvites: 'shared-spaces',
+  readReceipts: true,
+  typingIndicators: true,
+  presence: true,
+  blocked: [
+    { handle: 'someone@elsewhere.example', when: 'March' },
+    { handle: 'spam-bot@free.example', when: 'last week' },
+  ],
+};
+
+/**
+ * Interface language and on-device translation (`docs/10`).
+ *
+ * `reads` is the set of languages you understand — a room in one of them
+ * never gets offered translation, which is the whole point of asking.
+ */
+export interface LanguageSettings {
+  interface: string;
+  reads: string[];
+  /** Translate automatically, or show a button on each foreign message. */
+  auto: boolean;
+  /** Also transcribe voice clips, on-device. */
+  transcribeVoice: boolean;
+}
+
+export const language: LanguageSettings = {
+  interface: 'en',
+  reads: ['English', 'German'],
+  auto: true,
+  transcribeVoice: false,
+};
+
+export const INTERFACE_LANGUAGES = [
+  { id: 'en', name: 'English' },
+  { id: 'de', name: 'Deutsch' },
+  { id: 'fr', name: 'Français' },
+  { id: 'ja', name: '日本語' },
+  { id: 'pt', name: 'Português' },
+] as const;
+
+/** Languages the on-device models can handle, for the "languages I read" list. */
+export const READABLE_LANGUAGES = [
+  'English', 'German', 'French', 'Spanish', 'Portuguese', 'Japanese', 'Korean', 'Dutch',
+];

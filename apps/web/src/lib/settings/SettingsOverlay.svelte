@@ -7,6 +7,10 @@
   import Appearance from '$lib/settings/Appearance.svelte';
   import About from '$lib/settings/About.svelte';
   import Wren from '$lib/settings/Wren.svelte';
+  import Notifications from '$lib/settings/Notifications.svelte';
+  import Language from '$lib/settings/Language.svelte';
+  import Privacy from '$lib/settings/Privacy.svelte';
+  import Storage from '$lib/settings/Storage.svelte';
 
   let { open = $bindable(false), section = $bindable('account') }: {
     open?: boolean;
@@ -78,6 +82,14 @@
             <About />
           {:else if section === 'wren'}
             <Wren />
+          {:else if section === 'notifications'}
+            <Notifications />
+          {:else if section === 'language'}
+            <Language />
+          {:else if section === 'privacy'}
+            <Privacy />
+          {:else if section === 'storage'}
+            <Storage />
           {:else}
             <h2>{meta.name}</h2>
             <p class="lede">{meta.blurb}</p>

@@ -58,6 +58,7 @@
             class="room"
             class:active={room.id === core.currentRoomId}
             class:unread={!!room.unread}
+            class:quiet={core.notifyFor(core.currentSpaceId, room.id).level === 'none'}
             onclick={() => core.openRoom(core.currentSpaceId, room.id)}
           >
             <span class="glyph">
@@ -223,6 +224,9 @@
   }
   @keyframes mark { from { height: 0; opacity: 0; } to { height: 60%; opacity: 1; } }
   .room.unread { color: var(--text); }
+  /* A room set to notify about nothing still counts unread, it just reads
+     quieter in the list. Otherwise the setting is invisible. */
+  .room.quiet { opacity: .55; }
   .room .glyph { opacity: .6; display: grid; place-items: center; width: 15px; }
   .room .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .room .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text); flex: none; }

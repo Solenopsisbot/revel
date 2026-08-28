@@ -11,13 +11,17 @@ import {
   devices,
   faces,
   keyChanges,
+  language,
   lastRead,
   messages,
   myFaces,
+  notifications,
+  privacy,
   rosters,
   spaces,
   storage,
   type Message,
+  type NotifyLevel,
 } from './data.js';
 import { untoned } from '../emoji.js';
 
@@ -62,6 +66,9 @@ class Core {
   devices = $state(structuredClone(devices));
   keyChanges = $state(structuredClone(keyChanges));
   storage = $state(structuredClone(storage));
+  notifications = $state(structuredClone(notifications));
+  privacy = $state(structuredClone(privacy));
+  language = $state(structuredClone(language));
   /** Whether the command surface has ever been opened on this device. */
   commandSurfaceUsed = $state(false);
   /**
@@ -241,6 +248,32 @@ class Core {
     } catch {
       /* private mode; the choice just won't persist */
     }
+  }
+
+  /**
+   * The level a room actually gets, and where that came from.
+   *
+   * Every notification screen in every app answers "what is this set to" and
+   * none of them answer "why", which is the only question anyone has. This
+   * returns both.
+   */
+  notifyFor(spaceId: string, roomId: string): { level: NotifyLevel; from: 'room' | 'space' | 'global' } {
+    const room = this.spaces.find((s) => s.id === spaceId)?.rooms.find((r) => r.id === roomId);
+    if (room?.notify) return { level: room.notify, from: 'room' };
+    const space = this.notifications.spaces[spaceId];
+    if (space) return { level: space, from: 'space' };
+    return { level: this.notifications.global, from: 'global' };
+  }
+
+  /** Set or clear a room's override. `undefined` returns it to inheriting. */
+  setRoomNotify(spaceId: string, roomId: string, level: NotifyLevel | undefined) {
+    const room = this.spaces.find((s) => s.id === spaceId)?.rooms.find((r) => r.id === roomId);
+    if (room) room.notify = level;
+  }
+
+  setSpaceNotify(spaceId: string, level: NotifyLevel | undefined) {
+    if (level) this.notifications.spaces[spaceId] = level;
+    else delete this.notifications.spaces[spaceId];
   }
 
   // --- actions Wren's buttons call -----------------------------------------
