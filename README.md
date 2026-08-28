@@ -16,6 +16,8 @@ list, because a promise you can't check isn't a promise.
 | --- | --- |
 | [`docs/`](docs/) | The full design — 32 documents. Start with [`docs/README.md`](docs/README.md). |
 | [`crates/revel-crypto/`](crates/revel-crypto/) | The Rust crypto core: device certificates, MLS identity, benchmarks. |
+| [`packages/protocol/`](packages/protocol/) | The contract: ids, permissions, the event envelope, encrypted event types. |
+| [`apps/server/`](apps/server/) | The Host: policy, the opaque event log, fan-out. |
 | [`design/`](design/) | A zero-build design reference. Open `design/index.html` in a browser. |
 
 ## The shape of it
@@ -35,6 +37,7 @@ for why a community is a "space" and not a "server".
 ## Running what exists
 
 ```sh
+pnpm install && pnpm test                                    # 78 tests
 cargo test -p revel-crypto                                   # 30 tests, native
 cargo test -p revel-crypto --target wasm32-unknown-unknown --test wasm   # 4 in Node
 cargo run --release -p revel-crypto --example bench          # group scaling
