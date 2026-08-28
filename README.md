@@ -38,10 +38,27 @@ for why a community is a "space" and not a "server".
 
 ## Running what exists
 
+### Look at it
+
 ```sh
-pnpm install && pnpm test                                    # 78 tests
-cargo test -p revel-crypto                                   # 30 tests, native
-cargo test -p revel-crypto --target wasm32-unknown-unknown --test wasm   # 4 in Node
+pnpm install
+pnpm dev            # → http://localhost:5173
+```
+
+| Route | |
+| --- | --- |
+| `/` | the landing page |
+| `/app` | the client, running on fixtures |
+| `/signup` | sign-up, then the recovery code. `?step=code` jumps straight there |
+| `/signin` | password + second factor. `?step=scan` for the QR path |
+| `/forgot` | the screen where the architecture's honesty costs something |
+
+### Run the tests
+
+```sh
+pnpm test                                                    # 78, TypeScript
+cargo test -p revel-crypto                                   # 30, native
+cargo test -p revel-crypto --target wasm32-unknown-unknown --test wasm   # 4, in Node
 cargo run --release -p revel-crypto --example bench          # group scaling
 cargo run --release -p revel-crypto --features pq --example bench_join   # PQ cost
 ```
