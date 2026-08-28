@@ -4,7 +4,16 @@
   import { core, faces } from '$lib/fake/core.svelte.js';
   import MessageList from '$lib/MessageList.svelte';
   import Composer from '$lib/Composer.svelte';
-  import { goto } from '$app/navigation';
+  import SettingsOverlay from '$lib/settings/SettingsOverlay.svelte';
+  import { page } from '$app/state';
+
+  // ?settings=<section> opens straight to a pane, so any of them can be
+  // reviewed without clicking through.
+  const deepLink = page.url.searchParams.get('settings');
+  let settingsOpen = $state(!!deepLink);
+  let settingsSection = $state(deepLink ?? 'account');
+
+  const me = $derived(faces[core.speakingAs]!);
 
   const categories = $derived(
     core.space.rooms.reduce<Record<string, typeof core.space.rooms>>((acc, r) => {
@@ -53,6 +62,21 @@
         {/each}
       {/each}
     </div>
+    <div class="me">
+      <button class="me-id" title="You">
+        <Avatar face={me} size={30} dot />
+        <span class="me-meta">
+          <span class="me-nm">{me.name}</span>
+          <span class="me-sub">viola@revel.chat</span>
+        </span>
+      </button>
+      <button
+        class="me-btn"
+        onclick={() => (settingsOpen = true)}
+        title="Settings"
+        aria-label="Settings"
+      ><Icon name="chevron" size={17} /></button>
+    </div>
   </aside>
 
   <main class="chat">
@@ -60,9 +84,6 @@
       <span class="glyph">{#if core.room.kind === 'voice'}<Icon name="voice" />{:else}#{/if}</span>
       <h1>{core.room.name}</h1>
       <div class="spacer"></div>
-      <button class="icon-btn" onclick={() => goto('/app/settings')} title="Settings" aria-label="Settings">
-        <Icon name="chevron" size={20} />
-      </button>
       <button
         class="icon-btn"
         aria-pressed={core.membersOpen}
@@ -77,6 +98,8 @@
 
     <Composer />
   </main>
+
+  <SettingsOverlay bind:open={settingsOpen} bind:section={settingsSection} />
 
   {#if core.membersOpen}
     <aside class="members" aria-label="Members">
@@ -139,6 +162,33 @@
     font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg);
   }
   .rooms { overflow-y: auto; padding: 10px 8px; flex: 1; }
+
+  /* Bottom-left, where every chat client puts the "you" area. */
+  .me {
+    display: flex; align-items: center; gap: 4px; flex: none;
+    padding: 8px; border-top: 1px solid var(--line); background: var(--ground-2);
+  }
+  .me-id {
+    display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0;
+    background: transparent; border: 0; cursor: pointer; color: var(--text);
+    padding: 4px 6px; border-radius: var(--r-sm); text-align: left;
+    transition: background var(--t-fast) var(--ease);
+  }
+  .me-id:hover { background: var(--ground-3); }
+  .me-meta { min-width: 0; display: flex; flex-direction: column; }
+  .me-nm { font-weight: 700; font-size: var(--text-sm); line-height: 1.2; }
+  .me-sub {
+    font-size: 11px; color: var(--text-mute); font-family: var(--font-mono);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .me-btn {
+    flex: none; width: 30px; height: 30px; border: 0; cursor: pointer;
+    background: transparent; color: var(--text-mute); border-radius: var(--r-sm);
+    display: grid; place-items: center;
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+      rotate var(--t-base) var(--ease);
+  }
+  .me-btn:hover { background: var(--ground-3); color: var(--text); rotate: 90deg; }
   .cat {
     font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
     color: var(--text-mute); padding: 12px 8px 4px;

@@ -9,6 +9,23 @@
       href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght,SOFT@9..144,500..700,50&family=JetBrains+Mono:wght@400;600&display=swap"
       rel="stylesheet"
     />
+    <script>
+      // Runs before first paint: reads the stored appearance and stamps the
+      // attributes the token layer reads. Doing this in a component would mean
+      // a frame of the default theme first.
+      (function () {
+        try {
+          var q = new URLSearchParams(location.search);
+          var a = JSON.parse(localStorage.getItem('revel.appearance') || '{}');
+          var el = document.documentElement;
+          el.dataset.theme = q.get('theme') || a.theme || 'dusk';
+          el.dataset.density = q.get('density') || a.density || 'cozy';
+          el.dataset.personality = q.get('personality') || a.personality || 'full';
+        } catch (e) {
+          /* storage unavailable; the defaults in the markup stand */
+        }
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

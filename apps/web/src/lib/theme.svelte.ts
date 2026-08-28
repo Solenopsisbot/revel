@@ -56,7 +56,9 @@ class Theme {
     for (const [k, v] of Object.entries(override)) {
       if (v) this.current = { ...this.current, [k]: v };
     }
-    this.apply();
+    // No apply() here: the inline script in app.html already stamped the
+    // attributes before paint. This only reconciles the store with them.
+    document.body?.classList.toggle('reduce-motion', this.current.reduceMotion);
   }
 
   set<K extends keyof Appearance>(key: K, value: Appearance[K]) {
