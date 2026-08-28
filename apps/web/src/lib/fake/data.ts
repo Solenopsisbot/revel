@@ -15,8 +15,58 @@ export interface Face {
   /** The account this face belongs to. Several faces may share one. */
   accountId: string;
   pronouns?: string;
+  /** Free text on the profile card. */
+  bio?: string;
+  /** What the roster sorts and the profile card shows. */
+  status?: 'here' | 'away' | 'busy' | 'invisible';
+  /** A line of their own, under the name on the profile card. */
+  note?: string;
   /** Software, and therefore always badged (`docs/11`). */
-  agent?: { label: 'Agent' | 'Bot' | 'Friend' | 'Assistant' | 'Companion' | 'Service' };
+  agent?: { label: 'Agent' | 'Bot' | 'Friend' | 'Assistant' | 'Companion' | 'Service'; by: string };
+}
+
+export type AttachmentKind = 'image' | 'gif' | 'video' | 'audio' | 'file';
+
+/**
+ * One piece of media on a message.
+ *
+ * `w`/`h` are the intrinsic pixel size and are REQUIRED for anything visual:
+ * the box is reserved at the right aspect ratio before the bytes arrive, so a
+ * loading image never shoves the conversation around (`docs/32`). In the real
+ * client these come from the encrypted manifest, which is why the server can
+ * hand out sizes it cannot itself read.
+ */
+export interface Attachment {
+  id: string;
+  kind: AttachmentKind;
+  name: string;
+  /** Bytes. Shown on file cards and while a large one is still arriving. */
+  size: number;
+  url: string;
+  w?: number;
+  h?: number;
+  poster?: string;
+  /** Seconds, for video and audio. */
+  duration?: number;
+  /** Peak per bucket, 0..1. Precomputed by the sender; the receiver can't
+      afford to decode a whole file just to draw a scrubber. */
+  waveform?: number[];
+  /** Description. Empty is a real state and the UI says so rather than lying. */
+  alt?: string;
+  /** Sender marked it sensitive: covered until asked for (`docs/05` §6). */
+  spoiler?: boolean;
+  /** Still being fetched and decrypted. The frame is already the right shape. */
+  loading?: boolean;
+}
+
+export interface LinkCard {
+  url: string;
+  site: string;
+  title: string;
+  blurb?: string;
+  /** Never fetched by the server: the sender renders it or nobody does
+      (`docs/03` — unfurling on the server would leak every link). */
+  by: 'sender';
 }
 
 export interface Message {
@@ -27,10 +77,28 @@ export interface Message {
   /** Not yet acknowledged by the server. Renders provisional (`docs/32`). */
   pending?: boolean;
   failed?: boolean;
-  reactions?: { key: string; count: number; mine?: boolean }[];
+  /** When the author last changed it. Renders as a quiet "edited" marker. */
+  editedAt?: number;
+  /**
+   * A tombstone. The row stays so the conversation still makes sense; the
+   * content is gone. Who removed it matters: "you deleted this" and "a
+   * moderator removed this" are different facts and get different words.
+   */
+  deleted?: { by: 'author' | 'moderator'; at: number };
+  pinned?: boolean;
+  reactions?: Reaction[];
   replyTo?: string;
+  attachments?: Attachment[];
+  link?: LinkCard;
   /** A translation or transcript someone published (`docs/10`). */
   annotation?: { by: string; kind: string; body: string };
+}
+
+/** `key` is the emoji itself, tone stripped, so tone variants pool. */
+export interface Reaction {
+  key: string;
+  /** Face ids, in the order they reacted. `count` is derived from this. */
+  by: string[];
 }
 
 export interface Room {
@@ -38,8 +106,16 @@ export interface Room {
   name: string;
   kind: 'text' | 'voice';
   category: string;
+  /** The one-line description in the header. */
+  topic?: string;
   unread?: number;
   mention?: boolean;
+  /** Voice rooms: who is currently in them, shown under the room in the list. */
+  inCall?: string[];
+  /** Muted rooms still count, they just don't shout. */
+  muted?: boolean;
+  /** Slow mode, in seconds. 0 is off. */
+  slow?: number;
 }
 
 export interface Space {
@@ -52,24 +128,26 @@ export interface Space {
 }
 
 export const faces: Record<string, Face> = {
-  viola: { id: 'viola', name: 'Viola', colour: 'aqua', accountId: 'acct-v' },
-  june: { id: 'june', name: 'June', colour: 'mint', accountId: 'acct-v', pronouns: 'she/her' },
-  ash: { id: 'ash', name: 'Ash', colour: 'lilac', accountId: 'acct-v' },
-  rae: { id: 'rae', name: 'Rae', colour: 'rose', accountId: 'acct-r' },
-  emeri: { id: 'emeri', name: 'Emeri', colour: 'sky', accountId: 'acct-e' },
+  viola: { id: 'viola', name: 'Viola', colour: 'aqua', accountId: 'acct-v', status: 'here', note: 'building the thing' },
+  june: { id: 'june', name: 'June', colour: 'mint', accountId: 'acct-v', pronouns: 'she/her', status: 'here' },
+  ash: { id: 'ash', name: 'Ash', colour: 'lilac', accountId: 'acct-v', status: 'away' },
+  rae: { id: 'rae', name: 'Rae', colour: 'rose', accountId: 'acct-r', pronouns: 'she/her', status: 'here', note: 'shapes, mostly' },
+  emeri: { id: 'emeri', name: 'Emeri', colour: 'sky', accountId: 'acct-e', pronouns: 'they/them', status: 'busy' },
   kiko: {
     id: 'kiko',
     name: 'Kiko',
     colour: 'violet',
     accountId: 'acct-k',
-    agent: { label: 'Friend' },
+    status: 'here',
+    agent: { label: 'Friend', by: 'Viola' },
   },
   translator: {
     id: 'translator',
     name: 'Translator',
     colour: 'gold',
     accountId: 'acct-t',
-    agent: { label: 'Service' },
+    status: 'here',
+    agent: { label: 'Service', by: 'the space' },
   },
 };
 
@@ -84,12 +162,13 @@ export const spaces: Space[] = [
     from: 'violet',
     to: 'rose',
     rooms: [
-      { id: 'general', name: 'general', kind: 'text', category: 'General', unread: 2 },
-      { id: 'design', name: 'design', kind: 'text', category: 'General', unread: 3, mention: true },
+      { id: 'general', name: 'general', kind: 'text', category: 'General', topic: 'Anything, within reason', unread: 2 },
+      { id: 'design', name: 'design', kind: 'text', category: 'General', topic: 'Shapes, colour, and arguing about radii', unread: 3, mention: true },
       { id: 'off-topic', name: 'off-topic', kind: 'text', category: 'General' },
-      { id: 'crypto-review', name: 'crypto-review', kind: 'text', category: 'Build' },
-      { id: 'ci-noise', name: 'ci-noise', kind: 'text', category: 'Build' },
-      { id: 'the-couch', name: 'the couch', kind: 'voice', category: 'Voice' },
+      { id: 'crypto-review', name: 'crypto-review', kind: 'text', category: 'Build', topic: 'Read the threat model before posting', slow: 30 },
+      { id: 'ci-noise', name: 'ci-noise', kind: 'text', category: 'Build', muted: true },
+      { id: 'the-couch', name: 'the couch', kind: 'voice', category: 'Voice', inCall: ['rae', 'emeri'] },
+      { id: 'focus', name: 'focus', kind: 'voice', category: 'Voice' },
     ],
   },
   {
@@ -100,18 +179,64 @@ export const spaces: Space[] = [
     to: 'sky',
     rooms: [
       { id: 'papers', name: 'papers', kind: 'text', category: 'General' },
-      { id: 'runs', name: 'runs', kind: 'text', category: 'General', unread: 7 },
+      { id: 'runs', name: 'runs', kind: 'text', category: 'General', topic: 'Loss curves and disappointment', unread: 7 },
     ],
   },
 ];
 
 const t = (mins: number) => Date.now() - mins * 60_000;
 
+/** A plausible speech envelope, so the scrubber has something honest to draw. */
+const wave = (n: number, seed = 7) => {
+  const out: number[] = [];
+  let s = seed;
+  for (let i = 0; i < n; i++) {
+    s = (s * 1103515245 + 12345) % 2147483648;
+    const noise = (s / 2147483648) * 0.55;
+    // Two overlapping phrases with a breath between them.
+    const env = Math.sin((i / n) * Math.PI * 2.2) * 0.5 + 0.5;
+    out.push(Math.min(1, 0.12 + env * 0.75 + noise * 0.3));
+  }
+  return out;
+};
+
 export const messages: Record<string, Message[]> = {
   design: [
+    { id: 'd0', faceId: 'emeri', body: 'starting the room over. everything before this is in the archive.', at: t(1700) },
+    {
+      id: 'd0b',
+      faceId: 'rae',
+      body: 'the palette, before I ruin it',
+      at: t(1690),
+      attachments: [
+        { id: 'a0', kind: 'image', name: 'palette.png', size: 157_655, url: '/mock/shot-wide.png', w: 1280, h: 800, alt: 'Three candy colours bleeding into each other' },
+      ],
+      reactions: [{ key: '🔥', by: ['viola', 'june', 'emeri'] }],
+    },
     { id: 'd1', faceId: 'rae', body: 'the buttons need to feel like you can press them. that’s the whole thing.', at: t(48) },
-    { id: 'd2', faceId: 'viola', body: 'hard shadow, no blur. it’s a physical object or it isn’t', at: t(46), replyTo: 'd1', reactions: [{ key: 'yes', count: 2, mine: true }] },
+    {
+      id: 'd2',
+      faceId: 'viola',
+      body: 'hard shadow, no blur. it’s a physical object or it isn’t',
+      at: t(46),
+      replyTo: 'd1',
+      editedAt: t(45),
+      reactions: [
+        { key: '💯', by: ['rae', 'june'] },
+        { key: '👍', by: ['emeri'] },
+      ],
+    },
+    { id: 'd2b', faceId: 'ash', body: 'this message is gone', at: t(44), deleted: { by: 'author', at: t(43) } },
     { id: 'd3', faceId: 'june', body: 'she does this every single time', at: t(12) },
+    {
+      id: 'd3b',
+      faceId: 'june',
+      body: '',
+      at: t(11),
+      attachments: [
+        { id: 'a1', kind: 'gif', name: 'loop.gif', size: 96_102, url: '/mock/loop.gif', w: 240, h: 180, alt: '' },
+      ],
+    },
     {
       id: 'd4',
       faceId: 'emeri',
@@ -119,15 +244,75 @@ export const messages: Record<string, Message[]> = {
       at: t(9),
       annotation: { by: 'Translator', kind: 'German', body: 'I can’t make it tonight, my train is cancelled.' },
     },
-    { id: 'd5', faceId: 'kiko', body: 'On daylight six of the eight candy colours fall under 3:1 as name colours. The bright values are fine as fills; they just can’t be ink.', at: t(4) },
+    {
+      id: 'd4b',
+      faceId: 'emeri',
+      body: '',
+      at: t(8),
+      attachments: [
+        {
+          id: 'a2',
+          kind: 'audio',
+          name: 'note.ogg',
+          size: 59_766,
+          url: '/mock/voice.ogg',
+          duration: 14,
+          waveform: wave(64),
+        },
+      ],
+    },
+    {
+      id: 'd4c',
+      faceId: 'rae',
+      body: 'the motion study, second pass',
+      at: t(6),
+      attachments: [
+        {
+          id: 'a3',
+          kind: 'video',
+          name: 'motion-2.mp4',
+          size: 221_225,
+          url: '/mock/clip.mp4',
+          poster: '/mock/clip-poster.jpg',
+          w: 960,
+          h: 540,
+          duration: 6,
+        },
+      ],
+      reactions: [{ key: '👀', by: ['viola'] }],
+    },
+    {
+      id: 'd5',
+      faceId: 'kiko',
+      body: 'On daylight six of the eight candy colours fall under 3:1 as name colours. The bright values are fine as fills; they just can’t be ink.',
+      at: t(4),
+      link: {
+        url: 'https://www.w3.org/TR/WCAG22/#contrast-minimum',
+        site: 'w3.org',
+        title: 'Contrast (Minimum) — WCAG 2.2',
+        blurb: 'Text and images of text have a contrast ratio of at least 4.5:1.',
+        by: 'sender',
+      },
+    },
+    {
+      id: 'd6',
+      faceId: 'viola',
+      body: 'ok fine. ink twins it is',
+      at: t(3),
+      attachments: [
+        { id: 'a4', kind: 'image', name: 'the-fix.png', size: 108_712, url: '/mock/shot-tall.png', w: 900, h: 1200, alt: 'Darkened ink values against a light ground', spoiler: true },
+        { id: 'a5', kind: 'file', name: 'contrast-audit.csv', size: 4_812, url: '#' },
+      ],
+    },
   ],
   general: [
-    { id: 'g1', faceId: 'rae', body: 'morning', at: t(120) },
+    { id: 'g1', faceId: 'rae', body: 'morning', at: t(1440) },
     { id: 'g2', faceId: 'emeri', body: 'read this when you wake up', at: t(90) },
+    { id: 'g3', faceId: 'emeri', body: 'actually never mind, fixed it', at: t(88) },
   ],
   'off-topic': [],
   'crypto-review': [
-    { id: 'c1', faceId: 'kiko', body: 'A revoked device cannot read the next epoch. 30 tests hold it down.', at: t(200) },
+    { id: 'c1', faceId: 'kiko', body: 'A revoked device cannot read the next epoch. 30 tests hold it down.', at: t(200), pinned: true },
   ],
   'ci-noise': [],
   papers: [],
@@ -136,7 +321,16 @@ export const messages: Record<string, Message[]> = {
 
 /** Who is in a given room, for the member list. */
 export const rosters: Record<string, string[]> = {
-  design: ['rae', 'viola', 'june', 'kiko', 'translator'],
+  design: ['rae', 'viola', 'june', 'kiko', 'emeri', 'translator'],
   general: ['rae', 'viola', 'emeri'],
   'crypto-review': ['viola', 'kiko'],
+};
+
+/**
+ * Where the unread divider sits per room. In the real client this is the last
+ * receipt this device acknowledged, and it stays put while you read so the
+ * line doesn't crawl up the screen underneath you.
+ */
+export const lastRead: Record<string, string> = {
+  design: 'd3',
 };

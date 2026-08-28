@@ -11,9 +11,9 @@
   const face = $derived(faces[core.speakingAs]!);
 
   function submit() {
+    // Clearing the reply target is `core.send`'s job, not the composer's.
     core.send(draft);
     draft = '';
-    replyTo = null;
     // Someone replies, so the typing indicator and arrival animation have
     // something to do.
     core.simulateTyping('rae', 2600);

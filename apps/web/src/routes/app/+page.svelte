@@ -1,7 +1,7 @@
 <script lang="ts">
   import Avatar from '$lib/Avatar.svelte';
   import Icon from '$lib/Icon.svelte';
-  import { core, faces } from '$lib/fake/core.svelte.js';
+  import { core, faces, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
   import MessageList from '$lib/MessageList.svelte';
   import Composer from '$lib/Composer.svelte';
   import SettingsOverlay from '$lib/settings/SettingsOverlay.svelte';
@@ -115,7 +115,7 @@
             {#if face.agent}
               <!-- The security statement, not the badge. Never customisable. -->
               <div class="sub">can read this room</div>
-            {:else if face.accountId === faces.viola.accountId && face.id !== 'viola'}
+            {:else if face.accountId === MY_ACCOUNT && face.id !== 'viola'}
               <div class="sub">another of your faces</div>
             {/if}
           </div>
