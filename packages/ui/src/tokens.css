@@ -87,6 +87,21 @@
      the target size at 1440px just as much as a phone does. */
   --tap: 0px;
 
+  /* ---- scrollbars ------------------------------------------------------
+     The default scrollbar is the one piece of the app that never changed
+     colour with the theme: a strip of OS chrome sitting inside a themed
+     surface. These are translucent rather than fixed colours, so a single
+     set of values works on all five themes — `--text` is white on the dark
+     four and near-black on daylight, and the mix inherits that for free. */
+  --sb-size: 12px;
+  /* The gutter that turns the thumb into a floating pill instead of a bar
+     wedged against the edge. Painted as a transparent border, so the visible
+     thumb is `--sb-size` minus twice this. */
+  --sb-pad: 3px;
+  --sb-thumb: color-mix(in oklab, var(--text) 20%, transparent);
+  --sb-thumb-hover: color-mix(in oklab, var(--text) 34%, transparent);
+  --sb-thumb-active: color-mix(in oklab, var(--text) 50%, transparent);
+
   /* ---- motion -------------------------------------------------------- */
   --t-fast: 120ms;
   --t-base: 200ms;

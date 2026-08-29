@@ -224,7 +224,14 @@
 
   @media (max-width: 820px) {
     .sheet { inset: 0; border-radius: 0; grid-template-columns: 1fr; }
-    nav { display: flex; gap: 4px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px; }
+    /* A tab strip that scrolls sideways wants no bar under it — the row of
+       half-visible tabs is already the affordance. Local rule, so it beats
+       the global one in app.css. */
+    nav {
+      display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none;
+      border-right: 0; border-bottom: 1px solid var(--line); padding: 8px;
+    }
+    nav::-webkit-scrollbar { display: none; }
     .head { display: none; }
     .item { width: auto; flex: none; }
     .t-bl, .soon-tag { display: none; }

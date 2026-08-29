@@ -26,6 +26,45 @@ button:focus-visible,
 input:focus-visible,
 textarea:focus-visible { outline: none; box-shadow: none; }
 
+/* ---- scrollbars -------------------------------------------------------
+   Styled once, globally, rather than per-scroll-container: there are a dozen
+   of those and they should not each get to have an opinion.
+
+   Two mechanisms, and deliberately never both on the same element. Chrome
+   ignores the `::-webkit-scrollbar` pseudo-elements entirely on any element
+   where `scrollbar-width` or `scrollbar-color` is set to something other than
+   `auto` — so setting both here would silently throw away the rounded thumb
+   and leave the blunter standard rendering. The standard properties therefore
+   live behind an `@supports` that only Firefox falls into.
+
+   Fine pointers only. A touch platform draws its own transient overlay bars
+   and fades them out; replacing those with a permanent 12px gutter is both
+   uglier and a waste of a phone's width. Anything that wants no bar at all
+   still says so locally — a component's own rule outranks `*`. */
+@media (pointer: fine) {
+  *::-webkit-scrollbar { width: var(--sb-size); height: var(--sb-size); }
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--sb-thumb);
+    border-radius: var(--r-pill);
+    /* `background-color` rather than the `background` shorthand in every rule
+       below, because the shorthand resets `background-clip` to border-box and
+       the padding gutter disappears with it. */
+    border: var(--sb-pad) solid transparent;
+    background-clip: padding-box;
+    /* Below this the thumb stops reading as a grabbable object. A very long
+       room would otherwise end up with a four-pixel nub. */
+    min-height: 36px;
+  }
+  *::-webkit-scrollbar-thumb:hover { background-color: var(--sb-thumb-hover); }
+  *::-webkit-scrollbar-thumb:active { background-color: var(--sb-thumb-active); }
+
+  @supports not selector(::-webkit-scrollbar) {
+    * { scrollbar-width: thin; scrollbar-color: var(--sb-thumb) transparent; }
+  }
+}
+
 /* Set for one frame while a theme is applied — see theme.svelte.ts. Without
    it, every transitioning property in the app animates at once and the swap
    looks like lag rather than a switch. */
