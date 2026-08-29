@@ -74,6 +74,12 @@ importers:
         specifier: ^6.0.0
         version: 6.4.3(@types/node@26.4.0)
 
+  packages/core:
+    dependencies:
+      '@revel/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
   packages/crypto:
     dependencies:
       '@revel/crypto-wasm':
