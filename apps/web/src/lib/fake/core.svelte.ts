@@ -27,6 +27,7 @@ import {
   type FaceColour,
   type Message,
   type NotifyLevel,
+  type Perm,
   type Room,
 } from './data.js';
 import { untoned } from '../emoji.js';
@@ -258,6 +259,117 @@ class Core {
   get everythingInRoom() {
     return this.messages[this.currentRoomId] ?? [];
   }
+  // ── membership, roles and moderation ──────────────────────────────────────
+
+  /** Your membership of the open space, if you have one. */
+  get myMembership() {
+    return this.space.members.find((m) => m.accountId === MY_ACCOUNT);
+  }
+
+  /**
+   * Someone's roles in the open space, sorted highest rank first.
+   *
+   * Looked up by *account*, because permissions live on the account and
+   * authorship on the face (`docs/01`). A plural member has one membership no
+   * matter which of their faces you happened to click on.
+   */
+  rolesOf(accountId: string) {
+    const names = this.space.members.find((m) => m.accountId === accountId)?.roles ?? [];
+    return this.space.roles.filter((r) => names.includes(r.name)).sort((a, b) => b.rank - a.rank);
+  }
+
+  /** Add or remove a permission from a role. */
+  toggleRolePerm(roleId: string, perm: Perm) {
+    const role = this.space.roles.find((r) => r.id === roleId);
+    if (!role) return;
+    role.perms = role.perms.includes(perm)
+      ? role.perms.filter((p) => p !== perm)
+      : [...role.perms, perm];
+  }
+
+  /** Give or take a role from a member. */
+  toggleMemberRole(accountId: string, roleName: string) {
+    const m = this.space.members.find((x) => x.accountId === accountId);
+    if (!m) return;
+    m.roles = m.roles.includes(roleName)
+      ? m.roles.filter((r) => r !== roleName)
+      : [...m.roles, roleName];
+  }
+
+  /** Remove a member. They can come back through a new invite. */
+  kick(accountId: string) {
+    this.space.members = this.space.members.filter((m) => m.accountId !== accountId);
+  }
+
+  /**
+   * Remove a member and keep them out.
+   *
+   * Kept as one call rather than kick-then-record, because the two halves
+   * going out of step is how someone ends up banned and still in the room.
+   */
+  ban(accountId: string, reason?: string) {
+    const m = this.space.members.find((x) => x.accountId === accountId);
+    if (!m) return;
+    this.space.bans = [
+      ...this.space.bans,
+      { accountId, faceId: m.faceId, byFaceId: this.speakingAs, at: Date.now(), reason },
+    ];
+    this.kick(accountId);
+  }
+
+  unban(accountId: string) {
+    this.space.bans = this.space.bans.filter((b) => b.accountId !== accountId);
+  }
+
+  /**
+   * A new invite link (`docs/03` §4 — the Wormhole trick).
+   *
+   * The key half is minted here, on this device, and belongs in the URL
+   * fragment. It is generated rather than stored server-side because the
+   * server is not supposed to be able to open what it is holding.
+   */
+  createInvite(opts: { maxUses?: number; days?: number; history: boolean }) {
+    const rand = (n: number) =>
+      Array.from(crypto.getRandomValues(new Uint8Array(n)))
+        .map((b) => 'abcdefghijkmnopqrstuvwxyz23456789'[b % 33])
+        .join('');
+    this.space.invites = [
+      {
+        code: `${rand(5)}-${rand(5)}-${Math.floor(Math.random() * 90 + 10)}`,
+        key: rand(16),
+        byFaceId: this.speakingAs,
+        createdAt: Date.now(),
+        uses: 0,
+        maxUses: opts.maxUses,
+        expiresAt: opts.days ? Date.now() + opts.days * 86_400_000 : undefined,
+        history: opts.history,
+      },
+      ...this.space.invites,
+    ];
+  }
+
+  revokeInvite(code: string) {
+    this.space.invites = this.space.invites.filter((i) => i.code !== code);
+  }
+
+  /** Take a report off the queue. Nothing else happens to the message. */
+  dismissReport(id: string) {
+    this.space.reports = this.space.reports.filter((r) => r.id !== id);
+  }
+
+  /**
+   * Act on a report by deleting the message it is about.
+   *
+   * Goes through the same tombstone the author's own delete does, with
+   * `by: 'moderator'` — "you deleted this" and "a moderator removed this" are
+   * different facts and the row says which.
+   */
+  removeReported(report: { id: string; roomId: string; messageId: string }) {
+    const m = this.messages[report.roomId]?.find((x) => x.id === report.messageId);
+    if (m) m.deleted = { by: 'moderator', at: Date.now() };
+    this.dismissReport(report.id);
+  }
+
   // ── threads ───────────────────────────────────────────────────────────────
 
   /** Replies in a thread, oldest first. Excludes the message that started it. */

@@ -217,18 +217,21 @@
           <input
             type="radio"
             checked={newAudience.kind === 'roles'}
-            onchange={() => (newAudience = { kind: 'roles', roles: [space.roles[0]!] })}
+            onchange={() => (newAudience = { kind: 'roles', roles: [space.roles[0]!.name] })}
           />
           <span>People with a role</span>
         </label>
         {#if newAudience.kind === 'roles'}
           <div class="roles">
-            {#each space.roles as role (role)}
+            <!-- Audiences name roles rather than holding ids, because the
+                 name is what the picker shows and what a room's "who can see
+                 this" sentence has to read back. -->
+            {#each space.roles as role (role.id)}
               <button
                 class="role"
-                class:on={newAudience.kind === 'roles' && newAudience.roles.includes(role)}
-                onclick={() => (newAudience = toggleRole(newAudience, role))}
-              >{role}</button>
+                class:on={newAudience.kind === 'roles' && newAudience.roles.includes(role.name)}
+                onclick={() => (newAudience = toggleRole(newAudience, role.name))}
+              >{role.name}</button>
             {/each}
           </div>
           {#if matches(newAudience)}

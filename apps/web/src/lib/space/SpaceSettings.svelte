@@ -13,6 +13,10 @@
   import SpaceOverview from './SpaceOverview.svelte';
   import SpaceRooms from './SpaceRooms.svelte';
   import SpaceAudiences from './SpaceAudiences.svelte';
+  import SpacePeople from './SpacePeople.svelte';
+  import SpaceRoles from './SpaceRoles.svelte';
+  import SpaceInvites from './SpaceInvites.svelte';
+  import SpaceModeration from './SpaceModeration.svelte';
 
   let {
     open = $bindable(false),
@@ -24,10 +28,10 @@
     { id: 'overview', name: 'Overview', blurb: 'Name, icon, who it’s for', built: true },
     { id: 'rooms', name: 'Rooms', blurb: 'List, create, per-room settings', built: true },
     { id: 'audiences', name: 'Who can see what', blurb: 'The encryption boundary, per room', built: true },
-    { id: 'people', name: 'People', blurb: 'Members, roles, kick and ban', built: false },
-    { id: 'roles', name: 'Roles', blurb: 'The permission editor', built: false },
-    { id: 'invites', name: 'Invites', blurb: 'Active links, uses, expiry', built: false },
-    { id: 'moderation', name: 'Moderation', blurb: 'Reports, bans, purge log', built: false },
+    { id: 'people', name: 'People', blurb: 'Members, roles, kick and ban', built: true },
+    { id: 'roles', name: 'Roles', blurb: 'The permission editor', built: true },
+    { id: 'invites', name: 'Invites', blurb: 'Active links, uses, expiry', built: true },
+    { id: 'moderation', name: 'Moderation', blurb: 'Reports, bans, purge log', built: true },
     { id: 'danger', name: 'Danger', blurb: 'Transfer ownership, delete', built: true },
   ];
 
@@ -108,6 +112,14 @@
             <SpaceRooms initialRoom={room} />
           {:else if tab === 'audiences'}
             <SpaceAudiences />
+          {:else if tab === 'people'}
+            <SpacePeople />
+          {:else if tab === 'roles'}
+            <SpaceRoles />
+          {:else if tab === 'invites'}
+            <SpaceInvites />
+          {:else if tab === 'moderation'}
+            <SpaceModeration />
           {:else if tab === 'danger'}
             <h2>Danger</h2>
             <p class="lede">Two things here, and both of them are final.</p>

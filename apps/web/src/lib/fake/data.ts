@@ -189,6 +189,121 @@ export type Audience =
   | { kind: 'roles'; roles: string[] }
   | { kind: 'picked'; faceIds: string[] };
 
+/**
+ * A permission flag (`docs/04` §4 — Kith's bitfield model, pruned for a server
+ * that cannot see content).
+ *
+ * Kept as strings rather than bits because this is a UI preview and a string
+ * is legible in a devtools inspector; the real one is a BigInt mask and the
+ * *set* is what has to match.
+ */
+export type Perm =
+  | 'VIEW'
+  | 'SEND'
+  | 'SEND_MEDIA'
+  | 'MANAGE_EVENTS'
+  | 'MENTION_EVERYONE'
+  | 'MANAGE_ROOMS'
+  | 'MANAGE_ROLES'
+  | 'MANAGE_SPACE'
+  | 'MANAGE_AGENTS'
+  | 'INVITE'
+  | 'KICK'
+  | 'BAN'
+  | 'ADMINISTRATOR';
+
+export interface Role {
+  id: string;
+  name: string;
+  colour: FaceColour;
+  /**
+   * Higher outranks lower. Hierarchy is what makes the escalation guards
+   * possible at all (`docs/18`): you cannot edit a role above your own, and
+   * you cannot grant a permission you do not hold.
+   */
+  rank: number;
+  perms: Perm[];
+}
+
+/**
+ * Someone in a space.
+ *
+ * Keyed by *account*, not face: `docs/01` — permissions live on the account,
+ * authorship on the face. A plural member has one membership and one set of
+ * roles no matter how many faces they speak as, which is the whole reason
+ * plurality falls out of the data model instead of being a feature.
+ */
+export interface Member {
+  accountId: string;
+  /** The face to show them as here. Cosmetic; the membership is the account. */
+  faceId: string;
+  roles: string[];
+  joinedAt: number;
+  /** Owner short-circuits every check (`docs/04`: `ADMINISTRATOR`-equivalent). */
+  owner?: boolean;
+}
+
+/**
+ * An invite link (`docs/18` §Joining, `docs/03` §4 — the Wormhole trick).
+ *
+ * The URL is `revel.chat/i/<code>#<key>`: the fragment carries the key
+ * material and **never reaches the server**, so the Host stores a row it
+ * cannot open. Expiry and use counts are what bound the blast radius of a
+ * leaked link.
+ */
+export interface Invite {
+  code: string;
+  /** The fragment half. Never sent anywhere; shown so the UI can be honest. */
+  key: string;
+  byFaceId: string;
+  createdAt: number;
+  uses: number;
+  /** Undefined means unlimited, which the UI says rather than showing ∞. */
+  maxUses?: number;
+  /** Undefined means it does not expire. */
+  expiresAt?: number;
+  /** Whether a joiner can read what was sent before they arrived. */
+  history: boolean;
+}
+
+/**
+ * A report (`docs/03` §9 — message franking).
+ *
+ * The reporter's client opens one specific event with proof it is genuine, so
+ * a mod can trust the quoted message was not fabricated *without* gaining
+ * access to anything else. That is the entire mechanism, and it is why the
+ * queue can show a message a mod might not otherwise be able to read.
+ */
+export interface Report {
+  id: string;
+  roomId: string;
+  messageId: string;
+  /** Copied at report time under the franking proof, not looked up later. */
+  body: string;
+  authorFaceId: string;
+  byFaceId: string;
+  at: number;
+  reason: string;
+}
+
+export interface Ban {
+  accountId: string;
+  faceId: string;
+  byFaceId: string;
+  at: number;
+  reason?: string;
+}
+
+/** One purge (`docs/03` §9): bytes gone from the Host, redaction sent in-band. */
+export interface Purge {
+  id: string;
+  roomId: string;
+  byFaceId: string;
+  at: number;
+  count: number;
+  reason: string;
+}
+
 export interface Space {
   id: string;
   name: string;
@@ -203,8 +318,20 @@ export interface Space {
    * all — there is no algorithmic surface to be ranked by.
    */
   visibility: 'invite' | 'link' | 'public';
-  /** Roles that exist in this space, for the audience picker. */
-  roles: string[];
+  /**
+   * Roles in this space, highest rank first.
+   *
+   * Audiences reference these by *name* (`Audience.roles`), which is what the
+   * picker shows and what `docs/18`'s mock-up says. Renaming a role would need
+   * to rewrite those, which is fine because an audience is immutable once its
+   * room exists — there is nothing to keep in step.
+   */
+  roles: Role[];
+  members: Member[];
+  invites: Invite[];
+  reports: Report[];
+  bans: Ban[];
+  purges: Purge[];
 }
 
 export const faces: Record<string, Face> = {
@@ -221,6 +348,10 @@ export const faces: Record<string, Face> = {
     status: 'here',
     agent: { label: 'Friend', by: 'Viola' },
   },
+  // Banned, and therefore not in any roster — but still a face, because we saw
+  // their messages before they went. A moderation screen that can only name
+  // people who are still here cannot show you who you removed.
+  mox: { id: 'mox', name: 'Mox', colour: 'coral', accountId: 'acct-x', status: 'invisible' },
   translator: {
     id: 'translator',
     name: 'Translator',
@@ -234,6 +365,9 @@ export const faces: Record<string, Face> = {
 /** The faces this account can speak as. More than one turns plurality on. */
 export const myFaces = ['viola', 'june', 'ash'];
 
+/** Minutes ago. Negative is the future, for expiry dates. */
+const t = (mins: number) => Date.now() - mins * 60_000;
+
 export const spaces: Space[] = [
   {
     id: 'solexsis',
@@ -243,7 +377,112 @@ export const spaces: Space[] = [
     to: 'rose',
     description: 'Building Revel, mostly at unreasonable hours.',
     visibility: 'invite',
-    roles: ['Admin', 'Build', 'Design'],
+    roles: [
+      { id: 'admin', name: 'Admin', colour: 'rose', rank: 3, perms: ['ADMINISTRATOR'] },
+      {
+        id: 'build',
+        name: 'Build',
+        colour: 'sky',
+        rank: 2,
+        perms: ['VIEW', 'SEND', 'SEND_MEDIA', 'MANAGE_EVENTS', 'MANAGE_ROOMS', 'MANAGE_AGENTS', 'INVITE'],
+      },
+      {
+        id: 'design',
+        name: 'Design',
+        colour: 'lilac',
+        rank: 1,
+        perms: ['VIEW', 'SEND', 'SEND_MEDIA', 'MENTION_EVERYONE', 'INVITE'],
+      },
+    ],
+    members: [
+      { accountId: 'acct-v', faceId: 'viola', roles: ['Admin'], joinedAt: t(60 * 24 * 400), owner: true },
+      { accountId: 'acct-r', faceId: 'rae', roles: ['Design'], joinedAt: t(60 * 24 * 310) },
+      { accountId: 'acct-e', faceId: 'emeri', roles: ['Build', 'Design'], joinedAt: t(60 * 24 * 295) },
+      { accountId: 'acct-k', faceId: 'kiko', roles: ['Build'], joinedAt: t(60 * 24 * 120) },
+      { accountId: 'acct-t', faceId: 'translator', roles: [], joinedAt: t(60 * 24 * 40) },
+    ],
+    invites: [
+      {
+        code: 'quiet-radii-84',
+        key: 'k7Qm2xR9vLbT4pWn',
+        byFaceId: 'viola',
+        createdAt: t(60 * 26),
+        uses: 3,
+        maxUses: 10,
+        expiresAt: t(-60 * 24 * 5),
+        history: true,
+      },
+      {
+        code: 'one-shot-glass',
+        key: 'Z1aH8cF3rY6uKd0s',
+        byFaceId: 'rae',
+        createdAt: t(60 * 9),
+        uses: 0,
+        maxUses: 1,
+        expiresAt: t(-60 * 15),
+        history: false,
+      },
+      // Expired on purpose: an invite list where nothing has ever run out
+      // never shows you what running out looks like.
+      {
+        code: 'old-door-11',
+        key: 'Nn4wE7tQ2sVx9bLm',
+        byFaceId: 'emeri',
+        createdAt: t(60 * 24 * 30),
+        uses: 12,
+        expiresAt: t(60 * 24 * 2),
+        history: true,
+      },
+    ],
+    reports: [
+      {
+        id: 'rep-1',
+        roomId: 'off-topic',
+        messageId: 'h-off-topic-31',
+        body: 'the dictionary has given up',
+        authorFaceId: 'ash',
+        byFaceId: 'rae',
+        at: t(190),
+        reason: 'Reported as off-topic',
+      },
+      {
+        id: 'rep-2',
+        roomId: 'general',
+        messageId: 'h-general-14',
+        body: 'i keep forgetting we renamed the org',
+        authorFaceId: 'emeri',
+        byFaceId: 'june',
+        at: t(60 * 20),
+        reason: 'Reported by mistake',
+      },
+    ],
+    bans: [
+      {
+        accountId: 'acct-x',
+        faceId: 'mox',
+        byFaceId: 'viola',
+        at: t(60 * 24 * 64),
+        reason: 'Posted invite links to three other spaces in one evening',
+      },
+    ],
+    purges: [
+      {
+        id: 'pur-1',
+        roomId: 'general',
+        byFaceId: 'viola',
+        at: t(60 * 24 * 9),
+        count: 4,
+        reason: 'A pasted API key, and the three replies quoting it',
+      },
+      {
+        id: 'pur-2',
+        roomId: 'ci-noise',
+        byFaceId: 'emeri',
+        at: t(60 * 24 * 21),
+        count: 118,
+        reason: 'A runaway webhook filled the room overnight',
+      },
+    ],
     rooms: [
       { id: 'general', name: 'general', kind: 'text', category: 'General', topic: 'Anything, within reason', unread: 2, audience: { kind: 'everyone' } },
       { id: 'design', name: 'design', kind: 'text', category: 'General', topic: 'Shapes, colour, and arguing about radii', unread: 3, mention: true, audience: { kind: 'everyone' } },
@@ -262,7 +501,39 @@ export const spaces: Space[] = [
     to: 'sky',
     description: 'A byte-level architecture and the loss curves it produces.',
     visibility: 'link',
-    roles: ['Admin', 'Research'],
+    roles: [
+      { id: 'b-admin', name: 'Admin', colour: 'rose', rank: 2, perms: ['ADMINISTRATOR'] },
+      {
+        id: 'b-research',
+        name: 'Research',
+        colour: 'aqua',
+        rank: 1,
+        perms: ['VIEW', 'SEND', 'SEND_MEDIA', 'INVITE'],
+      },
+    ],
+    // Deliberately not yours. Every guard in the roles editor — "you can't
+    // grant what you lack", "you can't edit a role above your own" — is
+    // unreachable in a space you own, and a guard nobody can reach is a guard
+    // nobody reviews. Here you are Research, and the editor has to explain
+    // itself rather than grey out.
+    members: [
+      { accountId: 'acct-e', faceId: 'emeri', roles: ['Admin'], joinedAt: t(60 * 24 * 200), owner: true },
+      { accountId: 'acct-v', faceId: 'viola', roles: ['Research'], joinedAt: t(60 * 24 * 180) },
+      { accountId: 'acct-k', faceId: 'kiko', roles: ['Research'], joinedAt: t(60 * 24 * 90) },
+    ],
+    invites: [
+      {
+        code: 'byte-level-7',
+        key: 'Pq5vR1nJ8mXc3wZt',
+        byFaceId: 'emeri',
+        createdAt: t(60 * 24 * 3),
+        uses: 2,
+        history: false,
+      },
+    ],
+    reports: [],
+    bans: [],
+    purges: [],
     rooms: [
       { id: 'papers', name: 'papers', kind: 'text', category: 'General', language: 'Japanese', weekly: 210, audience: { kind: 'everyone' } },
       { id: 'runs', name: 'runs', kind: 'text', category: 'General', topic: 'Loss curves and disappointment', unread: 7, weekly: 340, audience: { kind: 'everyone' } },
@@ -270,7 +541,6 @@ export const spaces: Space[] = [
   },
 ];
 
-const t = (mins: number) => Date.now() - mins * 60_000;
 
 /** A plausible speech envelope, so the scrubber has something honest to draw. */
 const wave = (n: number, seed = 7) => {
