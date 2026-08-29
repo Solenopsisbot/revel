@@ -42,7 +42,10 @@
     ],
     shield: ['M12 3l7.5 3v6c0 4.4-3.1 7.9-7.5 9.3C7.6 19.9 4.5 16.4 4.5 12V6z'],
     lock: ['M6.5 10.5h11v9h-11z', 'M8.8 10.5V7.8a3.2 3.2 0 0 1 6.4 0v2.7'],
-    key: ['M15 11a4 4 0 1 0 0-.01z', 'M11.4 12.6L3.5 20.5M6.5 17.5l2 2M9 15l1.6 1.6'],
+    // The head is a real circle. It used to be `a4 4 0 1 0 0-.01` — an arc
+    // whose start and end are the same point, which is undefined-ish and got
+    // rendered as an accidental near-circle in the wrong place.
+    key: ['M15.5 13.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M11.4 12.6L3.5 20.5M6.5 17.5l2 2M9 15l1.6 1.6'],
     user: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M4.5 20a7.5 7.5 0 0 1 15 0'],
     people: 'M9 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.8 19.5a6.4 6.4 0 0 1 12.4 0M16.5 5.4a3.5 3.5 0 0 1 0 6.6M18 19.5a6.5 6.5 0 0 0-1.6-4.3',
     palette: [
@@ -107,11 +110,54 @@
     door: ['M14.5 3.5h4v17h-4', 'M14.5 3.5L5.5 5.2v13.6l9 1.7z', 'M11.6 12.2h.01'],
   };
 
+  /**
+   * Per-glyph corrections, in grid units.
+   *
+   * The comment above promises every icon sits on the same 24x24 grid so any
+   * two read at the same optical size side by side. Twenty of them didn't —
+   * their ink was drawn off-centre, by up to 1.75 units, which is about a
+   * pixel and a half at the sizes these render at and reads as "the icon is
+   * sitting wrong in its button".
+   *
+   * These numbers are measured, not guessed: render the glyph, take its
+   * `getBBox`, and the correction is whatever moves the ink's centre onto
+   * (12, 12). Redo that if you add or redraw an icon.
+   *
+   * `play` is the one deliberate exception. A right-pointing triangle centred
+   * by its bounding box looks left-heavy, so it keeps about half a unit of
+   * offset — the correction below takes it from +1.5 to +0.55 rather than to
+   * zero.
+   */
+  const nudge: Record<string, [number, number]> = {
+    key: [0.5, -1],
+    sparkle: [-1.25, -0.3],
+    play: [-0.95, 0],
+    people: [1.18, -0.25],
+    hangup: [0, -1.15],
+    hand: [0.89, -0.15],
+    'voice-off': [-0.75, 0],
+    react: [0.66, 0],
+    search: [-0.5, -0.5],
+    attach: [-0.44, -0.45],
+    pin: [-0.4, 0.4],
+    bell: [0, 0.53],
+    chevron: [0, -0.5],
+    'chevron-right': [-0.5, 0],
+    'chevron-left': [0.5, 0],
+    warn: [0, 0.5],
+    reply: [0, -0.5],
+    forward: [0, -0.5],
+    camera: [0, -0.5],
+    screen: [0, -0.5],
+  };
+
   let {
     name,
     size = 18,
     stroke = 2,
   }: { name: keyof typeof paths | string; size?: number; stroke?: number } = $props();
+
+  const shift = $derived(nudge[name as string]);
 
   const list = $derived.by(() => {
     const p = paths[name];
@@ -132,5 +178,11 @@
   aria-hidden="true"
   style="display:block;flex:none"
 >
-  {#each list as d, i (i)}<path {d} />{/each}
+  {#if shift}
+    <g transform="translate({shift[0]} {shift[1]})">
+      {#each list as d, i (i)}<path {d} />{/each}
+    </g>
+  {:else}
+    {#each list as d, i (i)}<path {d} />{/each}
+  {/if}
 </svg>

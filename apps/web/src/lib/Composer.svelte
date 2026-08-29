@@ -35,11 +35,43 @@
     }
   }
 
+  /**
+   * Start typing anywhere and the characters land in the composer.
+   *
+   * Lives here rather than in the shell because this component owns the
+   * textarea, and "typing goes to the message box" is a fact about the message
+   * box. Focusing during `keydown` and *not* preventing the default is what
+   * makes the keystroke itself arrive: the browser inserts text after keydown,
+   * into whatever is focused by then. Handling the character by hand instead
+   * double-types on the browsers that already delivered it.
+   */
+  function typeToFocus(e: KeyboardEvent) {
+    if (!input || document.activeElement === input) return;
+    // A shortcut is not typing. ⌘K, ⌘, and friends must still work.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // Exactly one character: letters, digits, punctuation, space. Enter, Tab,
+    // Escape and the arrows are navigation and belong to whatever has focus.
+    if (e.key.length !== 1) return;
+
+    const el = e.target instanceof HTMLElement ? e.target : null;
+    if (el) {
+      const tag = el.tagName;
+      // Somebody else is already taking text — a search field, the command
+      // bar, a settings input, a message being edited.
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) return;
+      // An open dialog owns the keyboard while it is up.
+      if (el.closest('[role="dialog"], [role="alertdialog"]')) return;
+    }
+    input.focus();
+  }
+
   function grow(el: HTMLTextAreaElement) {
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
   }
 </script>
+
+<svelte:window onkeydown={typeToFocus} />
 
 <div class="composer">
   {#if switcherOpen}

@@ -590,8 +590,16 @@
   @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
   .members { background: var(--ground-1); border-left: 1px solid var(--line); overflow: hidden auto; padding: 8px 10px; }
-  .member { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-sm); }
-  .member { cursor: pointer; transition: background var(--t-fast) var(--ease); }
+  /* This became a <button> when members got a context menu, and buttons come
+     with a user-agent background, border and centred text — which is why the
+     rows turned into white boxes. Resetting all three is not optional when you
+     promote a div to a button. */
+  .member {
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    padding: 6px 8px; border: 0; border-radius: var(--r-sm);
+    background: transparent; color: inherit; font: inherit;
+    cursor: pointer; transition: background var(--t-fast) var(--ease);
+  }
   .member:hover { background: var(--ground-2); }
   .who { min-width: 0; }
   .nm { font-weight: 600; font-size: var(--text-sm); display: flex; align-items: center; gap: 6px; }
