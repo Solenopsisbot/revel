@@ -20,6 +20,10 @@
   import { voice } from '$lib/voice/voice.svelte.js';
   import { layout } from '$lib/layout.svelte.js';
   import { drawers } from '$lib/drawers.svelte.js';
+  import { back } from '$lib/back.js';
+  import { lightbox } from '$lib/media/lightbox.svelte.js';
+  import { wren } from '$lib/wren/wren.svelte.js';
+  import { untrack } from 'svelte';
   import { page } from '$app/state';
 
   // ?settings=<section> opens straight to a pane, so any of them can be
@@ -209,6 +213,93 @@
   function navigated() {
     if (layout.narrow) drawers.close();
   }
+
+  // ── back ──────────────────────────────────────────────────────────────────
+
+  /** Remember where you have been, so back has somewhere to go. */
+  $effect(() => {
+    const loc = { scope: core.scope, spaceId: core.currentSpaceId, roomId: core.currentRoomId } as const;
+    untrack(() => back.record({ ...loc }));
+  });
+
+  /**
+   * Up a level, per the two rows of `docs/24`'s table that are about place
+   * rather than about closing something:
+   *
+   *   in a room       → the room list drawer, opened
+   *   in the room list → the previous space, or home
+   *
+   * The second row is the interesting one. Closing the drawer instead would
+   * put you back in the room, where the next back press would open it again —
+   * a loop that never reaches the top and never lets you leave the app.
+   */
+  function goUp() {
+    if (drawers.members) {
+      drawers.close();
+      return;
+    }
+    if (drawers.nav) {
+      // Home with the room list open is the top of the ladder. From here the
+      // next press is allowed to leave.
+      if (core.scope === 'home') {
+        drawers.close();
+        return;
+      }
+      const prev = back.popTo((l) => l.scope === 'home' || l.spaceId !== core.currentSpaceId);
+      if (prev && prev.scope === 'space') core.openRoom(prev.spaceId, prev.roomId);
+      else core.openHome(prev?.roomId);
+      return;
+    }
+    drawers.open_('nav');
+  }
+
+  /** `docs/24`: a call minimises, it does not hang up. Looking at the call is
+      the same thing as being in its room, so leaving the view means going
+      somewhere else — back to wherever you were before you joined. */
+  function minimiseCall() {
+    const prev = back.popTo((l) => l.roomId !== core.currentRoomId);
+    if (prev && prev.scope === 'space') core.openRoom(prev.spaceId, prev.roomId);
+    else core.openHome(prev?.roomId);
+  }
+
+  /**
+   * Everything back can undo, most general first — so the *last* entry is what
+   * one press takes away, and `layers.length` is how many history entries we
+   * need to own.
+   *
+   * One list rather than a chain of ifs in a handler: the count and the action
+   * have to agree, and deriving both from the same array is what makes that
+   * true by construction instead of by inspection.
+   */
+  const layers = $derived.by(() => {
+    const l: (() => void)[] = [];
+    // Where you are. Phone only — on a desktop the rooms are always on screen,
+    // so there is no "up" to go to and back should leave the app.
+    if (layout.narrow && (core.scope === 'space' || drawers.open)) l.push(goUp);
+    if (voice.viewingCall) l.push(minimiseCall);
+    if (settingsOpen) l.push(() => (settingsOpen = false));
+    if (spaceOpen) l.push(() => (spaceOpen = false));
+    if (commandOpen) l.push(() => (commandOpen = false));
+    if (core.profileFor) l.push(() => (core.profileFor = null));
+    if (lightbox.open) l.push(() => lightbox.close());
+    if (wren.popup) l.push(() => (wren.popup = null));
+    if (onboarding.open) l.push(() => onboarding.dismiss());
+    // A context menu sits over all of it, so it is always the first thing to go.
+    if (contextMenu.current) l.push(() => contextMenu.close());
+    return l;
+  });
+
+  $effect(() => back.sync(layers.length));
+
+  // Reads `layers` only when the callback fires, which is outside the effect's
+  // tracking — so this attaches one listener for the life of the page rather
+  // than re-attaching on every state change.
+  $effect(() =>
+    back.attach(
+      () => layers.length,
+      () => layers[layers.length - 1]?.(),
+    ),
+  );
 
   /** The members list is a column on a desktop and a drawer on a phone. Same
       button, same meaning, two mechanisms. */
