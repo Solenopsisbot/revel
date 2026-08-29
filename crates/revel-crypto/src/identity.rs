@@ -6,10 +6,13 @@
 //! unauthenticated device. Here it is structural — a leaf cannot enter a group
 //! without the account key having signed it.
 //!
-//! It also supplies the **stable identity** MLS uses to decide whether two
-//! leaves are the same member across an update. We return the ACCOUNT key, not
-//! the device key, so a device rotating its signature key stays the same person
-//! (`docs/03-identity-and-crypto.md` §1).
+//! It also supplies the **stable identity** MLS uses to detect duplicate
+//! members. That is the DEVICE key, not the account key: per-device leaves are
+//! the whole design (`docs/03-identity-and-crypto.md` §1), and returning the
+//! account key here made both of one person's devices look like one member.
+//! "Same person across a key rotation" is a separate question and lives in
+//! `valid_successor`. See the note on `identity` below — this comment used to
+//! say the opposite, which is the exact mistake `docs/31` §1 records.
 
 use mls_rs::{
     error::IntoAnyError,

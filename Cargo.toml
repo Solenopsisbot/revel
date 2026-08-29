@@ -5,3 +5,24 @@ members = ["crates/revel-crypto"]
 [workspace.package]
 edition = "2021"
 license = "AGPL-3.0-or-later"
+
+# The web build gets its own profile rather than tuning `release`, because the
+# native benchmark in `docs/31` was measured under `--release` and those
+# numbers need to stay reproducible. Here the tradeoffs are different: this
+# artifact is downloaded before anyone can read a message, so bytes cost real
+# time on a real connection.
+#
+# `panic = "abort"` is safe for this crate: nothing catches an unwind, and a
+# panic in wasm is an unrecoverable trap either way.
+[profile.wasm]
+inherits = "release"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Same, optimised for size rather than speed. Kept so the tradeoff can be
+# re-measured rather than argued about; see `docs/31` §5.
+[profile.wasm-size]
+inherits = "wasm"
+opt-level = "z"

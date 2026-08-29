@@ -24,6 +24,11 @@ thiserror = "2"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
 getrandom_v3 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+# The web binding (src/wasm.rs). Pinned to the same minor as the installed
+# wasm-bindgen CLI — the generated glue and the crate's ABI must agree, and a
+# mismatch fails at bindgen time with a version banner rather than at runtime.
+wasm-bindgen = "0.2.127"
+js-sys = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3"

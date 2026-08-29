@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>revel-crypto — in a browser</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 32px 28px 60px;
+    background: #100c18; color: #e6e0f0;
+    font: 14px/1.6 ui-sans-serif, system-ui, sans-serif;
+  }
+  h1 { font-size: 19px; font-weight: 600; margin: 0 0 6px; }
+  p.lede { color: #9b91ad; margin: 0 0 22px; max-width: 74ch; }
+  a { color: #b79cff; }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    background: #7c5cff; color: #fff; border: 0;
+    padding: 9px 18px; border-radius: 999px;
+  }
+  button:disabled { opacity: .45; cursor: default; }
+  label { color: #9b91ad; margin-left: 14px; }
+  input[type=text] {
+    font: inherit; background: #1a1424; color: #e6e0f0;
+    border: 1px solid #2e2540; border-radius: 7px; padding: 7px 10px; width: 150px;
+  }
+  table { border-collapse: collapse; margin-top: 22px; font-variant-numeric: tabular-nums; }
+  caption { text-align: left; font-weight: 700; padding: 18px 0 7px; color: #e6e0f0; }
+  th, td { padding: 6px 16px 6px 0; text-align: right; }
+  th:first-child, td:first-child { text-align: left; padding-right: 26px; }
+  thead th { color: #9b91ad; font-weight: 600; border-bottom: 1px solid #2e2540; }
+  tbody td { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  tbody tr.running td { color: #9b91ad; font-style: italic; }
+  .note { color: #9b91ad; max-width: 74ch; margin-top: 26px; }
+  .err { color: #ff8f9e; white-space: pre-wrap; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+  <h1>revel-crypto, in a browser</h1>
+  <p class="lede">
+    The same group-scaling benchmark as <code>cargo run --release --example bench</code>,
+    run against the wasm build. <code>docs/31</code> measured MLS on a native
+    laptop CPU; this is what the numbers look like on the machine that actually
+    has to do it. Ratios matter more than absolutes — the point is the gap
+    between this table and the native one.
+  </p>
+
+  <p>
+    <button type="button" id="run">Run</button>
+    <label>leaves <input type="text" id="sizes" value="2,50,500"></label>
+    <label><input type="checkbox" id="join"> measure join</label>
+  </p>
+
+  <div id="out"></div>
+  <div id="error" class="err"></div>
+
+  <p class="note">
+    Two things this does not measure. <b>Cold start on a real connection</b> —
+    the download is a fixed cost paid once per version and is reported above as
+    a size, not a time, because that depends on someone's network rather than
+    this machine. <b>Concurrency</b> — every call here runs on the main thread,
+    which is not where a shipped client should put a 2,000-leaf commit.
+  </p>
+
+  <script type="module" src="./bench.js"></script>
+</body>
+</html>

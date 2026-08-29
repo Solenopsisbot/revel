@@ -209,7 +209,7 @@ for native. Tested rather than assumed:
 | target | result |
 | --- | --- |
 | native | **30 tests pass** |
-| **`wasm32-unknown-unknown`, in Node** | **4 tests pass** — including a full two-device MLS exchange and revocation |
+| **`wasm32-unknown-unknown`, in Node** | **10 tests pass** — a full two-device MLS exchange, revocation, and (per §5) the web binding itself |
 | **Swift via UniFFI** | **7 checks pass**, including typed errors across the boundary |
 | `wasm32` with PQ / AWS-LC | fails — see §3a |
 
@@ -217,7 +217,7 @@ The Swift test is not a smoke test that merely links: it generates an account
 key, issues and verifies a device certificate, confirms a tampered certificate
 is refused, checks that a wrong-length key surfaces as a **typed Swift error**
 rather than a crash, and confirms two devices of one account share an account id.
-Same Rust code the web will call.
+Same Rust code the web calls — as of §5, actually calls.
 
 Compiling is not the same as working, so the wasm suite runs the actual flows —
 entropy, certificates, a two-device exchange, and revocation — in Node against
@@ -248,3 +248,107 @@ and the manifest:
 - `mls-rs 0.44` → `0.56` changed several method arities (`create_group`,
   `join_group`, `generate_key_package_message` all take a trailing
   `Option<MlsTime>`).
+
+---
+
+## 5. The web binding — measured in a browser
+
+`3b` proved the crate *compiles and runs* under wasm. It did not prove anything
+about the web, because nothing was exported: `src/ffi.rs` is UniFFI only, so
+`wasm32` produced an artifact no JavaScript could call. Every number in `2` is
+native.
+
+`src/wasm.rs` is now the web half of the `26` §Option C split. Build it with
+`pnpm build:wasm`; measure it with `pnpm bench:wasm`, which runs the same
+benchmark as `examples/bench.rs` in a real browser so the two tables can be read
+against each other. Measured on ladybug (M5, 24 GB), Chrome, `[profile.wasm]`.
+
+### What it costs to download
+
+| | raw | gzip | brotli |
+| --- | ---: | ---: | ---: |
+| `revel_crypto_bg.wasm` | 1,163,762 | 390,435 | **292,855** |
+| `revel_crypto.js` (glue) | 39,014 | 7,470 | 6,467 |
+
+**~290 KiB over the wire**, once per version. Compile and instantiate is
+**2–5 ms** — not a number worth optimising.
+
+`[profile.wasm-size]` (`opt-level = "z"`) gets that to 251 KiB brotli. It is
+kept, and it should not be used: it costs **74%** on the operation that already
+dominates — a 500-leaf build goes 1,469 ms → 2,560 ms — to save 42 KiB. Bytes
+are cheap here and commits are not.
+
+### Group scaling, in a browser
+
+| leaves | build (batched) | 1 add | welcome | 1 remove | first join | encrypt | decrypt |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2 | 4 ms | 1.2 ms | 0.9 KiB | 3.1 ms | 1 ms | 262 µs | 258 µs |
+| 50 | 73 ms | 4.6 ms | 21.0 KiB | 31.8 ms | 56 ms | 262 µs | 332 µs |
+| 500 | 1,469 ms | 14.3 ms | 209.0 KiB | 212 ms | 363 ms | 340 µs | 316 µs |
+| 2000 | 17,286 ms | 61.9 ms | 836.9 KiB | 804 ms | 1,749 ms | 280 µs | 262 µs |
+
+Welcome sizes are **byte-identical** to the native run, which is the cross-check
+that matters: this is the same protocol output, not a lookalike.
+
+### The finding: asymmetric crypto is what wasm costs you
+
+Against `2`'s native table, the slowdown is not uniform — it splits cleanly by
+what kind of cryptography an operation does.
+
+| | native | browser | ratio |
+| --- | ---: | ---: | ---: |
+| encrypt (symmetric, AES-GCM) | ~50 µs | ~280 µs | **~5×** |
+| 1 add (one path update) | 18.5 ms | 61.9 ms | **~3×** |
+| 1 remove (2,000 leaves) | 39.8 ms | 804 ms | **~20×** |
+| build 2,000 (batched) | 774 ms | 17,286 ms | **~22×** |
+
+Sending a message is ~5× slower and **flat with group size**, exactly as it is
+natively — a message costs the same in a DM as in a 2,000-person room. But
+anything that touches the ratchet tree pays 20×, because it is thousands of
+X25519 operations and RustCrypto's field arithmetic has no SIMD to fall back on
+under `wasm32-unknown-unknown`.
+
+**This is a new argument for a ceiling, and a better one than `2` retired.** §2
+established that Welcome size does *not* justify the ~2,000-leaf limit in `03`
+§11. This does: on the machine a person actually has, building a 2,000-leaf
+group is **17 seconds** and removing one member from it is **0.8 seconds** — and
+today that is 17 seconds of a frozen main thread, because there is no worker.
+Two consequences, neither of them optional:
+
+1. **The core must not run crypto on the main thread.** A 500-leaf remove at
+   212 ms is already past the frame budget by an order of magnitude.
+2. **Mass membership changes need to be a background job with progress**, not
+   something a button waits on.
+
+### Three measurement mistakes, all in the harness
+
+In the spirit of `2` — the harness was wrong three times before the numbers
+meant anything, and each failure impersonated a result.
+
+- **`requestAnimationFrame` never fires in a tab that isn't painting.** The
+  bench yielded between rows to stay watchable, and stalled forever on the first
+  row when driven headlessly. It looked exactly like the crypto hanging. Now
+  raced against a timer, which is also correct for a backgrounded tab.
+- **wasm tiers up on a wall clock, not a call count.** V8 runs Liftoff code
+  immediately and swaps in TurboFan later, so early rows measure the baseline
+  compiler. First it read `encrypt` at 418 µs for 2 leaves and 160 µs for 500 —
+  encryption apparently getting cheaper as the group grows. A fixed-*iteration*
+  warmup only moved the cliff: 2,000 leaves then read 40 µs under a 500-leaf row
+  reading 372 µs. The warmup is three **seconds** now, exercising the symmetric
+  and asymmetric paths separately, because they tier independently.
+- **50 samples is far too few for a 50 µs operation** against a clock browsers
+  deliberately blunt. Single-call decrypt timings came back as 200/500/500/600
+  µs — the clock's resolution wearing a result's clothing. At 2,000 samples the
+  figure is flat across group sizes, which is the shape it should have had all
+  along.
+
+### What is deliberately not built yet
+
+- **Group state is not persisted.** A group lives in wasm memory and dies with
+  the page. mls-rs has a `GroupStateStorage` seam for handing that to the
+  TypeScript store; that is the next piece.
+- **No worker.** See above — this is the one with a deadline attached.
+- **The binding inlines the ratchet tree**, because it uses mls-rs's default
+  commit options. That is the configuration `03` §5 rejects and `2` measured as
+  4× worse; the browser Welcome column above inherits it. Out-of-band tree
+  serving has to be exposed across this boundary before any of it ships.

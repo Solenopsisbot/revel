@@ -1,0 +1,18 @@
+{
+  "name": "@revel/crypto-wasm",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "revel_crypto.js",
+  "module": "revel_crypto.js",
+  "types": "revel_crypto.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ],
+  "files": [
+    "revel_crypto.js",
+    "revel_crypto.d.ts",
+    "revel_crypto_bg.wasm",
+    "revel_crypto_bg.wasm.d.ts"
+  ]
+}
