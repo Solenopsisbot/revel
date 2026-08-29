@@ -83,6 +83,15 @@ class Core {
   lastRead = $state<Record<string, string>>({ ...lastRead });
   /** Which face's profile card is open, if any. */
   profileFor = $state<string | null>(null);
+  /**
+   * Whether the "speaking as" switcher is open.
+   *
+   * Up here with the rest of the shell's transient state rather than inside
+   * the composer, because on touch it is a bottom sheet (`docs/24`) and the
+   * back button has to be able to close it — and the back ladder reads one
+   * list, in one place, or it stops agreeing with itself.
+   */
+  speakingAsOpen = $state(false);
   /** A message the view should scroll to and flash — reply jumps, search hits. */
   jumpTo = $state<string | null>(null);
 

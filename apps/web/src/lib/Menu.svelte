@@ -63,6 +63,9 @@
     display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
     border: 0; background: transparent; cursor: pointer; color: var(--text-dim);
     padding: 7px 9px; border-radius: var(--r-sm); font-size: var(--text-sm);
+    /* A long-press menu is the main way anything gets done on a phone, so its
+       rows are the last place to be stingy with the target size. */
+    min-height: var(--tap);
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   button:hover:not(:disabled) { background: var(--ground-3); color: var(--text); }

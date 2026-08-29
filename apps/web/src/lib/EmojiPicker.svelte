@@ -312,7 +312,8 @@
   }
   .tabs::-webkit-scrollbar { display: none; }
   .tab {
-    flex: 1; min-width: 30px; border: 0; background: transparent; cursor: pointer;
+    flex: 1; min-width: max(30px, var(--tap)); min-height: var(--tap);
+    border: 0; background: transparent; cursor: pointer;
     font-size: 16px; line-height: 1; padding: 5px 0 6px; border-radius: var(--r-xs);
     position: relative; opacity: .62; filter: grayscale(.35);
     transition: opacity var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
@@ -338,6 +339,7 @@
   .grid { display: grid; grid-template-columns: repeat(9, 1fr); }
   .e {
     aspect-ratio: 1; border: 0; background: transparent; cursor: pointer;
+    min-width: var(--tap); min-height: var(--tap);
     font-size: 21px; line-height: 1; border-radius: var(--r-xs); padding: 0;
     display: grid; place-items: center;
     transition: background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease-toy);

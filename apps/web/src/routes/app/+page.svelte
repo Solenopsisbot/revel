@@ -21,6 +21,7 @@
   import { layout } from '$lib/layout.svelte.js';
   import { drawers } from '$lib/drawers.svelte.js';
   import { back } from '$lib/back.js';
+  import { longpress } from '$lib/touch.svelte.js';
   import { lightbox } from '$lib/media/lightbox.svelte.js';
   import { wren } from '$lib/wren/wren.svelte.js';
   import { untrack } from 'svelte';
@@ -280,6 +281,7 @@
     if (settingsOpen) l.push(() => (settingsOpen = false));
     if (spaceOpen) l.push(() => (spaceOpen = false));
     if (commandOpen) l.push(() => (commandOpen = false));
+    if (core.speakingAsOpen) l.push(() => (core.speakingAsOpen = false));
     if (core.profileFor) l.push(() => (core.profileFor = null));
     if (lightbox.open) l.push(() => lightbox.close());
     if (wren.popup) l.push(() => (wren.popup = null));
@@ -355,6 +357,7 @@
         style="--from: var(--face-{space.from}); --to: var(--face-{space.to})"
         onclick={() => { core.openRoom(space.id, space.rooms[0]!.id); navigated(); }}
         oncontextmenu={(e) => openSpaceMenu(e, space.id)}
+        use:longpress={(e) => openSpaceMenu(e, space.id)}
         title={space.name}
       >{space.initial}</button>
     {/each}
@@ -372,6 +375,7 @@
             class:unread={!!dm.unread}
             onclick={() => { core.openHome(dm.id); navigated(); }}
             oncontextmenu={(e) => openDmMenu(e, dm.id)}
+            use:longpress={(e) => openDmMenu(e, dm.id)}
           >
             {#if dm.kind === 'group'}
               <span class="stack">
@@ -402,6 +406,7 @@
       bind:this={spaceHead}
       onclick={(e) => openSpaceMenu(e)}
       oncontextmenu={(e) => openSpaceMenu(e)}
+      use:longpress={(e) => openSpaceMenu(e)}
       title="{core.space.name} — settings and invites"
     >
       <span class="sh-nm">{core.space.name}</span>
@@ -426,6 +431,7 @@
               navigated();
             }}
             oncontextmenu={(e) => openRoomMenu(e, room.id)}
+            use:longpress={(e) => openRoomMenu(e, room.id)}
           >
             <span class="glyph">
               {#if room.kind === 'voice'}<Icon name="voice" size={15} />{:else}#{/if}
@@ -447,6 +453,7 @@
                     class="occupant"
                     onclick={() => (core.profileFor = id)}
                     oncontextmenu={(e) => openMemberMenu(e, id)}
+                    use:longpress={(e) => openMemberMenu(e, id)}
                   >
                     <Avatar face={core.faces[id]} size={18} />
                     <span>{core.faces[id].name}</span>
@@ -586,6 +593,7 @@
           class="member"
           onclick={() => (core.profileFor = face.id)}
           oncontextmenu={(e) => openMemberMenu(e, face.id)}
+          use:longpress={(e) => openMemberMenu(e, face.id)}
         >
           <Avatar {face} size={32} dot />
           <div class="who">
@@ -653,6 +661,7 @@
 
   .join {
     display: inline-flex; align-items: center; gap: 6px; flex: none;
+    min-height: var(--tap);
     border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700;
     background: var(--face-mint); color: var(--ground-0);
     padding: 6px 13px; border-radius: var(--r-pill);
@@ -680,6 +689,7 @@
   }
   .me-btn {
     flex: none; width: 30px; height: 30px; border: 0; cursor: pointer;
+    min-width: var(--tap); min-height: var(--tap);
     background: transparent; color: var(--text-mute); border-radius: var(--r-sm);
     display: grid; place-items: center;
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
@@ -693,6 +703,7 @@
   .room {
     display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
     padding: 7px 10px; border: 0; background: transparent; cursor: pointer;
+    min-height: var(--tap);
     border-radius: var(--r-sm); color: var(--text-mute); font-weight: 600;
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
@@ -744,6 +755,7 @@
   .occupant {
     display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
     border: 0; background: transparent; cursor: pointer; font: inherit;
+    min-height: var(--tap);
     font-size: 12px; color: var(--text-mute); padding: 3px 8px; border-radius: var(--r-sm);
   }
   .occupant:hover { background: var(--ground-2); color: var(--text-dim); }
@@ -766,6 +778,7 @@
   .icon-btn {
     border: 0; background: transparent; color: var(--text-dim); cursor: pointer;
     width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+    min-width: var(--tap); min-height: var(--tap);
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .icon-btn:hover { background: var(--ground-2); color: var(--text); }
@@ -784,7 +797,7 @@
      promote a div to a button. */
   .member {
     display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
-    padding: 6px 8px; border: 0; border-radius: var(--r-sm);
+    padding: 6px 8px; border: 0; border-radius: var(--r-sm); min-height: var(--tap);
     background: transparent; color: inherit; font: inherit;
     cursor: pointer; transition: background var(--t-fast) var(--ease);
   }

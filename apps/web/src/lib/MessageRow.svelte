@@ -18,6 +18,8 @@
   import Attachments from './media/Attachments.svelte';
   import { core, MY_ACCOUNT } from './fake/core.svelte.js';
   import { contextMenu } from './contextmenu.svelte.js';
+  import { layout } from './layout.svelte.js';
+  import { longpress, tapActions, HOLD } from './touch.svelte.js';
   import { clock, names } from './format.js';
   import type { Message } from './fake/data.js';
 
@@ -116,6 +118,86 @@
     contextMenu.open(e, menuItems, pickMenu, face.name);
   }
 
+  // ── touch ────────────────────────────────────────────────────────────────
+
+  /**
+   * Swipe right to reply (`docs/24`), committing past ~56px.
+   *
+   * It reads as one gesture but it is really two decisions. The first is the
+   * axis lock, which has to go to the scroll on a tie — a list you are reading
+   * must never feel like it is trying to reply for you. The second is the
+   * commit point, which is *visible*: past it the row stops keeping up with
+   * your thumb and the icon goes solid, so you can feel that it has taken
+   * before you let go.
+   */
+  const REPLY_AT = 56;
+
+  let dx = $state(0);
+  let swiping = $state(false);
+  let g: { x: number; y: number; t: number; axis: null | 'x' | 'y' } | null = null;
+
+  const armed = $derived(dx >= REPLY_AT);
+
+  function swipeDown(e: PointerEvent) {
+    if (!layout.coarse || e.pointerType === 'mouse') return;
+    if (m.deleted || editing) return;
+    g = { x: e.clientX, y: e.clientY, t: performance.now(), axis: null };
+  }
+
+  function swipeMove(e: PointerEvent) {
+    if (!g) return;
+    const ddx = e.clientX - g.x;
+    const ddy = e.clientY - g.y;
+    if (g.axis === null) {
+      if (Math.hypot(ddx, ddy) < 10) return;
+      g.axis = Math.abs(ddx) > Math.abs(ddy) ? 'x' : 'y';
+      // Vertical, or leftward: not ours. Leftward is left alone deliberately —
+      // it is where a delete-on-swipe would go, and this product doesn't have
+      // one, so the row should not budge and imply otherwise.
+      if (g.axis === 'y' || ddx <= 0) {
+        g = null;
+        return;
+      }
+      swiping = true;
+      try {
+        (e.target as Element).setPointerCapture?.(e.pointerId);
+      } catch {
+        /* pointer already gone */
+      }
+    }
+    const raw = Math.max(0, ddx);
+    dx = raw <= REPLY_AT ? raw : REPLY_AT + (raw - REPLY_AT) * 0.3;
+    e.preventDefault();
+  }
+
+  function swipeEnd(e: PointerEvent) {
+    const was = g;
+    g = null;
+    swiping = false;
+    if (!was) return;
+
+    if (was.axis === 'x') {
+      if (dx >= REPLY_AT) {
+        core.replyTo = m.id;
+        navigator.vibrate?.(8);
+      }
+      dx = 0;
+      return;
+    }
+
+    // Never moved and never held: that is a tap, and a finger has no hover, so
+    // `docs/24` gives the action bar to the tap. Read out of the same pointer
+    // sequence rather than a `click` handler — the article is not an
+    // interactive element and should not pretend to be one, and this also
+    // sidesteps the long-press's own trailing click.
+    if (was.axis !== null) return;
+    if (performance.now() - was.t >= HOLD) return;
+    const el = e.target instanceof HTMLElement ? e.target : null;
+    if (el?.closest('button, a, textarea, input, [role="button"]')) return;
+    if (!window.getSelection()?.isCollapsed) return;
+    tapActions.toggle(m.id);
+  }
+
   /** "Rae, June and 2 others reacted with 🔥" — the tooltip does the work. */
   function who(by: string[], key: string) {
     return `${names(by.map((f) => core.faces[f]?.name ?? f))} reacted with ${key}`;
@@ -138,9 +220,23 @@
   class:editing
   class:gone={!!m.deleted}
   class:flash={core.jumpTo === m.id}
-  style="--fc: var(--face-{face.colour})"
+  class:swiping
+  class:tapped={tapActions.id === m.id}
+  style="--fc: var(--face-{face.colour}); --dx: {dx}px; --sw: {Math.min(1, dx / REPLY_AT)}"
   oncontextmenu={onContext}
+  onpointerdown={swipeDown}
+  onpointermove={swipeMove}
+  onpointerup={swipeEnd}
+  onpointercancel={swipeEnd}
+  use:longpress={onContext}
 >
+  <!-- Sits in the gap the row leaves behind as it moves, so the gesture
+       explains itself the first time rather than after someone reads a
+       changelog. -->
+  {#if dx > 0}
+    <span class="swipe-hint" class:armed aria-hidden="true"><Icon name="reply" size={17} /></span>
+  {/if}
+
   <div class="gutter">
     {#if grouped && !unreadAbove}
       <time class="stamp">{clock(m.at)}</time>
@@ -311,6 +407,42 @@
   /* The one optical line everything on the author row centres on. */
   .row { --line-h: 20px; }
 
+  /* ── swipe to reply (docs/24) ────────────────────────────────────────────
+     `translate` and `transform` are separate properties that COMPOSE, which is
+     the whole reason this uses `translate`: the arrive animation owns
+     `transform`, and a new message that arrives mid-swipe should do both. */
+  .row { translate: var(--dx, 0) 0; transition: translate var(--t-base) var(--ease); }
+  /* Following a thumb and running a settle transition at the same time is how
+     a gesture ends up lagging behind the finger doing it. */
+  .row.swiping { transition: none; }
+
+  .swipe-hint {
+    position: absolute; left: 0; top: 50%;
+    /* Anchored to the row's own left edge, so it slides out of the gap the row
+       leaves rather than travelling with it. */
+    translate: calc(-1 * var(--dx, 0px) + 14px) -50%;
+    display: grid; place-items: center; width: 30px; height: 30px;
+    border-radius: 50%; color: var(--text-mute); background: var(--ground-3);
+    /* A unitless companion to --dx: CSS cannot divide a length by a length,
+       so the progress fraction is computed where the numbers already are. */
+    opacity: var(--sw, 0);
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+      scale var(--t-fast) var(--ease-toy);
+  }
+  /* Past the commit point the row stops keeping up and this goes solid, so the
+     threshold is something you can feel before you let go. */
+  .swipe-hint.armed { background: var(--brand); color: #fff; scale: 1.12; }
+
+  @media (pointer: coarse) {
+    /* Vertical scrolling stays with the browser; horizontal comes to the
+       swipe. Set here as well as on the chat column because a coarse pointer
+       on a wide screen gets the gesture without getting the drawers. */
+    .row { touch-action: pan-y pinch-zoom; }
+    /* Long-press is the menu on touch, so the row must not also be offering
+       iOS's text-selection callout at the same moment. Copy is in the menu. */
+    .row .text { -webkit-user-select: none; user-select: none; }
+  }
+
   .row {
     display: flex; gap: 12px; padding: var(--row-pad-y) 16px; position: relative;
     align-items: flex-start;
@@ -413,6 +545,7 @@
 
   .tiny {
     border: 1px solid var(--line); background: var(--ground-3); cursor: pointer;
+    min-height: var(--tap);
     color: var(--text-dim); font-size: var(--text-xs); font-weight: 700;
     padding: 3px 10px; border-radius: var(--r-pill);
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
@@ -458,7 +591,11 @@
 
   .reactions { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
   .rx {
+    /* `min-height` beats `height`, so the pill is 24px on a mouse and the
+       touch floor on a finger. Chunky on a phone, deliberately: docs/24's
+       44px is not negotiable per-control, and a reaction is a real target. */
     display: inline-flex; align-items: center; gap: 5px; height: 24px; cursor: pointer;
+    min-height: var(--tap);
     background: var(--ground-3); border: 1px solid var(--line);
     border-radius: var(--r-pill); padding: 0 8px;
     transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
@@ -488,8 +625,10 @@
     box-shadow: var(--shadow-ambient);
   }
   .row:hover .actions,
+  .row.tapped .actions,
   .row:has(.actions button:focus-visible) .actions,
   .row:has(.actions button.on) .actions { opacity: 1; pointer-events: auto; transform: none; }
+  .actions button { min-width: var(--tap); min-height: var(--tap); }
   .actions button {
     border: 0; background: transparent; color: var(--text-dim); cursor: pointer;
     width: 28px; height: 28px; border-radius: var(--r-xs); display: grid; place-items: center;

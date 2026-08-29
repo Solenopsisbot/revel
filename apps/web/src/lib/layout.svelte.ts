@@ -56,6 +56,20 @@ class Layout {
       return () => mq.removeEventListener('change', on);
     });
 
+    // `?touch=1` forces the coarse-pointer treatment on a machine that has a
+    // mouse. Not a test hook — the same review affordance `?theme=` and
+    // `?onboarding=1` already are, and it exists for the same reason: a
+    // surface you can only see by picking up a phone is a surface nobody
+    // reviews, and the touch surface is now most of `docs/24`.
+    //
+    // The data attribute is how the token layer joins in; CSS cannot read a
+    // query string, so `--tap` keys off `[data-touch]` as well as the media
+    // query it normally follows.
+    if (new URLSearchParams(location.search).get('touch') === '1') {
+      this.coarse = true;
+      document.documentElement.dataset.touch = 'on';
+    }
+
     return () => offs.forEach((off) => off());
   }
 }

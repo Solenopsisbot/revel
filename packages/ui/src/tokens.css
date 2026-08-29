@@ -77,6 +77,16 @@
   --row-pad-y: 6px;
   --row-gap: 2px;
 
+  /* The touch-target floor (`docs/24`: 44px minimum on a coarse pointer, and
+     `compact` density must never push a control below it).
+
+     Zero on a mouse, so `min-height: var(--tap)` is a no-op there and the same
+     declaration can sit on a control without a media query around it. That is
+     the point: a floor you have to remember to opt into is a floor half the
+     app forgets. It keys off POINTER, not width — a touchscreen laptop needs
+     the target size at 1440px just as much as a phone does. */
+  --tap: 0px;
+
   /* ---- motion -------------------------------------------------------- */
   --t-fast: 120ms;
   --t-base: 200ms;
@@ -211,6 +221,16 @@
 
 /* ---- density ---------------------------------------------------------- */
 [data-density='compact'] { --space: 3px; --row-pad-y: 3px; --row-gap: 0px; }
+
+/* ---- touch ------------------------------------------------------------
+   Applied after the density block so it wins: compact may take padding out
+   of a control, but not its ability to be hit with a thumb. */
+@media (pointer: coarse) {
+  :root { --tap: 44px; }
+}
+/* `?touch=1` forces it on a desktop, for reviewing the touch surface without
+   a phone in hand. See layout.svelte.ts. */
+:root[data-touch='on'] { --tap: 44px; }
 
 /* ---- personality: calm strips the decorative layer --------------------
    Keeps colour, shape and type; drops the toy lift and the star marks.

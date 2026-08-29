@@ -2,9 +2,9 @@
   import Avatar from './Avatar.svelte';
   import Icon from './Icon.svelte';
   import { core } from './fake/core.svelte.js';
+  import { layout } from './layout.svelte.js';
 
   let draft = $state('');
-  let switcherOpen = $state(false);
   let input = $state<HTMLTextAreaElement>();
   let dragging = $state(false);
 
@@ -30,7 +30,7 @@
     }
     if (e.key === 'Escape') {
       // Escape clears the most specific thing first, then the next.
-      if (switcherOpen) switcherOpen = false;
+      if (core.speakingAsOpen) core.speakingAsOpen = false;
       else if (core.replyTo) core.replyTo = null;
     }
   }
@@ -74,17 +74,35 @@
 <svelte:window onkeydown={typeToFocus} />
 
 <div class="composer">
-  {#if switcherOpen}
-    <div class="switcher" role="listbox" aria-label="Speaking as">
+  {#if core.speakingAsOpen}
+    <!-- A dropdown on a mouse, a bottom sheet on a finger (`docs/24`):
+         switching face mid-conversation is a frequent action for a plural
+         user, and a 200px popover anchored to a chip is a bad way to ask a
+         thumb to do it. Same markup, same list, different frame. -->
+    {#if layout.coarse}
+      <div class="sheet-scrim" onclick={() => (core.speakingAsOpen = false)} role="presentation"></div>
+    {/if}
+    <div
+      class="switcher"
+      class:sheet={layout.coarse}
+      role={layout.coarse ? 'dialog' : 'listbox'}
+      aria-modal={layout.coarse ? 'true' : undefined}
+      aria-label="Speaking as"
+    >
+      {#if layout.coarse}
+        <div class="grab" aria-hidden="true"></div>
+        <p class="sheet-title">Speaking as</p>
+      {/if}
       {#each core.myFaces as f (f.id)}
         <button
-          role="option"
-          aria-selected={f.id === core.speakingAs}
+          role={layout.coarse ? undefined : 'option'}
+          aria-selected={layout.coarse ? undefined : f.id === core.speakingAs}
+          aria-pressed={layout.coarse ? f.id === core.speakingAs : undefined}
           class="opt"
           class:sel={f.id === core.speakingAs}
-          onclick={() => { core.speakingAs = f.id; switcherOpen = false; }}
+          onclick={() => { core.speakingAs = f.id; core.speakingAsOpen = false; }}
         >
-          <Avatar face={f} size={28} />
+          <Avatar face={f} size={layout.coarse ? 36 : 28} />
           <span style="color: var(--face-{f.colour})">{f.name}</span>
           {#if f.id === core.speakingAs}<Icon name="check" size={16} />{/if}
         </button>
@@ -117,7 +135,7 @@
     {#if core.plural}
       <!-- The chip exists only because this account has several faces.
            A singlet never sees it (`docs/11`). -->
-      <button class="chip" onclick={() => (switcherOpen = !switcherOpen)} title="Speaking as">
+      <button class="chip" onclick={() => (core.speakingAsOpen = !core.speakingAsOpen)} title="Speaking as">
         <Avatar {face} size={24} />
         <span class="nm">{face.name}</span>
         <Icon name="chevron" size={14} />
@@ -155,10 +173,36 @@
   .opt {
     display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
     padding: 7px 8px; border: 0; background: transparent; cursor: pointer;
+    min-height: var(--tap);
     border-radius: var(--r-sm); font-weight: 600;
     transition: background var(--t-fast) var(--ease);
   }
   .opt:hover, .opt.sel { background: var(--ground-3); }
+
+  /* ── bottom sheet (coarse pointers only) ───────────────────────────────── */
+  .sheet-scrim { position: fixed; inset: 0; z-index: 45; background: var(--scrim); }
+  .switcher.sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 46;
+    min-width: 0; padding: 8px 12px;
+    /* Home-indicator territory. Without this the last row sits under it and
+       every tap on it is a swipe-up out of the app instead. */
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    border-radius: var(--r-lg) var(--r-lg) 0 0; border-bottom: 0;
+    animation: sheet-up var(--t-base) var(--ease);
+  }
+  @keyframes sheet-up { from { translate: 0 100%; } to { translate: 0 0; } }
+  /* The one affordance that says "this came up from the bottom and goes back
+     down", without asking for a gesture the sheet doesn't actually implement. */
+  .grab {
+    width: 38px; height: 4px; border-radius: var(--r-pill);
+    background: var(--ground-4); margin: 2px auto 8px;
+  }
+  .sheet-title {
+    margin: 0 0 4px; padding: 0 8px;
+    font-size: 11px; font-weight: 800; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--text-mute);
+  }
+  .switcher.sheet .opt { padding: 10px; font-size: var(--text-base); }
 
   .box {
     display: flex; align-items: flex-end; gap: 8px;
@@ -232,6 +276,7 @@
   .icon {
     border: 0; background: transparent; color: var(--text-dim); cursor: pointer;
     width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+    min-width: var(--tap); min-height: var(--tap);
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .icon:hover { background: var(--ground-4); color: var(--text); }
@@ -239,6 +284,7 @@
 
   .send {
     flex: none; width: 36px; height: 36px; border-radius: 50%; border: 0; cursor: pointer;
+    min-width: var(--tap); min-height: var(--tap);
     background: linear-gradient(180deg, #8a51ed, #7b48d8); color: #fff;
     display: grid; place-items: center;
     box-shadow: 0 var(--lift) 0 #55229e, var(--highlight-inset);

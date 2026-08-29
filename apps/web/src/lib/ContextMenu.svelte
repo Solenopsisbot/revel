@@ -69,6 +69,11 @@
 <style>
   .ctx {
     position: fixed; z-index: 80;
+    /* Once long-press exists this is the main way things get done on a phone,
+       and its rows are 44px there — so a menu can be taller than the screen.
+       Clamping here rather than in the placement code means the measurement
+       the flip-and-clamp reads is already the clamped one. */
+    max-height: calc(100dvh - 16px); overflow-y: auto;
     animation: rise var(--t-fast) var(--ease);
   }
   @keyframes rise {
