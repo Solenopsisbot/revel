@@ -26,6 +26,15 @@
   let revealed = $state<Record<string, boolean>>({});
   let altFor = $state<string | null>(null);
 
+  /**
+   * The one open description, or null. At most one is open at a time, which
+   * is why it can be rendered once below the whole group rather than once per
+   * frame — and it *has* to be, because a frame is sized from the manifest
+   * and holds that size exactly. Anything added inside it has no room and
+   * spills onto the message underneath.
+   */
+  const altShown = $derived(visual.find((a) => a.id === altFor) ?? null);
+
   const MAX_W = 400;
   const MAX_H = 320;
 
@@ -46,7 +55,7 @@
       <div
         class="frame"
         class:single={visual.length === 1}
-        style={visual.length === 1 ? `width:${box.w}px;height:${box.h}px` : ''}
+        style={visual.length === 1 ? `width:${box.w}px;aspect-ratio:${box.w}/${box.h}` : ''}
       >
         {#if hidden}
           <!-- The sender said this needs a warning, so it gets one. The frame
@@ -76,6 +85,8 @@
             <button
               class="tag alt"
               class:right={a.kind === 'gif'}
+              class:on={altFor === a.id}
+              aria-expanded={altFor === a.id}
               onclick={() => (altFor = altFor === a.id ? null : a.id)}
               title="Description"
             >ALT</button>
@@ -86,13 +97,18 @@
             </button>
           {/if}
         {/if}
-
-        {#if altFor === a.id && a.alt}
-          <p class="altbox">{a.alt}</p>
-        {/if}
       </div>
     {/each}
   </div>
+
+  {#if altShown?.alt}
+    <!-- Below the group, not inside the frame: see `altShown`. With more than
+         one picture the lit ALT tag says which frame it belongs to, and the
+         name says it again for anyone not going by colour. -->
+    <p class="altbox">
+      {#if visual.length > 1}<b>{altShown.name}</b>{' '}{/if}{altShown.alt}
+    </p>
+  {/if}
 {/if}
 
 {#each rest as a (a.id)}
@@ -124,6 +140,13 @@
     background: var(--ground-2);
   }
   .multi .frame { aspect-ratio: 1; }
+  /* The reserved box is exact in pixels, but a phone is narrower than a
+     picture: 400px of image inside a 294px message hangs over the edge of the
+     conversation. Clamping the width alone would leave a fixed height and
+     crop the shape, so the height comes from the ratio instead — the box is
+     still the right shape before the bytes arrive, at whatever width there
+     actually is, and still never moves once they land. */
+  .frame.single { max-width: 100%; }
 
   .open, .spoiler {
     display: block; width: 100%; height: 100%; padding: 0; border: 0; cursor: pointer;
@@ -172,15 +195,17 @@
   .tag.alt { left: auto; right: 7px; }
   .tag.alt.right { right: 46px; }
   .tag.alt:hover, .tag.hidebtn:hover { background: rgba(12, 6, 26, .92); }
+  .tag.alt.on { background: var(--face-aqua); color: var(--ground-0); }
   .tag.hidebtn { left: 7px; bottom: 7px; display: grid; place-items: center; padding: 3px; }
 
   .altbox {
-    margin: 5px 0 0; font-size: var(--text-xs); color: var(--text-dim);
+    margin: 5px 0 0; max-width: min(400px, 100%); font-size: var(--text-xs); color: var(--text-dim);
     background: var(--ground-2); border-left: 2px solid var(--face-aqua);
     padding: 6px 9px; border-radius: 0 var(--r-sm) var(--r-sm) 0;
     animation: drop var(--t-fast) var(--ease);
   }
   @keyframes drop { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+  .altbox b { color: var(--face-aqua); font-weight: 700; margin-right: 3px; }
 
   .stacked { margin-top: 6px; }
 

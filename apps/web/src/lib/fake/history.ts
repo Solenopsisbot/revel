@@ -524,6 +524,9 @@ const FILES: Attachment[] = [
   { id: 'h-att-5', kind: 'gif', name: 'drawer.gif', size: 402_119, url: '/mock/loop.gif', w: 240, h: 180, alt: 'A drawer tracking a thumb' },
 ];
 
+/** The visual half of the pool, for messages that post several at once. */
+const PICTURES: Attachment[] = FILES.filter((a) => a.kind !== 'file');
+
 /**
  * Prepend generated history to each room.
  *
@@ -564,7 +567,21 @@ export function withHistory(base: Record<string, Message[]>): Record<string, Mes
       // Roughly one in nine carries a file, which is enough for the "has a
       // file" filter to be worth having and few enough that the room still
       // reads as a conversation.
-      if (rand() < 0.11) m.attachments = [{ ...FILES[Math.floor(rand() * FILES.length)]!, id: `h-att-${roomId}-${i}` }];
+      if (rand() < 0.11) {
+        // Usually one thing. Sometimes a handful of pictures at once, because
+        // the two-column grid is a layout this app has, and a corpus that
+        // never produces one is a corpus that never shows it to us.
+        const many = rand() < 0.28;
+        const pool = many ? PICTURES : FILES;
+        const take = many ? 2 + Math.floor(rand() * 2) : 1;
+        const left = [...pool];
+        m.attachments = Array.from({ length: Math.min(take, left.length) }, (_, k) => ({
+          // Drawn without replacement: the same screenshot twice in one grid
+          // reads as a bug in the app rather than a quirk of the fixtures.
+          ...left.splice(Math.floor(rand() * left.length), 1)[0]!,
+          id: `h-att-${roomId}-${i}-${k}`,
+        }));
+      }
       if (rand() < 0.09) m.reactions = [{ key: rand() < 0.5 ? '🔥' : '👀', by: [voice.faces[0]!] }];
 
       history.push(m);
