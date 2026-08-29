@@ -24,13 +24,23 @@
   import { longpress } from '$lib/touch.svelte.js';
   import SearchPanel from '$lib/search/SearchPanel.svelte';
   import { search } from '$lib/search/search.svelte.js';
+  import { applyUrl, syncUrl } from '$lib/deeplink.js';
   import { lightbox } from '$lib/media/lightbox.svelte.js';
   import { wren } from '$lib/wren/wren.svelte.js';
   import { untrack } from 'svelte';
   import { page } from '$app/state';
 
-  // ?settings=<section> opens straight to a pane, so any of them can be
-  // reviewed without clicking through.
+  // The URL says where we are (`docs/19`): a space and room or a DM, an
+  // optional message to land on, and an optional settings pane. Read once, at
+  // init, before anything renders — landing somewhere and then jumping is a
+  // worse first frame than landing in the right place.
+  const linked = applyUrl(page.url);
+  if (linked.message) {
+    const here = core.messages[core.currentRoomId]?.some((m) => m.id === linked.message);
+    if (here) core.jumpTo = linked.message;
+    else core.awaitingKeys = linked.message;
+  }
+
   const deepLink = page.url.searchParams.get('settings');
   let settingsOpen = $state(!!deepLink);
   let settingsSection = $state(deepLink ?? 'account');
@@ -199,6 +209,22 @@
 
   let navEl = $state<HTMLElement>();
   let membersEl = $state<HTMLElement>();
+
+  /**
+   * Mirror where we are into the address bar.
+   *
+   * `replaceState`, so refreshing lands you here and a link is shareable, but
+   * changing room adds no history entry — see `deeplink.ts` for why that
+   * matters to the back ladder.
+   */
+  $effect(() => {
+    syncUrl({
+      scope: core.scope,
+      spaceId: core.currentSpaceId,
+      roomId: core.currentRoomId,
+      settings: settingsOpen ? settingsSection : undefined,
+    });
+  });
 
   $effect(() => layout.watch());
   // Indexing starts with the app, not with the first search: the state worth

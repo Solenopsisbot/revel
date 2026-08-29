@@ -20,6 +20,7 @@
   import { contextMenu } from './contextmenu.svelte.js';
   import { layout } from './layout.svelte.js';
   import { longpress, tapActions, HOLD } from './touch.svelte.js';
+  import { linkToMessage } from './deeplink.js';
   import { clock, names } from './format.js';
   import type { Message } from './fake/data.js';
 
@@ -62,6 +63,11 @@
     { id: 'react', label: 'Add reaction', icon: 'react' },
     { id: 'reply', label: 'Reply', icon: 'reply', key: 'R' },
     { id: 'copy', label: 'Copy text', icon: 'copy' },
+    // Location lives in the URL now, so a link to one message is a real thing
+    // that can exist (`docs/19`). Deliberately an action rather than something
+    // the address bar carries around: `?m=` in the URL at all times would put
+    // a stale message id on every link anyone copied out of the bar.
+    { id: 'link', label: 'Copy link to message', icon: 'link' },
     { id: 'pin', label: m.pinned ? 'Unpin' : 'Pin to room', icon: 'pin' },
     ...(mine ? [{ id: 'edit', label: 'Edit', icon: 'pencil', key: 'E' } satisfies Item] : []),
     ...(mine ? [{ id: 'delete', label: 'Delete', icon: 'trash', danger: true } satisfies Item] : []),
@@ -100,6 +106,7 @@
     if (id === 'react') { pickerAnchor = moreBtn; pickerOpen = true; }
     if (id === 'reply') core.replyTo = m.id;
     if (id === 'copy') void navigator.clipboard?.writeText(m.body);
+    if (id === 'link') void navigator.clipboard?.writeText(linkToMessage(core.currentRoomId, m.id));
     if (id === 'pin') core.pin(m.id);
     if (id === 'edit') startEdit();
     if (id === 'delete') core.confirmingDelete = m.id;

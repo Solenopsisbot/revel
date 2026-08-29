@@ -99,6 +99,27 @@
          and a new message doesn't reflow everything above it (docs/32). -->
     <div class="grow"></div>
 
+    {#if core.awaitingKeys}
+      <!-- `docs/19`: a message link you can't read yet is not an error. The
+           message exists and the keys are on their way; saying "not found"
+           would teach people that shared links are unreliable when they are
+           not. It sits in the room rather than over it, because you can carry
+           on reading while it resolves. -->
+      <div class="catching" role="status">
+        <Icon name="key" size={16} />
+        <div>
+          <b>Catching up on keys.</b>
+          <span>
+            Someone linked you to a message this device hasn't been able to
+            decrypt yet. It'll appear here on its own once the keys arrive.
+          </span>
+        </div>
+        <button onclick={() => (core.awaitingKeys = null)} aria-label="Dismiss">
+          <Icon name="x" size={14} />
+        </button>
+      </div>
+    {/if}
+
     {#if core.thread.length === 0}
       <div class="empty">
         <h2>Nothing here yet</h2>
@@ -135,6 +156,27 @@
 </div>
 
 <style>
+  .catching {
+    display: flex; align-items: flex-start; gap: 11px;
+    margin: 10px 16px 4px; padding: 12px 14px;
+    border-radius: var(--r-md);
+    background: color-mix(in oklab, var(--face-sky) 12%, transparent);
+    border: 1px solid color-mix(in oklab, var(--face-sky) 38%, var(--line));
+    animation: settle var(--t-base) var(--ease);
+  }
+  @keyframes settle { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .catching > :global(svg) { flex: none; margin-top: 2px; color: var(--face-sky); }
+  .catching div { flex: 1; min-width: 0; font-size: var(--text-sm); line-height: 1.55; }
+  .catching b { display: block; font-weight: 700; margin-bottom: 2px; }
+  .catching span { color: var(--text-dim); }
+  .catching button {
+    flex: none; border: 0; background: transparent; color: var(--text-mute); cursor: pointer;
+    display: grid; place-items: center; width: 26px; height: 26px; border-radius: var(--r-sm);
+    min-width: var(--tap); min-height: var(--tap);
+    transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+  }
+  .catching button:hover { color: var(--text); background: var(--ground-3); }
+
   .pane { position: relative; height: 100%; display: flex; flex-direction: column; min-height: 0; }
 
   .msgs {

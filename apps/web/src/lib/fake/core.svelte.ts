@@ -137,6 +137,15 @@ class Core {
   }
   /** A message the view should scroll to and flash — reply jumps, search hits. */
   jumpTo = $state<string | null>(null);
+  /**
+   * A message someone linked to that this device does not have yet.
+   *
+   * `docs/19`: "opening a message link you can't decrypt yet shows the
+   * 'catching up on keys' banner, not an error." It is genuinely not an error
+   * — the message exists, the keys are on their way — and showing a failure
+   * would teach people that shared links are unreliable when they are not.
+   */
+  awaitingKeys = $state<string | null>(null);
 
   /** Emoji the picker offers first. Persisted; most recent leads. */
   recentEmoji = $state<string[]>(['👍', '🔥', '💯', '👀', '😂', '❤️']);
