@@ -25,6 +25,7 @@
   import SearchPanel from '$lib/search/SearchPanel.svelte';
   import { search } from '$lib/search/search.svelte.js';
   import { applyUrl, syncUrl } from '$lib/deeplink.js';
+  import ThreadPanel from '$lib/thread/ThreadPanel.svelte';
   import { lightbox } from '$lib/media/lightbox.svelte.js';
   import { wren } from '$lib/wren/wren.svelte.js';
   import { untrack } from 'svelte';
@@ -92,10 +93,12 @@
       if (search.open) search.close();
       else search.show();
     }
-    // A drawer is the most specific thing on screen when it is open, so it is
-    // the first thing Escape takes away. Deliberately not `preventDefault`:
-    // nothing else is listening for it at this level.
-    if (e.key === 'Escape' && drawers.open) drawers.close();
+    // Escape unwinds the most specific thing on screen, in the same order the
+    // back ladder does — one key, one meaning.
+    if (e.key === 'Escape') {
+      if (drawers.open) drawers.close();
+      else if (core.openThreadId) core.closeThread();
+    }
   }
 
   function openRoomMenu(e: MouseEvent, roomId: string) {
@@ -322,6 +325,9 @@
     // so there is no "up" to go to and back should leave the app.
     if (layout.narrow && (core.scope === 'space' || drawers.open)) l.push(goUp);
     if (voice.viewingCall) l.push(minimiseCall);
+    // `docs/24`'s first row, and the one that was honestly absent until now:
+    // "a thread → its room". Below the sheets, above the room itself.
+    if (core.openThreadId) l.push(() => core.closeThread());
     // Below the sheets on purpose. A search panel is somewhere you stay while
     // you read the room behind it, so back should take a sheet off the top of
     // it first and only then put the panel away.
@@ -637,6 +643,7 @@
   <ContextMenu />
 
   {#if search.open}<SearchPanel />{/if}
+  {#if core.openThreadId}<ThreadPanel />{/if}
 
   {#if voice.incoming}<IncomingCall />{/if}
 

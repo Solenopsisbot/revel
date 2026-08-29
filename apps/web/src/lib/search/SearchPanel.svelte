@@ -39,6 +39,7 @@
   const results = $derived(search.results);
   const fromFace = $derived(search.token('from'));
   const hasFile = $derived(search.token('has') === 'file');
+  const inThread = $derived(search.token('in') === 'thread');
 
   /** Focus on open, and select what's there so a second ⌘F retypes rather
       than appends — the common case is a new search, not an edit. */
@@ -128,6 +129,9 @@
     <button class="chip" class:on={hasFile} onclick={() => search.setToken('has', hasFile ? null : 'file')} aria-pressed={hasFile}>
       <Icon name="attach" size={13} /> Has a file
     </button>
+    <button class="chip" class:on={inThread} onclick={() => search.setToken('in', inThread ? null : 'thread')} aria-pressed={inThread}>
+      <Icon name="forward" size={13} /> In a thread
+    </button>
 
     <div class="seg">
       {#each WINDOWS as w (w.id)}
@@ -170,8 +174,9 @@
         </p>
         <p class="tips">
           <b>from:rae</b> narrows to a person · <b>has:file</b> to messages
-          carrying something · <kbd>↑</kbd><kbd>↓</kbd> to walk the results and
-          <kbd>enter</kbd> to jump.
+          carrying something · <b>in:thread</b> to branches, which is where
+          things go to be hard to find · <kbd>↑</kbd><kbd>↓</kbd> to walk the
+          results and <kbd>enter</kbd> to jump.
         </p>
       </div>
     {:else if search.empty}

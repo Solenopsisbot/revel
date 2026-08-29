@@ -4,15 +4,33 @@
   import { core } from './fake/core.svelte.js';
   import { layout } from './layout.svelte.js';
 
+  /**
+   * The thread this composer posts into, if it is the one in a thread panel.
+   *
+   * One component for both, because a thread reply is an ordinary message with
+   * one extra field (`docs/03`) — everything else about composing, the face
+   * switcher, the growth, the drop target, the send rules, is identical, and a
+   * second copy would diverge on the first change to any of them.
+   */
+  let { thread }: { thread?: string } = $props();
+
   let draft = $state('');
   let input = $state<HTMLTextAreaElement>();
   let dragging = $state(false);
 
   const face = $derived(core.faces[core.speakingAs]!);
 
+  /**
+   * Whether this composer is the one stray keystrokes belong to. With a thread
+   * open there are two on screen, and both grabbing at every keypress would
+   * make typing land wherever the DOM happened to order them.
+   */
+  const active = $derived(thread ? core.openThreadId === thread : !core.openThreadId);
+
   function submit() {
     // Clearing the reply target is `core.send`'s job, not the composer's.
-    core.send(draft);
+    if (thread) core.sendToThread(thread, draft);
+    else core.send(draft);
     draft = '';
     // Someone replies, so the typing indicator and arrival animation have
     // something to do.
@@ -46,6 +64,7 @@
    * double-types on the browsers that already delivered it.
    */
   function typeToFocus(e: KeyboardEvent) {
+    if (!active) return;
     if (!input || document.activeElement === input) return;
     // A shortcut is not typing. ⌘K, ⌘, and friends must still work.
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -110,8 +129,8 @@
     </div>
   {/if}
 
-  {#if core.replyTo}
-    {@const target = core.thread.find((x) => x.id === core.replyTo)}
+  {#if core.replyTo && !thread}
+    {@const target = core.timeline.find((x) => x.id === core.replyTo)}
     {#if target}
       <div class="reply-banner">
         <Icon name="reply" size={14} />
@@ -125,7 +144,7 @@
   <div
     class="box"
     class:dragging
-    class:replying={!!core.replyTo}
+    class:replying={!!core.replyTo && !thread}
     style="--fc: var(--face-{face.colour})"
     ondragover={(e) => { e.preventDefault(); dragging = true; }}
     ondragleave={() => (dragging = false)}
@@ -148,7 +167,7 @@
       onkeydown={onKey}
       oninput={(e) => grow(e.currentTarget)}
       rows="1"
-      placeholder="Message #{core.room.name}"
+      placeholder={thread ? 'Reply in thread' : `Message #${core.room.name}`}
       aria-label="Message"
     ></textarea>
 

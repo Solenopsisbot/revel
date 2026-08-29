@@ -21,7 +21,7 @@
   import { layout } from './layout.svelte.js';
   import { longpress, tapActions, HOLD } from './touch.svelte.js';
   import { linkToMessage } from './deeplink.js';
-  import { clock, names } from './format.js';
+  import { clock, names, ago } from './format.js';
   import type { Message } from './fake/data.js';
 
   let {
@@ -59,9 +59,19 @@
 
   const target = $derived(m.replyTo ? core.find(m.replyTo) : undefined);
 
+  /** Replies branching off this message, or null if nobody has started one. */
+  const summary = $derived(core.threadSummary(m.id));
+
   const menuItems = $derived<Item[]>([
     { id: 'react', label: 'Add reaction', icon: 'react' },
     { id: 'reply', label: 'Reply', icon: 'reply', key: 'R' },
+    // Two different things with deliberately different words: a reply quotes
+    // and stays in the room, a thread moves the conversation off to one side.
+    // A row that already has a thread says "open" rather than "start", so the
+    // menu never offers to make a second one.
+    ...(m.thread
+      ? []
+      : [{ id: 'thread', label: summary ? 'Open thread' : 'Reply in thread', icon: 'forward' } satisfies Item]),
     { id: 'copy', label: 'Copy text', icon: 'copy' },
     // Location lives in the URL now, so a link to one message is a real thing
     // that can exist (`docs/19`). Deliberately an action rather than something
@@ -105,6 +115,7 @@
     menuOpen = false;
     if (id === 'react') { pickerAnchor = moreBtn; pickerOpen = true; }
     if (id === 'reply') core.replyTo = m.id;
+    if (id === 'thread') core.openThread(m.id);
     if (id === 'copy') void navigator.clipboard?.writeText(m.body);
     if (id === 'link') void navigator.clipboard?.writeText(linkToMessage(core.currentRoomId, m.id));
     if (id === 'pin') core.pin(m.id);
@@ -337,6 +348,23 @@
       {/if}
     {/if}
 
+    {#if summary && !m.deleted}
+      <!-- The branch has to lead somewhere from the room, or a thread is a
+           place messages go to be lost. Faces rather than names: at a glance
+           the useful question is "is this mine to read", and three avatars
+           answer it faster than three names do. -->
+      <button class="thread-line" onclick={() => core.openThread(m.id)}>
+        <span class="faces">
+          {#each summary.faces.slice(0, 3) as id (id)}
+            {#if core.faces[id]}<Avatar face={core.faces[id]} size={18} />{/if}
+          {/each}
+        </span>
+        <span class="n">{summary.count} {summary.count === 1 ? 'reply' : 'replies'}</span>
+        <span class="last">{ago(summary.lastAt)}</span>
+        <Icon name="chevron-right" size={14} />
+      </button>
+    {/if}
+
     {#if m.reactions?.length && !m.deleted}
       <div class="reactions">
         {#each m.reactions as r (r.key)}
@@ -508,6 +536,22 @@
 
   /* An optimistic message is provisional and says so. It does NOT animate
      into place, because that would claim it succeeded (docs/32). */
+  .thread-line {
+    display: flex; align-items: center; gap: 8px; margin: 7px 0 0;
+    border: 0; background: transparent; cursor: pointer; font: inherit;
+    padding: 4px 9px 4px 4px; border-radius: var(--r-pill);
+    color: var(--text-mute); font-size: 12px; font-weight: 700;
+    min-height: var(--tap);
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+  .thread-line:hover { background: var(--ground-3); color: var(--text-dim); }
+  .thread-line .n { color: var(--brand); }
+  .thread-line .last { font-weight: 400; }
+  .thread-line .faces { display: flex; }
+  /* Overlapped, so a run of avatars reads as one group rather than a list. */
+  .thread-line .faces > :global(*:not(:first-child)) { margin-left: -7px; }
+  .thread-line :global(svg) { opacity: .55; }
+
   .row.pending .body { opacity: .6; }
   .queued {
     display: flex; align-items: center; gap: 6px; margin: 5px 0 0;

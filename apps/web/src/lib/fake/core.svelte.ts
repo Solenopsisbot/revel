@@ -146,6 +146,14 @@ class Core {
    * would teach people that shared links are unreliable when they are not.
    */
   awaitingKeys = $state<string | null>(null);
+  /**
+   * The thread currently open, as the id of the message that started it.
+   *
+   * A thread belongs to a room, so this is cleared whenever the room changes:
+   * `docs/24`'s back table has "a thread → its room", which only makes sense
+   * if a thread cannot outlive the room it branches from.
+   */
+  openThreadId = $state<string | null>(null);
 
   /** Emoji the picker offers first. Persisted; most recent leads. */
   recentEmoji = $state<string[]>(['👍', '🔥', '💯', '👀', '😂', '❤️']);
@@ -224,9 +232,78 @@ class Core {
     if (names.length <= 2) return names.join(' and ');
     return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
   }
-  get thread() {
+  /**
+   * The open room's timeline.
+   *
+   * Renamed off `thread`, which used to mean "this room's messages" and now
+   * means something specific and different (`docs/16`: a thread is a branch
+   * inside a room). Two meanings for one word in a codebase about threads is
+   * a bug waiting to be written.
+   *
+   * Thread replies are excluded: that is the whole point of a branch. The
+   * parent keeps a summary line so the conversation still leads to them.
+   */
+  get timeline() {
+    return (this.messages[this.currentRoomId] ?? []).filter((m) => !m.thread);
+  }
+
+  /**
+   * Everything in the open room, thread replies included.
+   *
+   * The distinction matters wherever the subject is *the server's* view rather
+   * than yours: a thread reply is an event the server counted, timed and
+   * stored like any other, so "what the server can see" must not quietly leave
+   * it out. That screen is only persuasive while it is exactly true.
+   */
+  get everythingInRoom() {
     return this.messages[this.currentRoomId] ?? [];
   }
+  // ── threads ───────────────────────────────────────────────────────────────
+
+  /** Replies in a thread, oldest first. Excludes the message that started it. */
+  repliesTo(parentId: string, roomId = this.currentRoomId) {
+    return (this.messages[roomId] ?? []).filter((m) => m.thread === parentId);
+  }
+
+  /** The message a thread branches from, wherever it lives. */
+  parentOf(parentId: string, roomId = this.currentRoomId) {
+    return (this.messages[roomId] ?? []).find((m) => m.id === parentId);
+  }
+
+  /**
+   * A one-line summary for the parent message: how many replies, who is in it,
+   * and when it last moved. Faces in reply order and de-duplicated, so a
+   * back-and-forth between two people reads as two people.
+   */
+  threadSummary(parentId: string, roomId = this.currentRoomId) {
+    const replies = this.repliesTo(parentId, roomId);
+    if (!replies.length) return null;
+    const faces: string[] = [];
+    for (const r of replies) if (!faces.includes(r.faceId)) faces.push(r.faceId);
+    return { count: replies.length, faces, lastAt: replies[replies.length - 1]!.at };
+  }
+
+  openThread(parentId: string) {
+    this.openThreadId = parentId;
+  }
+
+  closeThread() {
+    this.openThreadId = null;
+  }
+
+  /**
+   * Post into a thread.
+   *
+   * Deliberately the same path as `send` rather than a parallel one — a thread
+   * reply is an ordinary message in the same room with the same audience and
+   * the same key (`docs/03`), and the only difference is one field. Writing a
+   * second send path would be inventing a distinction the protocol does not
+   * have.
+   */
+  sendToThread(parentId: string, body: string) {
+    this.send(body, parentId);
+  }
+
   /** Who is in a given room, without opening it. */
   rosterFor(roomId: string) {
     return rosters[roomId] ?? [];
@@ -250,9 +327,17 @@ class Core {
     return this.faces[m.faceId]?.accountId === MY_ACCOUNT;
   }
 
+  /**
+   * A message in the open room, by id.
+   *
+   * Searches everything in the room rather than the visible timeline: a reply
+   * target or a jump can point at a thread reply, and "the message exists but
+   * this function can't see it" is the kind of gap that turns into a broken
+   * reply banner much later.
+   */
   find(id: string | null) {
     if (!id) return undefined;
-    return this.thread.find((m) => m.id === id);
+    return (this.messages[this.currentRoomId] ?? []).find((m) => m.id === id);
   }
 
   /**
@@ -299,6 +384,7 @@ class Core {
 
   openHome(dmId?: string) {
     this.scope = 'home';
+    this.openThreadId = null;
     const target = dmId ?? this.dms[0]?.id;
     if (target) {
       this.currentRoomId = target;
@@ -319,6 +405,7 @@ class Core {
     this.replyTo = null;
     this.editing = null;
     this.confirmingDelete = null;
+    this.openThreadId = null;
     const room = this.space.rooms.find((r) => r.id === roomId);
     if (room) {
       room.unread = undefined;
@@ -331,7 +418,7 @@ class Core {
    * confirmed later — it never moves, because moving it would imply it went
    * somewhere (`docs/32`).
    */
-  send(body: string) {
+  send(body: string, thread?: string) {
     const trimmed = body.trim();
     if (!trimmed) return;
     if (!this.postedIn.includes(this.currentRoomId)) {
@@ -345,7 +432,10 @@ class Core {
       body: trimmed,
       at: Date.now(),
       pending: true,
-      replyTo: this.replyTo ?? undefined,
+      // A reply-to inside a thread would be a branch off a branch, which is
+      // not a thing this product has; the thread is already the grouping.
+      replyTo: thread ? undefined : (this.replyTo ?? undefined),
+      thread,
     });
     this.messages[this.currentRoomId] = list;
     this.replyTo = null;

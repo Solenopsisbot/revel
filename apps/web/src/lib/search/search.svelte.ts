@@ -38,6 +38,10 @@ interface Parsed {
   phrase: string;
   from?: string;
   has?: 'file' | 'image' | 'link';
+  /** `in:thread` — `docs/19`'s fourth filter. Thread replies are out of the
+      timeline by design, which makes them exactly the thing you end up
+      searching for. */
+  inThread?: boolean;
 }
 
 export interface Hit {
@@ -64,20 +68,23 @@ function parse(raw: string): Parsed {
   const terms: string[] = [];
   let from: string | undefined;
   let has: Parsed['has'];
+  let inThread: boolean | undefined;
 
   for (const tok of raw.trim().split(/\s+/)) {
     if (!tok) continue;
-    const m = /^(from|has):(.+)$/i.exec(tok);
+    const m = /^(from|has|in):(.+)$/i.exec(tok);
     if (!m) {
       terms.push(tok.toLowerCase());
       continue;
     }
     const [, key, value] = m;
-    if (key!.toLowerCase() === 'from') from = value!.toLowerCase();
-    else if (value === 'file' || value === 'image' || value === 'link') has = value;
+    const k = key!.toLowerCase();
+    if (k === 'from') from = value!.toLowerCase();
+    else if (k === 'in' && value!.toLowerCase() === 'thread') inThread = true;
+    else if (k === 'has' && (value === 'file' || value === 'image' || value === 'link')) has = value;
   }
 
-  return { terms, phrase: terms.join(' '), from, has };
+  return { terms, phrase: terms.join(' '), from, has, inThread };
 }
 
 /** Every index of `needle` in `hay`, both already lower-cased. */
@@ -221,7 +228,7 @@ class Search {
     const q = parse(this.query);
     // A bare `from:` or `has:` with no words is a legitimate query — "every
     // file Rae has sent me" is a real thing to want.
-    if (!q.terms.length && !q.from && !q.has) return [];
+    if (!q.terms.length && !q.from && !q.has && !q.inThread) return [];
 
     const cutoff = Date.now() - WINDOW_MS[this.window];
     const hits: Hit[] = [];
@@ -244,6 +251,7 @@ class Search {
         if (q.has === 'file' && !m.attachments?.length) continue;
         if (q.has === 'image' && !m.attachments?.some((a) => a.kind === 'image' || a.kind === 'gif')) continue;
         if (q.has === 'link' && !m.link) continue;
+        if (q.inThread && !m.thread) continue;
 
         const body = m.body;
         const lower = body.toLowerCase();
@@ -280,7 +288,18 @@ class Search {
         score += Math.max(0, 2 - ageDays / 10);
 
         const { excerpt, marks: shifted } = this.excerpt(body, marks, Math.max(0, first));
-        hits.push({ message: m, roomId, where, spaceId, spaceName, score, excerpt, marks: shifted });
+        hits.push({
+          message: m,
+          roomId,
+          // A thread reply found on its own is context-free — "#design" is
+          // true but not where you would look for it.
+          where: m.thread ? `${where} · thread` : where,
+          spaceId,
+          spaceName,
+          score,
+          excerpt,
+          marks: shifted,
+        });
       }
     }
 
@@ -346,11 +365,14 @@ class Search {
   go(hit: Hit) {
     if (hit.spaceId) core.openRoom(hit.spaceId, hit.roomId);
     else core.openHome(hit.roomId);
+    // A thread reply is not in the room's timeline, so landing in the room
+    // would scroll to nothing. Open the branch it lives in.
+    if (hit.message.thread) core.openThread(hit.message.thread);
     core.jumpTo = hit.message.id;
   }
 
   /** Add or replace a `key:value` token in the query, for the filter chips. */
-  setToken(key: 'from' | 'has', value: string | null) {
+  setToken(key: 'from' | 'has' | 'in', value: string | null) {
     const kept = this.query
       .trim()
       .split(/\s+/)
@@ -360,7 +382,7 @@ class Search {
   }
 
   /** What `key` is currently set to in the query, if anything. */
-  token(key: 'from' | 'has'): string | undefined {
+  token(key: 'from' | 'has' | 'in'): string | undefined {
     const m = new RegExp(`(?:^|\\s)${key}:(\\S+)`, 'i').exec(this.query);
     return m?.[1]?.toLowerCase();
   }

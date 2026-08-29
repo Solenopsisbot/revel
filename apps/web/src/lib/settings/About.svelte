@@ -9,7 +9,10 @@
    */
   const agents = $derived(core.roster.filter((f) => f.agent));
   const humans = $derived(core.roster.filter((f) => !f.agent));
-  const count = $derived(core.thread.length);
+  // Everything, not just the timeline: a thread reply is an event the
+  // server counted like any other, and this screen is only persuasive
+  // while it is exactly true.
+  const count = $derived(core.everythingInRoom.length);
 </script>
 
 <h2>About</h2>

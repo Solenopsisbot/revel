@@ -90,6 +90,17 @@ export interface Message {
   pinned?: boolean;
   reactions?: Reaction[];
   replyTo?: string;
+  /**
+   * The message this one branches off, if it is a thread reply (`docs/16`: "a
+   * branch inside a room. Not a room.").
+   *
+   * A thread is *not* a separate audience or key group — `docs/03` is explicit
+   * that it is an event stream within the room, same members, same group. So
+   * this is one field on a message rather than a room-like object, and every
+   * permission and every key question about a thread reply has exactly the
+   * same answer as it does for the room around it.
+   */
+  thread?: string;
   attachments?: Attachment[];
   link?: LinkCard;
   /** A translation or transcript someone published (`docs/10`). */
@@ -155,6 +166,17 @@ export interface Room {
    * after the room exists and the UI says so rather than greying out silently.
    */
   audience: Audience;
+  /**
+   * Whether threads in this room are their own server-side stream.
+   *
+   * The one genuine privacy knob threads have (`docs/03` §metadata): a stream
+   * id lets the server page a thread without shipping the whole room, and in
+   * exchange it learns that the thread exists and which messages are in it —
+   * never what they say. Off means threads are paged on this device instead:
+   * slower, and the structure stays private. Default on, stated plainly, and
+   * per room because busy rooms and sensitive rooms want opposite answers.
+   */
+  streamPaging?: boolean;
 }
 
 /**
@@ -226,7 +248,7 @@ export const spaces: Space[] = [
       { id: 'general', name: 'general', kind: 'text', category: 'General', topic: 'Anything, within reason', unread: 2, audience: { kind: 'everyone' } },
       { id: 'design', name: 'design', kind: 'text', category: 'General', topic: 'Shapes, colour, and arguing about radii', unread: 3, mention: true, audience: { kind: 'everyone' } },
       { id: 'off-topic', name: 'off-topic', kind: 'text', category: 'General', audience: { kind: 'everyone' } },
-      { id: 'crypto-review', name: 'crypto-review', kind: 'text', category: 'Build', topic: 'Read the threat model before posting', slow: 30, audience: { kind: 'roles', roles: ['Build'] } },
+      { id: 'crypto-review', name: 'crypto-review', kind: 'text', category: 'Build', topic: 'Read the threat model before posting', slow: 30, streamPaging: false, audience: { kind: 'roles', roles: ['Build'] } },
       { id: 'ci-noise', name: 'ci-noise', kind: 'text', category: 'Build', notify: 'none', audience: { kind: 'everyone' } },
       { id: 'the-couch', name: 'the couch', kind: 'voice', category: 'Voice', inCall: ['rae', 'emeri'], audience: { kind: 'everyone' } },
       { id: 'focus', name: 'focus', kind: 'voice', category: 'Voice', audience: { kind: 'everyone' } },
@@ -285,6 +307,15 @@ const recent: Record<string, Message[]> = {
       reactions: [{ key: '🔥', by: ['viola', 'june', 'emeri'] }],
     },
     { id: 'd1', faceId: 'rae', body: 'the buttons need to feel like you can press them. that’s the whole thing.', at: t(48) },
+    // A thread: the tangent that would otherwise have eaten the room. These
+    // carry `thread`, so they are absent from the timeline and reachable only
+    // through the summary line on d1 — which is the point of a branch.
+    { id: 'd1-t1', faceId: 'emeri', body: 'is that a shadow or a border though. i can never tell from the mock', at: t(46), thread: 'd1' },
+    { id: 'd1-t2', faceId: 'rae', body: 'shadow. a border would make it a card and it is not a card', at: t(45), thread: 'd1' },
+    { id: 'd1-t3', faceId: 'emeri', body: 'ok but then it needs to move on press or the shadow is lying', at: t(44), thread: 'd1' },
+    { id: 'd1-t4', faceId: 'rae', body: 'it does move. that is the entire reason the toy easing exists', at: t(43), thread: 'd1' },
+    { id: 'd1-t5', faceId: 'june', body: 'i measured it, 2px down and the shadow goes to zero. it reads as an object', at: t(41), thread: 'd1' },
+    { id: 'd1-t6', faceId: 'emeri', body: 'fine. i withdraw the objection and i am keeping the receipt', at: t(38), thread: 'd1' },
     {
       id: 'd2',
       faceId: 'viola',
@@ -384,6 +415,9 @@ const recent: Record<string, Message[]> = {
   'off-topic': [],
   'crypto-review': [
     { id: 'c1', faceId: 'kiko', body: 'A revoked device cannot read the next epoch. 30 tests hold it down.', at: t(200), pinned: true },
+    { id: 'c1-t1', faceId: 'emeri', body: 'Including the case where the revocation and a message race each other?', at: t(196), thread: 'c1' },
+    { id: 'c1-t2', faceId: 'kiko', body: 'Yes. The message either lands before the epoch advance or it does not land at all. There is no window where it lands after and is still readable.', at: t(194), thread: 'c1' },
+    { id: 'c1-t3', faceId: 'emeri', body: 'That is the one I actually wanted to know about. Thank you.', at: t(190), thread: 'c1' },
   ],
   'ci-noise': [],
   'dm-acct-r~acct-v': [
@@ -391,6 +425,8 @@ const recent: Record<string, Message[]> = {
     { id: 'dm2', faceId: 'viola', body: 'yeah. he\u2019s right and i hate it', at: t(174) },
     { id: 'dm3', faceId: 'rae', body: 'the ink twins fix is fine though. genuinely', at: t(170) },
     { id: 'dm4', faceId: 'rae', body: 'anyway are you around later? want to argue about radii in person', at: t(12) },
+    { id: 'dm4-t1', faceId: 'viola', body: 'after seven. bring the tablet', at: t(10), thread: 'dm4' },
+    { id: 'dm4-t2', faceId: 'rae', body: 'i am always bringing the tablet, that is not a condition', at: t(9), thread: 'dm4' },
   ],
   'dm-acct-e~acct-v': [
     { id: 'dm5', faceId: 'emeri', body: 'train\u2019s cancelled, so tonight is off from my end', at: t(240) },

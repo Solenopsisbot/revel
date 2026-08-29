@@ -115,6 +115,37 @@
     </label>
   </section>
 
+  {#if room.kind === 'text'}
+    <section>
+      <h3>Threads in #{room.name}</h3>
+      <!-- The one genuine privacy knob a thread has (`docs/03` §metadata).
+           Copy from `docs/08`, kept close to its wording because it was
+           written to say the awkward thing without either overselling the
+           protection or making the default sound reckless. -->
+      <label class="toggle">
+        <input
+          type="checkbox"
+          checked={room.streamPaging !== false}
+          onchange={(e) => (room.streamPaging = e.currentTarget.checked)}
+        />
+        <span>
+          <b>Let the server page threads separately</b>
+          <span class="hint">
+            Threads in this room become their own streams on the server, which
+            makes them faster to load and means the server learns that a thread
+            exists and which messages are in it — never what they say. Turn it
+            off and threads are paged on your device instead: slower, and the
+            structure stays private.
+          </span>
+        </span>
+      </label>
+      <p class="boundary">
+        Either way a thread is <b>inside</b> this room — same people, same keys.
+        This is about how it is fetched, not about who can read it.
+      </p>
+    </section>
+  {/if}
+
   <section>
     <h3>Who can see #{room.name}</h3>
     <div class="aud locked">
@@ -228,6 +259,11 @@
 {/if}
 
 <style>
+  .toggle { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; margin-bottom: 12px; }
+  .toggle input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--face-mint); cursor: pointer; flex: none; }
+  .toggle > span { min-width: 0; }
+  .toggle b { display: block; font-weight: 600; font-size: var(--text-sm); margin-bottom: 3px; }
+
   h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }
   .lede { color: var(--text-mute); margin: 0 0 24px; font-size: var(--text-sm); max-width: 60ch; line-height: 1.55; }
   section { margin-bottom: 30px; }

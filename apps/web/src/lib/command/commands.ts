@@ -55,7 +55,9 @@ export interface Ctx {
  */
 export function whatTheServerSees(): string {
   const room = core.room;
-  const count = core.thread.length;
+  // Everything in the room, thread replies included — the server counted
+  // those too, and this answer is generated to be exactly true.
+  const count = core.everythingInRoom.length;
   const agents = core.roster.filter((f) => f.agent);
   const parts: string[] = [];
 

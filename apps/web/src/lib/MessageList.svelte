@@ -22,8 +22,8 @@
   let missed = $state(0);
 
   const rows = $derived(
-    core.thread.map((m, i) => {
-      const prev = core.thread[i - 1];
+    core.timeline.map((m, i) => {
+      const prev = core.timeline[i - 1];
       const dayBreak = !prev || newDay(prev.at, m.at);
       const grouped =
         !!prev &&
@@ -54,7 +54,7 @@
   // count it and let the pill say so.
   let seen = $state(0);
   $effect(() => {
-    const n = core.thread.length;
+    const n = core.timeline.length;
     const el = viewport;
     if (!el) return;
     if (n > seen && seen > 0) {
@@ -120,7 +120,7 @@
       </div>
     {/if}
 
-    {#if core.thread.length === 0}
+    {#if core.timeline.length === 0}
       <div class="empty">
         <h2>Nothing here yet</h2>
         <p>This is yours. Say something — nobody can read it but the people you put in this room.</p>
