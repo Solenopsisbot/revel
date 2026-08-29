@@ -270,12 +270,12 @@ against each other. Measured on ladybug (M5, 24 GB), Chrome, `[profile.wasm]`.
 | `revel_crypto_bg.wasm` | 1,163,762 | 390,435 | **292,855** |
 | `revel_crypto.js` (glue) | 39,014 | 7,470 | 6,467 |
 
-**~290 KiB over the wire**, once per version. Compile and instantiate is
+**293 kB over the wire**, once per version. Compile and instantiate is
 **2–5 ms** — not a number worth optimising.
 
-`[profile.wasm-size]` (`opt-level = "z"`) gets that to 251 KiB brotli. It is
+`[profile.wasm-size]` (`opt-level = "z"`) gets that to 251 kB brotli. It is
 kept, and it should not be used: it costs **74%** on the operation that already
-dominates — a 500-leaf build goes 1,469 ms → 2,560 ms — to save 42 KiB. Bytes
+dominates — a 500-leaf build goes 1,469 ms → 2,560 ms — to save 42 kB. Bytes
 are cheap here and commits are not.
 
 ### Group scaling, in a browser
