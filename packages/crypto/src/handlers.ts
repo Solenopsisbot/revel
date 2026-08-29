@@ -21,6 +21,7 @@ const TABLE: {
   [K in Exclude<Op, 'open' | 'close'>]: (session: Session, ...args: Args<K>) => unknown;
 } = {
   exportAccountSecret: (s) => s.exportAccountSecret(),
+  exportDeviceSecret: (s) => s.exportDeviceSecret(),
   keyPackage: (s) => s.keyPackage(),
   createGroup: (s, groupId) => s.createGroup(groupId),
   joinGroup: (s, welcome) => s.joinGroup(welcome),
@@ -35,6 +36,11 @@ const TABLE: {
   encrypt: (s, groupId, plaintext) => s.encrypt(groupId, plaintext),
   process: (s, groupId, message) => s.process(groupId, message),
   forget: (s, groupId) => s.forget(groupId),
+  discard: (s, groupId) => s.discard(groupId),
+  dirtyGroups: (s) => s.dirtyGroups(),
+  exportGroup: (s, groupId) => s.exportGroup(groupId),
+  importGroup: (s, sealed) => s.importGroup(sealed),
+  loadGroup: (s, groupId) => s.loadGroup(groupId),
 };
 
 /**

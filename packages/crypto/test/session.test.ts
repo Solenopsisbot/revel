@@ -191,6 +191,73 @@ describeIfBuilt('Session', () => {
     restored.close();
   });
 
+  it('brings a group back after a reload', () => {
+    // The reload is modelled the only way it can be: throw the Session away
+    // and rebuild from nothing but the bytes a client would have written down.
+    const laptop = new Session({ deviceLabel: 'laptop' });
+    const phone = new Session({ deviceLabel: 'phone' });
+
+    laptop.createGroup('g-reload');
+    laptop.stageAdd('g-reload', phone.keyPackage());
+    const out = laptop.commit('g-reload');
+    laptop.applyPending('g-reload');
+    const theirs = phone.joinGroup(out.welcome as Uint8Array);
+
+    const before = laptop.encrypt('g-reload', HELLO);
+
+    // Exported *after* the send. The other order is a hazard with its own test
+    // in `crates/revel-crypto/tests/wasm.rs`.
+    expect(laptop.dirtyGroups()).toEqual(['g-reload']);
+    const sealed = laptop.exportGroup('g-reload');
+    expect(laptop.dirtyGroups()).toEqual([]);
+
+    const stored = {
+      accountSecret: laptop.exportAccountSecret(),
+      deviceSecret: laptop.exportDeviceSecret(),
+      sealed,
+    };
+    laptop.close();
+
+    const reloaded = new Session({
+      accountSecret: stored.accountSecret,
+      deviceSecret: stored.deviceSecret,
+      deviceLabel: 'laptop',
+    });
+    expect(reloaded.importGroup(stored.sealed)).toBe('g-reload');
+    expect(reloaded.loadGroup('g-reload')).toEqual({
+      groupId: 'g-reload',
+      epoch: 1,
+      size: 2,
+      ownLeaf: 0,
+    });
+
+    // The far side never reloaded. It can read what was sent before, and what
+    // is sent after — which is only true because the device key came back too.
+    expect(phone.process('g-reload', before).kind).toBe('application');
+    const after = reloaded.encrypt('g-reload', HELLO);
+    expect(phone.process('g-reload', after).kind).toBe('application');
+
+    void theirs;
+    reloaded.close();
+    phone.close();
+  });
+
+  it('keeps stored state through forget and drops it on discard', () => {
+    const alice = new Session({ deviceLabel: 'laptop' });
+    alice.createGroup('g-keep');
+
+    // forget releases the handle; the state is still there to come back to.
+    alice.forget('g-keep');
+    expect(alice.groups()).toEqual([]);
+    expect(alice.loadGroup('g-keep')).toMatchObject({ groupId: 'g-keep' });
+
+    // discard drops both, so there is nothing left to load.
+    alice.discard('g-keep');
+    expect(() => alice.loadGroup('g-keep')).toThrow();
+
+    alice.close();
+  });
+
   it('refuses everything once closed', () => {
     const alice = new Session({ deviceLabel: 'laptop' });
     alice.createGroup('g-gone');

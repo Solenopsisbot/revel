@@ -122,6 +122,10 @@ export class WorkerCryptoEngine implements CryptoEngine {
     return this.#call('exportAccountSecret');
   }
 
+  exportDeviceSecret(): Promise<Uint8Array> {
+    return this.#call('exportDeviceSecret');
+  }
+
   keyPackage(): Promise<Uint8Array> {
     return this.#call('keyPackage');
   }
@@ -176,6 +180,26 @@ export class WorkerCryptoEngine implements CryptoEngine {
 
   forget(groupId: string): Promise<void> {
     return this.#call('forget', groupId);
+  }
+
+  discard(groupId: string): Promise<void> {
+    return this.#call('discard', groupId);
+  }
+
+  dirtyGroups(): Promise<string[]> {
+    return this.#call('dirtyGroups');
+  }
+
+  exportGroup(groupId: string): Promise<Uint8Array> {
+    return this.#call('exportGroup', groupId);
+  }
+
+  importGroup(sealed: Uint8Array): Promise<string> {
+    return this.#call('importGroup', sealed);
+  }
+
+  loadGroup(groupId: string): Promise<GroupState> {
+    return this.#call('loadGroup', groupId);
   }
 
   async close(): Promise<void> {

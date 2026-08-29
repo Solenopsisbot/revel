@@ -21,21 +21,25 @@
 //! Rust side — the FFI boundary is where bugs hide, and the way to keep it
 //! honest is to make it boring.
 //!
-//! ## What this deliberately does not do yet
+//! ## Persistence
 //!
-//! **Group state is not persisted.** A [`Group`] lives in wasm memory and dies
-//! with the page. Real clients must survive a reload, which means group state
-//! has to cross this boundary and land in the TypeScript store — mls-rs has a
-//! `GroupStateStorage` seam for exactly that. It is the next piece, and it is
-//! deliberately absent rather than half-built, because a persistence layer that
-//! *looks* like it works is worse than one that is obviously missing.
+//! A [`Device`] owns a [`LocalGroupStore`], and every change to a group is
+//! written into it synchronously. Getting those bytes *out* is a separate
+//! step, because mls-rs's storage trait is synchronous and IndexedDB is not:
+//! ask [`Device::dirty_groups`] what changed, then [`Device::export_group`]
+//! for each, and write the sealed blobs wherever you like. On the way back in,
+//! [`Device::import_group`] then [`Device::load_group`].
+//!
+//! What crosses the boundary is **sealed** — MLS state is key material and
+//! `docs/04` says the local store holds it encrypted. See `store.rs`.
 
 use core::fmt::Display;
 
 use ed25519_dalek::SigningKey;
 use mls_rs::{
-    client_builder::{BaseConfig, WithCryptoProvider, WithIdentityProvider},
+    client_builder::{BaseConfig, WithCryptoProvider, WithGroupStateStorage, WithIdentityProvider},
     group::ReceivedMessage,
+    crypto::SignatureSecretKey,
     identity::{basic::BasicCredential, SigningIdentity},
     CipherSuite, CipherSuiteProvider, Client as MlsClient, CryptoProvider, ExtensionList,
     MlsMessage,
@@ -43,7 +47,7 @@ use mls_rs::{
 use mls_rs_crypto_rustcrypto::RustCryptoProvider;
 use wasm_bindgen::prelude::*;
 
-use crate::{device::DeviceCert, identity::DeviceCertIdentityProvider};
+use crate::{device::DeviceCert, identity::DeviceCertIdentityProvider, store::LocalGroupStore};
 
 /// The suite `docs/03` §1 settles on. Post-quantum is a separate build
 /// (`--features pq`) and a separate measurement; see `docs/31` §4.
@@ -54,9 +58,12 @@ const CS: CipherSuite = CipherSuite::CURVE25519_AES128;
 /// The tests can say `Client<impl MlsConfig>` because they never store one. A
 /// struct field needs a real type, so the builder's aliases are spelled out
 /// here in the order the builder applies them.
-type Config = WithCryptoProvider<
-    RustCryptoProvider,
-    WithIdentityProvider<DeviceCertIdentityProvider, BaseConfig>,
+type Config = WithGroupStateStorage<
+    LocalGroupStore,
+    WithCryptoProvider<
+        RustCryptoProvider,
+        WithIdentityProvider<DeviceCertIdentityProvider, BaseConfig>,
+    >,
 >;
 
 /// Every error crossing into JavaScript becomes a plain `Error` with a message.
@@ -141,29 +148,64 @@ impl Default for Account {
 pub struct Device {
     client: MlsClient<Config>,
     cert: Vec<u8>,
+    /// Kept so it can be persisted. A device that comes back with a *new*
+    /// signature key is a new leaf, and its old leaf is still sitting in every
+    /// group it was ever in — which is to say, reloading would silently fork
+    /// this device's identity.
+    secret: Vec<u8>,
+    /// Shared with the client's config — mls-rs writes here, we read here.
+    store: LocalGroupStore,
 }
 
 #[wasm_bindgen]
 impl Device {
-    /// Sign a new device into an account.
+    /// Sign a **new** device into an account, with a freshly generated key.
+    ///
+    /// Enrolment only. Coming back after a reload is [`Device::restore`].
     #[wasm_bindgen(constructor)]
     pub fn new(account: &Account, label: &str) -> Result<Device, JsError> {
         let crypto = RustCryptoProvider::default();
         let cs = crypto.cipher_suite_provider(CS).ok_or_else(|| {
             JsError::new("this build has no provider for the configured cipher suite")
         })?;
-        let (secret, public) = cs.signature_key_generate().map_err(js)?;
+        let (secret, _public) = cs.signature_key_generate().map_err(js)?;
+        Device::build(account, label, secret.as_bytes().to_vec())
+    }
+
+    /// Bring a device back with the key it already had.
+    ///
+    /// `docs/03` §1: a device key is stored durably on the device, and
+    /// "reloading the app does not require a password". This is the call that
+    /// makes that true — the certificate is re-issued rather than stored,
+    /// because signing the same device key and label with the same account key
+    /// reproduces it exactly.
+    pub fn restore(account: &Account, label: &str, secret: &[u8]) -> Result<Device, JsError> {
+        Device::build(account, label, secret.to_vec())
+    }
+
+    fn build(account: &Account, label: &str, secret: Vec<u8>) -> Result<Device, JsError> {
+        let crypto = RustCryptoProvider::default();
+        let cs = crypto.cipher_suite_provider(CS).ok_or_else(|| {
+            JsError::new("this build has no provider for the configured cipher suite")
+        })?;
+        let signer = SignatureSecretKey::from(secret.clone());
+        let public = cs.signature_key_derive_public(&signer).map_err(js)?;
+
         let cert = DeviceCert::issue(&account.key, public.as_bytes(), label);
         let encoded = cert.encode();
         let credential = BasicCredential::new(encoded.clone()).into_credential();
+        let store = LocalGroupStore::new();
 
         Ok(Device {
             client: MlsClient::builder()
                 .identity_provider(DeviceCertIdentityProvider)
                 .crypto_provider(crypto)
-                .signing_identity(SigningIdentity::new(credential, public), secret, CS)
+                .group_state_storage(store.clone())
+                .signing_identity(SigningIdentity::new(credential, public), signer, CS)
                 .build(),
             cert: encoded,
+            secret,
+            store,
         })
     }
 
@@ -171,6 +213,16 @@ impl Device {
     #[wasm_bindgen(getter)]
     pub fn certificate(&self) -> Vec<u8> {
         self.cert.clone()
+    }
+
+    /// The device's signature secret, for the caller to store durably.
+    ///
+    /// This is the key that makes this device *this* device. Losing it does not
+    /// lose the account, but it does cost a re-enrolment and a new leaf in
+    /// every group.
+    #[wasm_bindgen(getter, js_name = secretKey)]
+    pub fn secret_key(&self) -> Vec<u8> {
+        self.secret.clone()
     }
 
     /// A key package: what someone else needs in order to add this device to a
@@ -190,7 +242,7 @@ impl Device {
     /// look up.
     #[wasm_bindgen(js_name = createGroup)]
     pub fn create_group(&self, group_id: &[u8]) -> Result<Group, JsError> {
-        let inner = self
+        let mut inner = self
             .client
             .create_group_with_id(
                 group_id.to_vec(),
@@ -199,6 +251,10 @@ impl Device {
                 None,
             )
             .map_err(js)?;
+        // Persisted immediately: a group that exists only in memory between
+        // creation and its first commit is a group that can be lost before it
+        // has ever been saved.
+        inner.write_to_storage().map_err(js)?;
         Ok(Group::wrap(inner))
     }
 
@@ -210,8 +266,68 @@ impl Device {
     #[wasm_bindgen(js_name = joinGroup)]
     pub fn join_group(&self, welcome: &[u8]) -> Result<Group, JsError> {
         let msg = MlsMessage::from_bytes(welcome).map_err(js)?;
-        let (inner, _info) = self.client.join_group(None, &msg, None).map_err(js)?;
+        let (mut inner, _info) = self.client.join_group(None, &msg, None).map_err(js)?;
+        inner.write_to_storage().map_err(js)?;
         Ok(Group::wrap(inner))
+    }
+
+    /// Re-open a group whose state was put back with [`Device::import_group`].
+    ///
+    /// This is the other half of a reload: the bytes come out of the local
+    /// store, go in through `importGroup`, and the group comes back here.
+    #[wasm_bindgen(js_name = loadGroup)]
+    pub fn load_group(&self, group_id: &[u8]) -> Result<Group, JsError> {
+        Ok(Group::wrap(self.client.load_group(group_id).map_err(js)?))
+    }
+
+    /// Group ids written since they were last exported.
+    ///
+    /// The caller drains this whenever it likes. Nothing is lost by waiting —
+    /// a group that never made it to disk is re-fetched from the server, which
+    /// is a slow start rather than a lost room.
+    #[wasm_bindgen(js_name = dirtyGroups)]
+    pub fn dirty_groups(&self) -> Result<js_sys::Array, JsError> {
+        let out = js_sys::Array::new();
+        for id in self.store.dirty().map_err(js)? {
+            out.push(&js_sys::Uint8Array::from(&id[..]).into());
+        }
+        Ok(out)
+    }
+
+    /// Every group this device is holding state for, changed or not.
+    #[wasm_bindgen(js_name = storedGroups)]
+    pub fn stored_groups(&self) -> Result<js_sys::Array, JsError> {
+        let out = js_sys::Array::new();
+        for id in self.store.stored().map_err(js)? {
+            out.push(&js_sys::Uint8Array::from(&id[..]).into());
+        }
+        Ok(out)
+    }
+
+    /// One group's state, sealed for the local store, and its dirty flag
+    /// cleared.
+    ///
+    /// The account is needed because it is what the seal is keyed from. It is
+    /// passed in rather than held so that there is one copy of the account
+    /// secret in a session rather than one per device.
+    #[wasm_bindgen(js_name = exportGroup)]
+    pub fn export_group(&self, group_id: &[u8], account: &Account) -> Result<Vec<u8>, JsError> {
+        self.store
+            .export(group_id, &account.key.to_bytes())
+            .map_err(js)
+    }
+
+    /// Put a sealed group back. Returns the group id it turned out to be.
+    #[wasm_bindgen(js_name = importGroup)]
+    pub fn import_group(&self, sealed: &[u8], account: &Account) -> Result<Vec<u8>, JsError> {
+        self.store.import(sealed, &account.key.to_bytes()).map_err(js)
+    }
+
+    /// Drop a group's stored state. Local only — nothing on the server changes
+    /// and nobody is removed from anything.
+    #[wasm_bindgen(js_name = forgetGroup)]
+    pub fn forget_group(&self, group_id: &[u8]) -> Result<(), JsError> {
+        self.store.forget(group_id).map_err(js)
     }
 }
 
@@ -421,7 +537,18 @@ impl Group {
     /// accepted; see the type-level note on why it is separate.
     #[wasm_bindgen(js_name = applyPending)]
     pub fn apply_pending(&mut self) -> Result<(), JsError> {
-        self.inner.apply_pending_commit().map(|_| ()).map_err(js)
+        self.inner.apply_pending_commit().map_err(js)?;
+        self.save()
+    }
+
+    /// Write this group's state into the device's store.
+    ///
+    /// Called for you on every epoch change — creating, joining, applying a
+    /// commit, and processing someone else's. Exposed anyway because "I know
+    /// something changed, persist it" is a reasonable thing for a caller to
+    /// want, and finding out it is impossible is a bad afternoon.
+    pub fn save(&mut self) -> Result<(), JsError> {
+        self.inner.write_to_storage().map_err(js)
     }
 
     /// Throw away staged changes the server refused.
@@ -432,19 +559,53 @@ impl Group {
     }
 
     /// Encrypt an application message for this group.
+    ///
+    /// Persists afterwards, and that is **not** optional caution.
+    ///
+    /// Sending advances this device's position in the secret tree, and the key
+    /// and nonce for a message are derived from that position. A group restored
+    /// from a state saved before the send comes back with its counter rewound,
+    /// and the next message it sends re-derives a key and nonce that have
+    /// already been used — under AES-GCM, encrypting two different plaintexts
+    /// under one key and nonce is a total loss of confidentiality and
+    /// authenticity for both.
+    ///
+    /// The first version of this saved only on epoch changes, on the reasoning
+    /// that a stored epoch secret is enough to re-derive anything. That is true
+    /// for *reading* and false for *writing*, and the test named
+    /// `a_group_survives_a_reload` is what noticed.
     pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<Vec<u8>, JsError> {
-        self.inner
+        let sealed = self
+            .inner
             .encrypt_application_message(plaintext, Default::default())
             .map_err(js)?
             .to_bytes()
-            .map_err(js)
+            .map_err(js)?;
+        self.save()?;
+        Ok(sealed)
     }
 
     /// Process anything that arrived for this group: an application message, a
     /// commit from someone else, or a proposal.
     pub fn process(&mut self, message: &[u8]) -> Result<Received, JsError> {
         let msg = MlsMessage::from_bytes(message).map_err(js)?;
-        Ok(match self.inner.process_incoming_message(msg).map_err(js)? {
+        let received = self.inner.process_incoming_message(msg).map_err(js)?;
+
+        // A commit moves the epoch, and an epoch we failed to persist is one we
+        // cannot come back to.
+        //
+        // Receiving an application message is deliberately *not* persisted.
+        // What it advances is the replay window for that sender, so a reload
+        // can re-accept a message it has already seen — which the layer above
+        // discards anyway, because events carry server-assigned ids and it
+        // deduplicates on them. That is a much smaller thing to lose than the
+        // cost of re-serialising a whole group's state on every message that
+        // arrives, and unlike the sending side there is no key reuse in it.
+        if matches!(received, ReceivedMessage::Commit(_)) {
+            self.save()?;
+        }
+
+        Ok(match received {
             ReceivedMessage::ApplicationMessage(m) => Received {
                 kind: "application".into(),
                 sender: Some(m.sender_index),

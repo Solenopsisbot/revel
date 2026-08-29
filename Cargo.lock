@@ -1462,10 +1462,12 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 name = "revel-crypto"
 version = "0.0.0"
 dependencies = [
+ "aes-gcm",
  "assert_matches",
  "ed25519-dalek",
  "getrandom 0.2.17",
  "getrandom 0.3.4",
+ "hkdf",
  "js-sys",
  "mls-rs",
  "mls-rs-core",
@@ -1473,10 +1475,12 @@ dependencies = [
  "mls-rs-crypto-rustcrypto",
  "proptest",
  "rand 0.8.8",
+ "sha2",
  "thiserror",
  "uniffi",
  "wasm-bindgen",
  "wasm-bindgen-test",
+ "zeroize",
 ]
 
 [[package]]

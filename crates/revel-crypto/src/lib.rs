@@ -14,9 +14,11 @@ pub mod device;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod ffi;
 pub mod identity;
+pub mod store;
 /// Web FFI surface (wasm-bindgen). Native platforms reach the same core
 /// through UniFFI instead — see `ffi`.
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 pub use device::{CertError, DeviceCert};
 pub use identity::{DeviceCertIdentityProvider, IdentityError};
+pub use store::{LocalGroupStore, StoreError};

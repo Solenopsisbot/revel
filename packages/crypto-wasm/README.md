@@ -32,6 +32,5 @@ both live in `docs/31` §5.
 
 ## What is not here yet
 
-Group state is not persisted — an MLS group lives in wasm memory and dies with
-the page. That is the next piece of work, not an oversight; see the module
-comment in `crates/revel-crypto/src/wasm.rs`.
+Key packages are not persisted, so a pending invite does not survive a reload.
+Group state does — see `crates/revel-crypto/src/store.rs` and `docs/31` §7.

@@ -43,7 +43,11 @@ export class Session {
     this.#account = options.accountSecret
       ? Account.fromSecret(options.accountSecret)
       : new Account();
-    this.#device = new Device(this.#account, options.deviceLabel);
+    // With a stored device secret this is a reload; without one it is an
+    // enrolment, and the difference is visible to everyone else in every group.
+    this.#device = options.deviceSecret
+      ? Device.restore(this.#account, options.deviceLabel, options.deviceSecret)
+      : new Device(this.#account, options.deviceLabel);
   }
 
   identity(): Identity {
@@ -57,6 +61,11 @@ export class Session {
   exportAccountSecret(): Uint8Array {
     this.#alive();
     return this.#account.secretKey;
+  }
+
+  exportDeviceSecret(): Uint8Array {
+    this.#alive();
+    return this.#device.secretKey;
   }
 
   keyPackage(): Uint8Array {
@@ -164,6 +173,39 @@ export class Session {
   forget(groupId: string): void {
     this.#groups.get(groupId)?.free();
     this.#groups.delete(groupId);
+  }
+
+  discard(groupId: string): void {
+    this.#alive();
+    this.forget(groupId);
+    this.#device.forgetGroup(ENC.encode(groupId));
+  }
+
+  // -- persistence -----------------------------------------------------------
+
+  dirtyGroups(): string[] {
+    this.#alive();
+    return Array.from(this.#device.dirtyGroups(), (id: Uint8Array) => DEC.decode(id));
+  }
+
+  exportGroup(groupId: string): Uint8Array {
+    this.#alive();
+    return this.#device.exportGroup(ENC.encode(groupId), this.#account);
+  }
+
+  importGroup(sealed: Uint8Array): string {
+    this.#alive();
+    return DEC.decode(this.#device.importGroup(sealed, this.#account));
+  }
+
+  loadGroup(groupId: string): GroupState {
+    this.#alive();
+    // Replacing rather than refusing: loading a group we already hold is what
+    // happens when state arrives from another tab, and the newer one wins.
+    this.#groups.get(groupId)?.free();
+    const group = this.#device.loadGroup(ENC.encode(groupId));
+    this.#groups.set(groupId, group);
+    return stateOf(groupId, group);
   }
 
   close(): void {

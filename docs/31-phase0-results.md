@@ -416,4 +416,94 @@ array. The interface only looked right until something used it.
 
 Persistence, unchanged from §5 and now the next thing: an MLS group still lives
 in Worker memory and dies with the page. Everything that comes after — a real
-`packages/core`, surviving a reload, opening the app twice — waits on it.
+`packages/core`, surviving a reload, opening the app twice — waits on it. Built
+in §7.
+
+---
+
+## 7. Surviving a reload — and the bug that found
+
+An MLS group is a running cryptographic state machine, not a document. Lose it
+and the ciphertext already on disk stays unreadable forever, because the keys
+that opened it were in that state. `src/store.rs` is where it now lives.
+
+### The shape
+
+mls-rs persists through a `GroupStateStorage` whose trait is **synchronous**.
+The store that has to end up holding the bytes is IndexedDB, which is not.
+Those cannot be reconciled by having the storage call out to JavaScript — a
+synchronous callback cannot await a transaction. So the storage is in memory
+and export is an explicit second step:
+
+1. mls-rs writes group state into `LocalGroupStore` whenever a group changes.
+2. The store remembers **which** groups changed.
+3. The caller drains those ids whenever it likes, asks for each group's sealed
+   bytes, and writes them at its own pace.
+
+Nothing is lost by the delay. A group that never reached disk is re-fetched
+from the server, which is a slow start rather than a lost room.
+
+What crosses the boundary is **sealed** — HKDF-SHA256 from the account secret,
+domain-separated, then AES-256-GCM. `docs/04` §Client-side asks for exactly
+this: the local store holds MLS session state encrypted, never in the clear.
+Cost: **293 → 312 kB brotli**, +6.5%.
+
+One honest deviation: `docs/03` §1 wants the sealing key to be the **device**
+key — a non-extractable `CryptoKey` in IndexedDB — so a compromised account
+backup does not also open local state. That needs a WebCrypto path that does
+not exist yet, and only the derivation in `state_key` has to change when it
+does.
+
+### The device key has to come back too
+
+`Device::new` generates a fresh signature key. A client that reloads by calling
+it again is not reloading, it is **enrolling a second device**: a new leaf in
+every group, with the old leaf still sitting in all of them. So there is now
+`Device::restore(account, label, secret)`, and the certificate is re-issued
+rather than stored — signing the same device key and label with the same
+account key reproduces it byte for byte.
+
+`docs/03` §1 asks that "reloading the app does not require a password", and
+calls it Kith's biggest UX cliff. That is now true and tested.
+
+### The bug: a rewound sender reuses a key and nonce
+
+The first version persisted only on **epoch changes**, on the reasoning that a
+stored epoch secret is enough to re-derive anything. That is true for reading
+and false for writing, and `a_group_survives_a_reload` failed on it immediately.
+
+Sending advances this device's position in the secret tree, and the key *and
+nonce* for a message are derived from that position. A group restored from a
+state saved before the send comes back with its counter rewound, and the next
+message re-derives a key and nonce that have already been used. Two plaintexts
+under one AES-GCM key and nonce is a **total loss of confidentiality and
+authenticity for both** — the keystream cancels and the authentication key
+falls out.
+
+Two things changed:
+
+- `encrypt` now persists before returning. It is the only application-message
+  path that does; receiving is deliberately not persisted, because what that
+  advances is a replay window the layer above already enforces with
+  server-assigned event ids, and re-serialising a whole group per incoming
+  message is not worth it.
+- The residual hazard has its own test,
+  `restoring_behind_the_last_send_is_refused_by_the_far_side`, which asserts
+  the failure rather than the fix. **The rule it pins down: a new state must be
+  durable before a ciphertext from it is handed to anyone.** The far side
+  refusing the message is mls-rs's replay protection working, and is how you
+  would notice — but refusing does not undo the reuse.
+
+That rule now belongs to `packages/core`, and it is the constraint that decides
+how sending is ordered against the store. It is written on the interface in
+`packages/crypto/src/engine.ts` where a caller will actually read it.
+
+### What is still missing
+
+- **The store itself.** `packages/crypto` hands out sealed blobs; nothing writes
+  them to IndexedDB yet. That is `packages/core`.
+- **Key package storage.** Generate a key package, reload, then get added to a
+  group: the private half is gone and the Welcome cannot be opened. It is the
+  same mechanism as group state — a custom `KeyPackageStorage` — and it is the
+  next small piece. Until then, a pending invite does not survive a reload.
+- **Sealing under the device key**, as above.

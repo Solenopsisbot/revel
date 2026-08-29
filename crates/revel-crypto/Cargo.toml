@@ -16,6 +16,13 @@ mls-rs-crypto-rustcrypto = "0.22"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
 thiserror = "2"
+# Sealing local group state (src/store.rs). All three are already in the tree
+# via mls-rs-crypto-rustcrypto; naming them directly keeps the versions pinned
+# where they are used rather than wherever the resolver happens to put them.
+aes-gcm = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+zeroize = "1"
 
 # Entropy on wasm32 has no OS underneath, so getrandom needs an explicit
 # backend. Both major versions are in the tree (rand 0.8 pulls 0.2, newer

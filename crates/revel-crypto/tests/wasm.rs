@@ -264,3 +264,177 @@ fn an_account_restores_from_its_secret() {
 
     assert!(Account::from_secret(&[0u8; 16]).is_err(), "a short secret should refuse");
 }
+
+/// The whole reason persistence exists: close the page, come back, still read.
+///
+/// "Reloading" is modelled the only way it can be — throw the `Device` away and
+/// build a new one from nothing but the bytes a client would have written down:
+/// the account secret, the device secret, and the sealed group state.
+#[wasm_bindgen_test]
+fn a_group_survives_a_reload() {
+    let account = Account::new();
+    let laptop = Device::new(&account, "laptop").ok().unwrap();
+    let phone = Device::new(&account, "phone").ok().unwrap();
+
+    let mut group = laptop.create_group(b"g-general").ok().unwrap();
+    group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
+    let out = group.commit().ok().unwrap();
+    group.apply_pending().ok().unwrap();
+    let mut theirs = phone.join_group(&out.welcome().unwrap()).ok().unwrap();
+
+    // A message sent before the reload, which must still be readable after.
+    let sealed_message = group.encrypt(b"sent before the reload").ok().unwrap();
+
+    // Everything a client would have persisted, and nothing else. Exported
+    // *after* the send, which is the order a client has to use — see
+    // `restoring_behind_the_last_send_is_refused_by_the_far_side`.
+    let account_secret = account.secret_key();
+    let device_secret = laptop.secret_key();
+    let sealed = laptop.export_group(b"g-general", &account).ok().unwrap();
+
+    // The page goes away.
+    drop(group);
+    drop(laptop);
+    drop(account);
+
+    let account = Account::from_secret(&account_secret).ok().unwrap();
+    let laptop = Device::restore(&account, "laptop", &device_secret).ok().unwrap();
+    assert_eq!(
+        laptop.import_group(&sealed, &account).ok().unwrap(),
+        b"g-general",
+        "importing should report the group id it restored"
+    );
+
+    let mut group = laptop.load_group(b"g-general").ok().unwrap();
+    assert_eq!(group.epoch(), 1, "the restored group is at the epoch it was left at");
+    assert_eq!(group.size(), 2);
+
+    // And it is still the same leaf, which is what restoring the device key
+    // buys: a new key would have been a new member.
+    assert_eq!(group.own_leaf(), 0);
+
+    // The other side, which never reloaded, can still read what we sent before
+    // the reload, and we can still talk to it afterwards.
+    let got = theirs.process(&sealed_message).ok().unwrap();
+    assert_eq!(got.data().unwrap(), b"sent before the reload");
+
+    let after = group.encrypt(b"and after it").ok().unwrap();
+    assert_eq!(theirs.process(&after).ok().unwrap().data().unwrap(), b"and after it");
+}
+
+/// Restoring is only possible with the same account. A sealed group is not a
+/// portable document.
+#[wasm_bindgen_test]
+fn another_account_cannot_open_a_sealed_group() {
+    let account = Account::new();
+    let laptop = Device::new(&account, "laptop").ok().unwrap();
+    laptop.create_group(b"g-secret").ok().unwrap();
+    let sealed = laptop.export_group(b"g-secret", &account).ok().unwrap();
+
+    let stranger = Account::new();
+    let theirs = Device::new(&stranger, "laptop").ok().unwrap();
+    assert!(
+        theirs.import_group(&sealed, &stranger).is_err(),
+        "a sealed group opened under the wrong account"
+    );
+}
+
+/// Changes mark the group dirty; exporting clears it. This is what lets the
+/// TypeScript store write lazily without ever missing a change.
+#[wasm_bindgen_test]
+fn the_store_tracks_what_still_needs_writing() {
+    let account = Account::new();
+    let laptop = Device::new(&account, "laptop").ok().unwrap();
+    let phone = Device::new(&account, "phone").ok().unwrap();
+
+    // Creating a group is itself a change worth persisting.
+    let mut group = laptop.create_group(b"g-dirty").ok().unwrap();
+    assert_eq!(laptop.dirty_groups().ok().unwrap().length(), 1);
+
+    laptop.export_group(b"g-dirty", &account).ok().unwrap();
+    assert_eq!(laptop.dirty_groups().ok().unwrap().length(), 0);
+
+    // A commit is an epoch change, so it must come back dirty.
+    group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
+    group.commit().ok().unwrap();
+    group.apply_pending().ok().unwrap();
+    assert_eq!(laptop.dirty_groups().ok().unwrap().length(), 1);
+
+    laptop.export_group(b"g-dirty", &account).ok().unwrap();
+    assert_eq!(laptop.dirty_groups().ok().unwrap().length(), 0);
+    assert_eq!(laptop.stored_groups().ok().unwrap().length(), 1);
+
+    laptop.forget_group(b"g-dirty").ok().unwrap();
+    assert_eq!(laptop.stored_groups().ok().unwrap().length(), 0);
+}
+
+/// A device that comes back with a fresh key is a *different* device.
+///
+/// Asserted so that nobody "simplifies" `restore` away: without the stored
+/// secret the reloaded client is a new leaf, its old leaf is still in the
+/// group, and the group it loads is not one it can speak in.
+#[wasm_bindgen_test]
+fn a_device_that_forgets_its_key_is_not_the_same_device() {
+    let account = Account::new();
+    let laptop = Device::new(&account, "laptop").ok().unwrap();
+    let restored = Device::restore(&account, "laptop", &laptop.secret_key()).ok().unwrap();
+    let forgetful = Device::new(&account, "laptop").ok().unwrap();
+
+    assert_eq!(laptop.certificate(), restored.certificate());
+    assert_ne!(laptop.certificate(), forgetful.certificate());
+}
+
+/// Restoring to a state older than the last message sent is a real hazard, and
+/// this is what it looks like.
+///
+/// Sending advances this device's position in the secret tree, and the key and
+/// nonce come from that position. Come back behind it and the next send
+/// re-derives a key and nonce that have already been used — under AES-GCM,
+/// two plaintexts under one key and nonce is a total loss for both.
+///
+/// The far side refuses the message, which is mls-rs's replay protection doing
+/// its job, and is what makes this observable at all. It does **not** undo the
+/// reuse. So the rule the layer above has to keep is: **the new state must be
+/// durable before the ciphertext is handed to anyone.** This test exists so
+/// that rule has a failing test behind it rather than a comment.
+#[wasm_bindgen_test]
+fn restoring_behind_the_last_send_is_refused_by_the_far_side() {
+    let account = Account::new();
+    let laptop = Device::new(&account, "laptop").ok().unwrap();
+    let phone = Device::new(&account, "phone").ok().unwrap();
+
+    let mut group = laptop.create_group(b"g-rewind").ok().unwrap();
+    group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
+    let out = group.commit().ok().unwrap();
+    group.apply_pending().ok().unwrap();
+    let mut theirs = phone.join_group(&out.welcome().unwrap()).ok().unwrap();
+
+    // Saved here, deliberately too early.
+    let stale = laptop.export_group(b"g-rewind", &account).ok().unwrap();
+    let account_secret = account.secret_key();
+    let device_secret = laptop.secret_key();
+
+    // Then a message goes out, and the far side reads it.
+    let first = group.encrypt(b"the first message").ok().unwrap();
+    assert_eq!(theirs.process(&first).ok().unwrap().data().unwrap(), b"the first message");
+
+    // The page dies before that state reached disk.
+    drop(group);
+    drop(laptop);
+    drop(account);
+
+    let account = Account::from_secret(&account_secret).ok().unwrap();
+    let laptop = Device::restore(&account, "laptop", &device_secret).ok().unwrap();
+    laptop.import_group(&stale, &account).ok().unwrap();
+    let mut group = laptop.load_group(b"g-rewind").ok().unwrap();
+
+    // It looks fine from here — same epoch, same leaf, encrypts happily.
+    assert_eq!(group.epoch(), 1);
+    let reused = group.encrypt(b"a different message").ok().unwrap();
+
+    // And the far side throws it away, because that generation is spent.
+    assert!(
+        theirs.process(&reused).is_err(),
+        "a rewound sender's message was accepted; replay protection is not working"
+    );
+}

@@ -81,6 +81,15 @@ export interface OpenOptions {
   accountSecret?: Uint8Array;
   /** Shown in the devices screen. Signed into the certificate, so it is fixed. */
   deviceLabel: string;
+  /**
+   * This device's stored signature secret. Omit to enrol a new device.
+   *
+   * Coming back **without** it is not a reload, it is a new device: a new leaf
+   * in every group, and the old leaf still sitting in all of them. `docs/03`
+   * §1 wants this stored durably so that "reloading the app does not require a
+   * password" — which was Kith's biggest UX cliff.
+   */
+  deviceSecret?: Uint8Array;
 }
 
 /**
@@ -117,6 +126,15 @@ export interface CryptoEngine {
    * it around should be visible in a grep.
    */
   exportAccountSecret(): Promise<Uint8Array>;
+
+  /**
+   * This device's signature secret, for the caller to store durably.
+   *
+   * Losing it does not lose the account. It costs a re-enrolment and a fresh
+   * leaf in every group, which is visible to everyone else as a new device
+   * appearing.
+   */
+  exportDeviceSecret(): Promise<Uint8Array>;
 
   /**
    * A key package: what someone else needs to add this device to a group.
@@ -180,10 +198,55 @@ export interface CryptoEngine {
   process(groupId: string, message: Uint8Array): Promise<Incoming>;
 
   /**
-   * Drop a group from memory. Not a deletion — nothing on the server changes
-   * and nothing is revoked. This only releases what the session is holding.
+   * Release a group from memory, keeping its stored state.
+   *
+   * `loadGroup` brings it back. Use this to keep a session's footprint down
+   * when someone has fifty rooms and is reading one.
    */
   forget(groupId: string): Promise<void>;
+
+  /**
+   * Release a group *and* drop its stored state.
+   *
+   * Still not a deletion on the server, and nobody is removed from anything —
+   * this only forgets locally, and the group comes back from a Welcome.
+   */
+  discard(groupId: string): Promise<void>;
+
+  // -- persistence ---------------------------------------------------------
+  //
+  // mls-rs persists synchronously and IndexedDB does not, so getting state out
+  // is an explicit second step rather than a callback: ask what changed, seal
+  // each one, write them at your own pace. Nothing is lost by the delay — a
+  // group that never reached disk is re-fetched from the server, which is a
+  // slow start rather than a lost room.
+  //
+  // With one exception, and it is sharp:
+  //
+  // **A new state must be durable before a ciphertext from it is sent.**
+  // Sending advances this device's position in the secret tree, and the key and
+  // nonce come from that position. Restore behind it and the next send
+  // re-derives a key and nonce already used — two plaintexts under one AES-GCM
+  // key and nonce, which is a total loss for both. The far side refuses the
+  // message, which is how you would notice, but refusing does not undo it.
+
+  /** Groups changed since they were last exported. */
+  dirtyGroups(): Promise<string[]>;
+
+  /**
+   * One group's state, sealed, with its dirty flag cleared.
+   *
+   * What comes back is ciphertext — the local store never holds MLS key
+   * material in the clear (`docs/04` §Client-side). If writing it fails, just
+   * ask again; the state is still here.
+   */
+  exportGroup(groupId: string): Promise<Uint8Array>;
+
+  /** Put a sealed group back. Returns the group id it turned out to be. */
+  importGroup(sealed: Uint8Array): Promise<string>;
+
+  /** Re-open a group whose state was put back with `importGroup`. */
+  loadGroup(groupId: string): Promise<GroupState>;
 
   /** End the session and release everything. The engine is unusable after. */
   close(): Promise<void>;

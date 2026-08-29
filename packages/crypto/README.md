@@ -44,7 +44,37 @@ Tests run in Node against the real wasm and cover `session.ts` and
 The Worker plumbing is verified in a browser by `bench/worker` — `pnpm
 bench:worker` — which measures the thing the Worker exists for.
 
+## Persistence
+
+Group state survives a reload. mls-rs persists synchronously and IndexedDB does
+not, so getting bytes out is an explicit second step rather than a callback:
+
+```ts
+for (const groupId of await crypto.dirtyGroups()) {
+  await store.put(groupId, await crypto.exportGroup(groupId));  // sealed
+}
+```
+
+and on the way back:
+
+```ts
+const crypto = spawnCryptoEngine({ wasm });
+await crypto.open({ accountSecret, deviceSecret, deviceLabel: 'laptop' });
+await crypto.importGroup(sealed);
+await crypto.loadGroup(groupId);
+```
+
+**`deviceSecret` is not optional for a reload.** Without it this is a new
+device — a new leaf in every group, with the old one still sitting in all of
+them.
+
+**One rule, and it is sharp: a new state must be durable before a ciphertext
+from it is sent.** Sending advances this device's position in the secret tree,
+and the key and nonce come from that position; restore behind it and the next
+send reuses both. `docs/31` §7 has the detail and the test.
+
 ## Not built yet
 
-**Group state is not persisted.** A group lives in Worker memory and dies with
-the page. `docs/31` §6.
+- **Nothing writes the sealed blobs anywhere.** That is `packages/core`.
+- **Key packages are not persisted**, so a pending invite does not survive a
+  reload. `docs/31` §7.
