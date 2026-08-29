@@ -22,6 +22,8 @@
   import { drawers } from '$lib/drawers.svelte.js';
   import { back } from '$lib/back.js';
   import { longpress } from '$lib/touch.svelte.js';
+  import SearchPanel from '$lib/search/SearchPanel.svelte';
+  import { search } from '$lib/search/search.svelte.js';
   import { lightbox } from '$lib/media/lightbox.svelte.js';
   import { wren } from '$lib/wren/wren.svelte.js';
   import { untrack } from 'svelte';
@@ -62,9 +64,8 @@
   };
 
   function onKey(e: KeyboardEvent) {
-    // ⌘K is the command surface; ⌘F is search (`docs/19` — two keys, two jobs,
-    // because merging them makes both worse). Search isn't built yet, so ⌘F is
-    // left to the browser rather than swallowed by a stub.
+    // ⌘K is the command surface, ⌘F is search (`docs/19` — two keys, two jobs,
+    // because merging them makes both worse).
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       commandOpen = !commandOpen;
@@ -72,6 +73,14 @@
     if ((e.metaKey || e.ctrlKey) && e.key === ',') {
       e.preventDefault();
       settingsOpen = true;
+    }
+    // ⌘F is search, and it is worth taking from the browser now that there is
+    // something to take it for: find-in-page can only see the messages already
+    // rendered, which is a fraction of a room and none of the others.
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      if (search.open) search.close();
+      else search.show();
     }
     // A drawer is the most specific thing on screen when it is open, so it is
     // the first thing Escape takes away. Deliberately not `preventDefault`:
@@ -192,6 +201,9 @@
   let membersEl = $state<HTMLElement>();
 
   $effect(() => layout.watch());
+  // Indexing starts with the app, not with the first search: the state worth
+  // showing is "still catching up", and you only see it if it began earlier.
+  $effect(() => untrack(() => search.start()));
   // `untrack` is load-bearing: `watchConnection` seeds the state from
   // `navigator.onLine`, and seeding reads `connection` to decide whether to
   // flush the outbox. An effect that reads what it writes re-runs on its own
@@ -284,6 +296,10 @@
     // so there is no "up" to go to and back should leave the app.
     if (layout.narrow && (core.scope === 'space' || drawers.open)) l.push(goUp);
     if (voice.viewingCall) l.push(minimiseCall);
+    // Below the sheets on purpose. A search panel is somewhere you stay while
+    // you read the room behind it, so back should take a sheet off the top of
+    // it first and only then put the panel away.
+    if (search.open) l.push(() => search.close());
     if (settingsOpen) l.push(() => (settingsOpen = false));
     if (spaceOpen) l.push(() => (spaceOpen = false));
     if (commandOpen) l.push(() => (commandOpen = false));
@@ -559,10 +575,17 @@
       {/if}
       <button
         class="icon-btn"
-        onclick={() => (commandOpen = true)}
-        title="Search and commands (⌘K)"
-        aria-label="Command bar"
+        aria-pressed={search.open}
+        onclick={() => (search.open ? search.close() : search.show())}
+        title="Search messages (⌘F)"
+        aria-label="Search messages"
       ><Icon name="search" size={19} /></button>
+      <button
+        class="icon-btn"
+        onclick={() => (commandOpen = true)}
+        title="Commands (⌘K)"
+        aria-label="Command bar"
+      ><Icon name="sparkle" size={19} /></button>
       <WrenSurface onroute={route} />
       <button
         class="icon-btn"
@@ -586,6 +609,8 @@
   <SpaceSettings bind:open={spaceOpen} bind:tab={spaceTab} bind:room={spaceRoom} />
   <CommandBar bind:open={commandOpen} ctx={cmdCtx} />
   <ContextMenu />
+
+  {#if search.open}<SearchPanel />{/if}
 
   {#if voice.incoming}<IncomingCall />{/if}
 

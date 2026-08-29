@@ -6,6 +6,8 @@
  * the interface gets designed by what the interface actually needs, rather
  * than by what happened to be convenient to store.
  */
+import { withHistory } from './history.js';
+
 export type FaceColour = 'gold' | 'rose' | 'violet' | 'sky' | 'mint' | 'coral' | 'lilac' | 'aqua';
 
 export interface Face {
@@ -262,7 +264,14 @@ const wave = (n: number, seed = 7) => {
   return out;
 };
 
-export const messages: Record<string, Message[]> = {
+/**
+ * The *recent* messages, hand-written: each one is here to exercise a
+ * particular rendering — a spoiler, a tombstone, an audio file, a link card.
+ * `withHistory` fills in a few weeks of generated backlog behind them, because
+ * twenty-seven messages is plenty for looking at a room and nowhere near
+ * enough for looking at search.
+ */
+const recent: Record<string, Message[]> = {
   design: [
     { id: 'd0', faceId: 'emeri', body: 'starting the room over. everything before this is in the archive.', at: t(1700) },
     {
@@ -393,6 +402,8 @@ export const messages: Record<string, Message[]> = {
   papers: [],
   runs: [{ id: 'r1', faceId: 'viola', body: 'loss curve looks sane finally', at: t(30) }],
 };
+
+export const messages: Record<string, Message[]> = withHistory(recent);
 
 /** Who is in a given room, for the member list. */
 export const rosters: Record<string, string[]> = {

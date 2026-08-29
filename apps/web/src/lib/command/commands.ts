@@ -17,6 +17,7 @@ import { core, MY_ACCOUNT } from '../fake/core.svelte.js';
 import { theme, THEMES } from '../theme.svelte.js';
 import { voice } from '../voice/voice.svelte.js';
 import { wren } from '../wren/wren.svelte.js';
+import { search } from '../search/search.svelte.js';
 import { SECTIONS } from '../settings/sections.js';
 
 export type Group = 'Go to' | 'Create' | 'Configure' | 'Security' | 'Explain';
@@ -279,6 +280,16 @@ export function buildCommands(ctx: Ctx): Command[] {
       });
     }
   }
+
+  out.push({
+    id: 'search',
+    label: 'Search messages',
+    hint: '⌘F',
+    icon: 'search',
+    group: 'Go to',
+    keywords: 'find grep look for',
+    run: () => search.show(),
+  });
 
   // Not a debug hatch that shipped by accident: the offline path is most of
   // what `docs/24` is about, and a state you can only reach by turning off
