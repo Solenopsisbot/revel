@@ -772,24 +772,38 @@
   .row.bubble.mine.grouped .body { border-top-right-radius: 16px; }
   .row.bubble.mine .author-line { flex-direction: row-reverse; }
 
-  /* The action bar sits over the bubble it acts on.
+  /* The action bar, in a bubble room.
      ────────────────────────────────────────────────────────────────────────
-     It used to be pinned to the far side of the row from its own message:
-     hard right while a short bubble sat at the left, and hard left for your
-     own right-aligned ones. Both were as far from the thing they act on as
-     the row allowed.
+     Two layouts, because the two pointers have genuinely different problems
+     and one answer cannot serve both.
 
-     Still absolute, deliberately. Laying it out beside the bubble as a flex
-     item reads beautifully on a desktop and is unusable on a phone — with
-     44px touch targets the bar is 187px of a 378px row, and it reserves that
-     space even while hidden, which squeezes every bubble down to 95px. Out of
-     flow it costs nothing, and floating over the near top corner is the
-     treatment every touch messenger already uses. */
-  /* 60px on either side is the avatar column plus its gap: the bubble starts
-     (or ends) just inside that, so the bar lands on the bubble's own corner
-     rather than over the face next to it. */
+     On a **finger** the bar is summoned by a tap and is transient, and the
+     row has no width to spare: at 44px touch targets it is 187px of a 378px
+     row, and a flex item reserves that width even while hidden — every bubble
+     squeezed to 95px. So it floats, out of flow, over the near corner of its
+     own bubble. 60px on either side is the avatar column plus its gap, so it
+     lands on the bubble rather than on the face beside it. */
   .row.bubble .actions { left: 60px; right: auto; }
   .row.bubble.mine .actions { left: auto; right: 60px; }
+
+  /* On a **mouse** the bar appears on hover and stays for as long as you are
+     reading the message underneath it, so covering that message is the whole
+     problem — it was sitting 24px into the bubble and squarely on the name.
+     A hovering pointer also implies a window with room, and the bar there is
+     ~95px against a 74% bubble cap, so putting it beside the bubble costs
+     nothing and overlaps nothing. */
+  @media (pointer: fine) {
+    /* `?touch=1` forces the coarse treatment on a machine that has a mouse, so
+       it has to opt *out* of this rule the same way it opts in to `--tap`.
+       Otherwise the one affordance built for reviewing the touch layout shows
+       the desktop layout with touch-sized buttons in it, which is the worst of
+       both and true of no device. */
+    :global(html:not([data-touch='on'])) .row.bubble .actions {
+      position: static; flex: none; align-self: flex-end; margin-bottom: 2px;
+    }
+    /* Own messages hug the right, so the slack goes to the left of the bar. */
+    :global(html:not([data-touch='on'])) .row.bubble.mine .actions { margin-left: auto; }
+  }
 
   /* The avatar only appears on the first message of a run; the rest indent to
      match so the column stays straight. */
