@@ -280,6 +280,19 @@ export function buildCommands(ctx: Ctx): Command[] {
     }
   }
 
+  // Not a debug hatch that shipped by accident: the offline path is most of
+  // what `docs/24` is about, and a state you can only reach by turning off
+  // wifi at the right moment is a state nobody reviews. It says "simulated".
+  out.push({
+    id: 'toggle-connection',
+    label: core.connection === 'online' ? 'Go offline (simulated)' : 'Come back online (simulated)',
+    hint: 'pending messages go out on reconnect',
+    icon: core.connection === 'online' ? 'eye-off' : 'globe',
+    group: 'Configure',
+    keywords: 'network connection offline outbox pending retry',
+    run: () => core.setConnection(core.connection === 'online' ? 'offline' : 'online'),
+  });
+
   // --- security -------------------------------------------------------------
   out.push(
     {

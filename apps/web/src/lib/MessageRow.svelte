@@ -352,6 +352,16 @@
       </div>
     {/if}
 
+    {#if m.pending && core.connection !== 'online'}
+      <!-- Only when there is something to say. A message that is pending for
+           420ms on a good connection needs no label; one sitting in an outbox
+           does, or "it didn't send" is the obvious conclusion. -->
+      <p class="queued">
+        <Icon name="clock" size={12} />
+        Waiting for a connection. It'll go out on its own.
+      </p>
+    {/if}
+
     {#if confirming}
       <div class="confirm" role="alertdialog" aria-label="Confirm delete">
         <Icon name="warn" size={15} />
@@ -492,6 +502,10 @@
   /* An optimistic message is provisional and says so. It does NOT animate
      into place, because that would claim it succeeded (docs/32). */
   .row.pending .body { opacity: .6; }
+  .queued {
+    display: flex; align-items: center; gap: 6px; margin: 5px 0 0;
+    font-size: 12px; color: var(--text-mute);
+  }
   .row:not(.pending) .body { opacity: 1; transition: opacity var(--t-fast) var(--ease); }
 
   .author-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: var(--line-h); }

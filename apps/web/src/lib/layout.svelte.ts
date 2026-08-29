@@ -28,13 +28,18 @@ class Layout {
   /** Installed to the home screen. iOS push only works from here (`docs/24`). */
   standalone = $state(false);
 
-  /** Roughly-iOS, for the notification honesty table. Safari on iPadOS lies
-      about its platform, hence the touch-points check rather than the UA. */
-  get ios() {
-    if (typeof navigator === 'undefined') return false;
-    const ua = navigator.userAgent;
-    return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
-  }
+  /**
+   * Roughly-iOS, for the notification honesty screen (`docs/24`).
+   *
+   * The only thing this is allowed to decide is *what we tell you about push*,
+   * which is exactly the case where sniffing the platform is the honest move
+   * rather than the lazy one: the constraints are Apple's and they are real,
+   * and a screen that hides them behind a toggle that quietly does nothing is
+   * the failure the doc names.
+   *
+   * iPadOS Safari reports itself as a Mac, hence the touch-points check.
+   */
+  ios = $state(false);
 
   /**
    * Subscribe to the media queries. Called once from the root layout; returns
@@ -65,10 +70,17 @@ class Layout {
     // The data attribute is how the token layer joins in; CSS cannot read a
     // query string, so `--tap` keys off `[data-touch]` as well as the media
     // query it normally follows.
-    if (new URLSearchParams(location.search).get('touch') === '1') {
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('touch') === '1') {
       this.coarse = true;
       document.documentElement.dataset.touch = 'on';
     }
+
+    const ua = navigator.userAgent;
+    this.ios =
+      qs.get('platform') === 'ios' ||
+      /iPad|iPhone|iPod/.test(ua) ||
+      (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
 
     return () => offs.forEach((off) => off());
   }

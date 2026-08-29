@@ -192,6 +192,12 @@
   let membersEl = $state<HTMLElement>();
 
   $effect(() => layout.watch());
+  // `untrack` is load-bearing: `watchConnection` seeds the state from
+  // `navigator.onLine`, and seeding reads `connection` to decide whether to
+  // flush the outbox. An effect that reads what it writes re-runs on its own
+  // write — here that meant re-seeding to "online" the instant anything set it
+  // to "offline". Same shape as the theme loop in `+layout.svelte`.
+  $effect(() => untrack(() => core.watchConnection()));
 
   /**
    * Tell the gesture how wide the panels actually are, so the drag can be 1:1
@@ -525,6 +531,21 @@
       </span>
       <h1>{core.room.name}</h1>
       <div class="spacer"></div>
+      {#if core.connection !== 'online'}
+        <!-- One dot, and only when there is something to say. `docs/24` is
+             specific about the shape: not a banner, not a modal, not a toast
+             per reconnect — a phone's connection comes and goes all day, and
+             an app that narrates each one is exhausting to carry around. -->
+        <span
+          class="conn"
+          class:offline={core.connection === 'offline'}
+          role="status"
+          title={core.connection === 'offline'
+            ? 'Offline. Messages you send will go out when the connection returns.'
+            : 'Reconnecting.'}
+          aria-label={core.connection === 'offline' ? 'Offline' : 'Reconnecting'}
+        ></span>
+      {/if}
       {#if core.room.kind === 'voice' && voice.roomId !== core.currentRoomId}
         <button class="join" onclick={() => voice.join(core.currentSpaceId, core.currentRoomId)}>
           <Icon name="voice" size={15} /> Join
@@ -775,6 +796,17 @@
   .chat-head h1 { margin: 0; font-size: var(--text-lg); font-weight: 700; }
   .chat-head .glyph { color: var(--text-mute); display: grid; place-items: center; }
   .spacer { flex: 1; }
+
+  .conn {
+    flex: none; width: 8px; height: 8px; border-radius: 50%; margin-right: 2px;
+    background: var(--face-gold);
+    animation: breathe 1.8s ease-in-out infinite;
+  }
+  /* Rose, not red-alert: being offline is a state, not an error, and the app
+     keeps working. The dot's job is to explain why a message is sitting
+     pending, not to demand anything. */
+  .conn.offline { background: var(--face-rose); animation: none; }
+  @keyframes breathe { 50% { opacity: .35; } }
   .icon-btn {
     border: 0; background: transparent; color: var(--text-dim); cursor: pointer;
     width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;

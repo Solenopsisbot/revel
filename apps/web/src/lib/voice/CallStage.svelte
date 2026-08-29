@@ -13,19 +13,31 @@
   import Tile from './Tile.svelte';
   import { core } from '../fake/core.svelte.js';
   import { voice } from './voice.svelte.js';
+  import { layout } from '../layout.svelte.js';
   import type { Item } from '../menu.js';
 
   let moreBtn = $state<HTMLElement>();
   let moreOpen = $state(false);
 
-  const moreItems: Item[] = [
+  const moreItems = $derived<Item[]>([
     { id: 'input', label: 'Microphone: MacBook Pro', icon: 'mic', header: 'Devices' },
     { id: 'output', label: 'Output: MacBook Pro', icon: 'headphones' },
     { id: 'noise', label: 'Noise suppression', icon: 'sparkle', header: 'Processing', checked: true },
     { id: 'echo', label: 'Echo cancellation', checked: true },
     { id: 'ptt', label: 'Push to talk', checked: false },
+    // `docs/24`: on-device captions are desktop-only in v1, "and the UI says
+    // so rather than offering a toggle that produces a slideshow". A greyed
+    // row that names the reason beats an absent one — otherwise the answer to
+    // "where are the captions" is silence.
+    {
+      id: 'captions',
+      label: layout.coarse ? 'Live captions — desktop only for now' : 'Live captions',
+      icon: 'globe',
+      header: 'Captions',
+      disabled: layout.coarse,
+    },
     { id: 'diverge', label: 'Simulate a key mismatch', icon: 'warn', header: 'Testing' },
-  ];
+  ]);
 
   function pickMore(id: string) {
     moreOpen = false;
@@ -163,6 +175,21 @@
 
   @media (max-width: 720px) {
     .ctl span, .leave span { display: none; }
-    .ctl, .leave { padding: 11px 14px; }
+    .ctl, .leave { padding: 11px 14px; min-width: var(--tap); min-height: var(--tap); justify-content: center; }
+    .stage { padding: 14px 12px; gap: 12px; }
+  }
+
+  /* `docs/24`: on a phone the call is "a vertical tile stack; the active
+     speaker takes the top slot and the rest scroll".
+     ────────────────────────────────────────────────────────────────────────
+     Worth knowing that this contradicts `Tile.svelte`'s own rule, which is
+     that tiles never reorder because a grid reshuffling on every utterance is
+     unusable. Both are right, in their own layout: that objection is about a
+     grid where everyone is already on screen, and here at most two tiles fit,
+     so *something* has to be on top and "whoever is talking" is the only
+     sensible answer. Single column only — the desktop grid keeps its rule. */
+  @media (max-width: 560px) {
+    .tiles { grid-template-columns: 1fr; }
+    .tiles :global(.tile.speaking) { order: -1; }
   }
 </style>

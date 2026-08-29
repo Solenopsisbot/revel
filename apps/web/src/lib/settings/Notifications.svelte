@@ -12,6 +12,7 @@
    */
   import Icon from '$lib/Icon.svelte';
   import { core } from '$lib/fake/core.svelte.js';
+  import { layout } from '$lib/layout.svelte.js';
   import type { NotifyLevel } from '$lib/fake/data.js';
 
   const LEVELS: { id: NotifyLevel; label: string }[] = [
@@ -31,6 +32,37 @@
   );
 
   let addingFor = $state<string | null>(null);
+
+  /**
+   * What push actually does on the device you are holding.
+   *
+   * `docs/24`: "This is where mobile hurts, and pretending otherwise helps
+   * nobody… the notification settings screen on iOS states the limitation
+   * plainly instead of showing a toggle that silently does nothing."
+   *
+   * So this is not a support-matrix table for everyone to read. It is a
+   * statement about *this* device, and it exists to stop the app implying a
+   * capability it doesn't have. `?platform=ios` forces it for review.
+   */
+  const delivery = $derived.by(() => {
+    if (!layout.ios) {
+      return { warn: false, line: 'Push works on this device. Notifications arrive whether or not Revel is open.' };
+    }
+    if (!layout.standalone) {
+      return {
+        warn: true,
+        line: 'Safari on iOS only delivers push to an app added to the Home Screen. Until Revel is added, nothing on this screen can reach you while it is closed.',
+      };
+    }
+    return {
+      warn: true,
+      line: 'Push works here, and less well than we would like. What follows is Apple\u2019s doing, not a setting you have got wrong.',
+    };
+  });
+
+  /** With no push at all, a lock-screen preview toggle is a control that does
+      nothing. Disabling it and saying why beats letting it lie. */
+  const noPush = $derived(layout.ios && !layout.standalone);
 </script>
 
 <h2>Notifications</h2>
@@ -157,18 +189,53 @@
 
 <section>
   <h3>On this device</h3>
+
+  <p class="status" class:warn={delivery.warn}>
+    <Icon name={delivery.warn ? 'warn' : 'check'} size={15} />
+    <span>{delivery.line}</span>
+  </p>
+
+  {#if layout.ios}
+    <ul class="honest">
+      <li>
+        iOS drops push subscriptions silently — often after a restart. Revel
+        re-subscribes when you next open it, which is why notifications can go
+        quiet for a while and then come back on their own.
+      </li>
+      <li>
+        There is no background sync. Nothing arrives until you open the app.
+      </li>
+      <li>
+        In the EU, Apple does not permit web push at all. Nothing on this
+        screen can change that, and it is not something you have misconfigured.
+      </li>
+    </ul>
+  {/if}
+
+  <p class="sub">
+    None of which loses a message. Every time you open Revel it syncs from
+    where it left off, so a missed push is a late message rather than a
+    lost one — and because the push carries no content and your device
+    decrypts it, one that arrives late still says the right thing.
+  </p>
+
   <label class="check">
     <input type="checkbox" bind:checked={n.sound} />
     <span><b>Sound</b></span>
   </label>
-  <label class="check">
-    <input type="checkbox" bind:checked={n.previews} />
+  <label class="check" class:off={noPush}>
+    <input type="checkbox" bind:checked={n.previews} disabled={noPush} />
     <span>
       <b>Show message text on the lock screen</b>
       <span class="sub">
-        The push itself carries no content — your device already has the keys
-        and decrypts it locally. So this is genuinely your choice: nothing you
-        turn on here sends a word of your messages to anyone's server.
+        {#if noPush}
+          Nothing to show yet — there are no push notifications on this device
+          until Revel is on the Home Screen.
+        {:else}
+          The push itself carries no content — your device already has the keys
+          and decrypts it locally. So this is genuinely your choice: nothing you
+          turn on here sends a word of your messages to anyone's server.
+        {/if}
       </span>
     </span>
   </label>
@@ -223,6 +290,25 @@
   .check input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--face-mint); cursor: pointer; flex: none; }
   .check b { display: block; font-weight: 600; margin-bottom: 2px; font-size: var(--text-sm); }
   .check .sub { margin: 0; max-width: 58ch; }
+
+  .status {
+    display: flex; align-items: flex-start; gap: 9px;
+    font-size: var(--text-sm); line-height: 1.5; color: var(--text-dim);
+    background: var(--ground-2); border: 1px solid var(--line);
+    border-radius: var(--r-sm); padding: 11px 13px; margin: 0 0 14px; max-width: 62ch;
+  }
+  .status :global(svg) { flex: none; margin-top: 2px; color: var(--face-mint); }
+  /* Amber rather than red: a real limitation to know about, not a failure. */
+  .status.warn { border-color: color-mix(in oklab, var(--face-gold) 45%, var(--line)); }
+  .status.warn :global(svg) { color: var(--face-gold); }
+
+  .honest {
+    margin: 0 0 14px; padding-left: 18px; max-width: 62ch;
+    font-size: var(--text-sm); color: var(--text-mute); line-height: 1.55;
+  }
+  .honest li { margin-bottom: 7px; }
+
+  .check.off b { color: var(--text-mute); }
 
   .times { display: flex; gap: 16px; margin: 4px 0 0 30px; }
   .times label { font-size: var(--text-sm); color: var(--text-mute); display: flex; align-items: center; gap: 8px; }

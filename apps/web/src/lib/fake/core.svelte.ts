@@ -92,6 +92,49 @@ class Core {
    * list, in one place, or it stops agreeing with itself.
    */
   speakingAsOpen = $state(false);
+
+  /**
+   * Connection state.
+   *
+   * `docs/24`: "Connection state is **one small dot** in the header. Not a red
+   * banner, not a modal, not a toast per reconnect." A phone's connection
+   * drops constantly and comes back; making each of those an event the user
+   * has to acknowledge is how an app becomes exhausting to carry around.
+   */
+  connection = $state<'online' | 'connecting' | 'offline'>('online');
+
+  /** Follow the browser. Returns a teardown, for `$effect`. */
+  watchConnection() {
+    if (typeof window === 'undefined') return () => {};
+    const set = () => this.setConnection(navigator.onLine ? 'online' : 'offline');
+    set();
+    window.addEventListener('online', set);
+    window.addEventListener('offline', set);
+    return () => {
+      window.removeEventListener('online', set);
+      window.removeEventListener('offline', set);
+    };
+  }
+
+  setConnection(next: 'online' | 'connecting' | 'offline') {
+    const was = this.connection;
+    this.connection = next;
+    if (next === 'online' && was !== 'online') this.flushPending();
+  }
+
+  /**
+   * Everything queued while the connection was down, sent at once.
+   *
+   * Retrying is safe rather than merely convenient: the id is minted here,
+   * on this device, exactly once — the `client_nonce` dedup from `docs/04`
+   * §2 — so a resend can never become a duplicate. That property is what
+   * lets an outbox exist at all.
+   */
+  flushPending() {
+    for (const list of Object.values(this.messages)) {
+      for (const m of list) if (m.pending) m.pending = false;
+    }
+  }
   /** A message the view should scroll to and flash — reply jumps, search hits. */
   jumpTo = $state<string | null>(null);
 
@@ -300,6 +343,9 @@ class Core {
     // Anything you send is read by definition; the divider goes away.
     delete this.lastRead[this.currentRoomId];
 
+    // Offline, it stays pending and goes out on reconnect (`docs/24`). Never
+    // silently dropped, and never duplicated — see `flushPending`.
+    if (this.connection !== 'online') return;
     setTimeout(() => {
       const m = this.messages[this.currentRoomId]?.find((x) => x.id === id);
       if (m) m.pending = false;
