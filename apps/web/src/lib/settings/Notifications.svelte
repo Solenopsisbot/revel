@@ -310,7 +310,9 @@
 
   .check.off b { color: var(--text-mute); }
 
-  .times { display: flex; gap: 16px; margin: 4px 0 0 30px; }
+  /* Two time fields plus their labels are wider than a phone pane, so they
+     wrap rather than running off the edge of the card. */
+  .times { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 4px 0 0 30px; }
   .times label { font-size: var(--text-sm); color: var(--text-mute); display: flex; align-items: center; gap: 8px; }
   .times input {
     font: inherit; font-size: var(--text-sm); font-family: var(--font-mono);

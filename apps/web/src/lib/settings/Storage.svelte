@@ -16,10 +16,23 @@
    */
   import Icon from '$lib/Icon.svelte';
   import { core } from '$lib/fake/core.svelte.js';
+  import { layout } from '$lib/layout.svelte.js';
   import { wren } from '$lib/wren/wren.svelte.js';
 
   const s = $derived(core.storage);
   const mb = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)} GB` : `${n} MB`);
+
+  /**
+   * `docs/24`: the media cache is "capped by default on metered/small devices,
+   * with the cap visible and adjustable". Visible was already true; adjustable
+   * was not, which made it a fact about the app rather than a decision the
+   * person carrying it gets to make.
+   */
+  const CAPS = [
+    { mb: 1000, label: '1 GB' },
+    { mb: 4000, label: '4 GB' },
+    { mb: 12000, label: '12 GB' },
+  ];
 
   const total = $derived(s.messages + s.media + s.index + s.models);
   const pct = $derived(Math.round((total / s.limit) * 100));
@@ -80,6 +93,28 @@
     {/each}
   </div>
   <p class="cap">{pct}% of the {mb(s.limit)} this device is set to allow.</p>
+
+  <div class="limit">
+    <span class="lbl">Cap</span>
+    <div class="seg">
+      {#each CAPS as c (c.mb)}
+        <button
+          class:sel={s.limit === c.mb}
+          onclick={() => (s.limit = c.mb)}
+          aria-pressed={s.limit === c.mb}
+        >{c.label}</button>
+      {/each}
+    </div>
+  </div>
+  <p class="note">
+    {#if layout.coarse}
+      Lower by default on a phone, because a phone is where running out of
+      space actually happens.
+    {/if}
+    When it fills, <b>old media goes before old messages</b> — text is small and
+    precious, images are large and can be fetched again. Nothing you have
+    written is ever what gets evicted.
+  </p>
 
   {#each rows as r (r.name)}
     <div class="row">
@@ -166,7 +201,19 @@
     background: var(--ground-3); margin-bottom: 7px;
   }
   .bar .seg { display: block; height: 100%; }
-  .cap { font-size: 12px; color: var(--text-mute); margin: 0 0 16px; }
+  .cap { font-size: 12px; color: var(--text-mute); margin: 0 0 12px; }
+
+  .limit { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 8px; }
+  .limit .lbl { font-size: var(--text-sm); font-weight: 600; }
+  .seg { display: inline-flex; gap: 3px; background: var(--ground-2); padding: 3px; border-radius: var(--r-pill); }
+  .seg button {
+    border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600;
+    padding: 6px 14px; border-radius: var(--r-pill); background: transparent; color: var(--text-dim);
+    min-height: var(--tap);
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button.sel { background: var(--brand); color: #fff; }
 
   .row {
     display: flex; align-items: center; gap: 10px;

@@ -58,9 +58,13 @@
   .way {
     display: flex; align-items: center; gap: 12px; padding: 11px 14px;
     border: 1px solid var(--line); border-radius: var(--r-md);
+    /* Three fixed-width children plus a 130px label do not fit a 340px pane,
+       and the row overflowed its own card on a phone. Wrapping is right rather
+       than shrinking: the label and the state belong on one line together. */
+    flex-wrap: wrap;
   }
-  .way .n { font-weight: 600; min-width: 130px; }
-  .way .s { flex: 1; color: var(--text-mute); font-size: var(--text-sm); }
+  .way .n { font-weight: 600; min-width: min(130px, 100%); }
+  .way .s { flex: 1; min-width: 0; color: var(--text-mute); font-size: var(--text-sm); }
   .way button {
     border: 0; cursor: pointer; font: inherit; font-size: var(--text-sm); font-weight: 600;
     padding: 6px 13px; border-radius: var(--r-pill); background: var(--ground-3); color: var(--text);

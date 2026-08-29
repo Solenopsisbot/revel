@@ -1,5 +1,6 @@
 <script lang="ts">
   import { core } from '$lib/fake/core.svelte.js';
+  import { layout } from '$lib/layout.svelte.js';
 
   /**
    * "What the server can see" is generated from the room's real configuration,
@@ -64,6 +65,27 @@
     </dd>
   </dl>
 </section>
+
+{#if layout.coarse}
+  <!-- `docs/24`: "Stated plainly so it can be a decision rather than a
+       disappointment." Shown on the device it is about, next to the other
+       limits, rather than buried in a release note nobody reads. -->
+  <section>
+    <h3>What this phone doesn't do yet</h3>
+    <dl>
+      <dt>No second window, and no drag-to-reorder.</dt>
+      <dd>Both want a pointer and a screen with room to spare.</dd>
+      <dt>No on-device captions.</dt>
+      <dd>The model runs, just not fast enough to be captions rather than a slideshow.</dd>
+      <dt>Fewer things to fiddle with.</dt>
+      <dd>Theme and density are here; column layout is not, because there is one column.</dd>
+    </dl>
+    <p>
+      Everything else is the same product — every room, every face, every agent,
+      calls, history. This is a shorter list than it looks.
+    </p>
+  </section>
+{/if}
 
 <style>
   h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }
