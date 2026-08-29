@@ -1,3 +1,6 @@
 packages:
   - "packages/*"
   - "apps/*"
+  # Harnesses, not shipped. bench/wasm has no package.json on purpose — it is
+  # plain HTML so it can exercise the raw module with nothing in between.
+  - "bench/*"

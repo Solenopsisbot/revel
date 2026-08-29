@@ -9,6 +9,7 @@
     "build": "pnpm --filter @revel/web build",
     "build:wasm": "bash scripts/build-wasm.sh",
     "bench:wasm": "echo '\\n  open http://localhost:8787/bench/wasm/\\n' && python3 -m http.server 8787",
+    "bench:worker": "pnpm --filter @revel/bench-worker dev",
     "preview": "pnpm --filter @revel/web preview",
     "test": "vitest run",
     "test:rust": "cargo test -p revel-crypto",

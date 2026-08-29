@@ -61,6 +61,27 @@ importers:
         specifier: ^6.0.0
         version: 6.4.3(@types/node@26.4.0)
 
+  bench/worker:
+    dependencies:
+      '@revel/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
+      '@revel/crypto-wasm':
+        specifier: workspace:*
+        version: link:../../packages/crypto-wasm
+    devDependencies:
+      vite:
+        specifier: ^6.0.0
+        version: 6.4.3(@types/node@26.4.0)
+
+  packages/crypto:
+    dependencies:
+      '@revel/crypto-wasm':
+        specifier: workspace:*
+        version: link:../crypto-wasm
+
+  packages/crypto-wasm: {}
+
   packages/protocol:
     dependencies:
       zod:

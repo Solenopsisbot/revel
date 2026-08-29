@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Is the main thread free?</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 32px 28px 60px;
+    background: #100c18; color: #e6e0f0;
+    font: 14px/1.6 ui-sans-serif, system-ui, sans-serif;
+  }
+  h1 { font-size: 19px; font-weight: 600; margin: 0 0 6px; }
+  p.lede { color: #9b91ad; margin: 0 0 22px; max-width: 74ch; }
+  code { font-family: ui-monospace, Menlo, monospace; }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    background: #7c5cff; color: #fff; border: 0;
+    padding: 9px 18px; border-radius: 999px;
+  }
+  button:disabled { opacity: .45; cursor: default; }
+  label { color: #9b91ad; margin-left: 14px; }
+  input {
+    font: inherit; background: #1a1424; color: #e6e0f0;
+    border: 1px solid #2e2540; border-radius: 7px; padding: 7px 10px; width: 90px;
+  }
+  table { border-collapse: collapse; margin-top: 22px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 7px 20px 7px 0; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { color: #9b91ad; font-weight: 600; border-bottom: 1px solid #2e2540; }
+  tbody td { font-family: ui-monospace, Menlo, monospace; }
+  tr.bad td b { color: #ff8f9e; }
+  tr.good td b { color: #7ee0b8; }
+  .note { color: #9b91ad; max-width: 74ch; margin-top: 26px; }
+  .err { color: #ff8f9e; white-space: pre-wrap; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+  <h1>Is the main thread free?</h1>
+  <p class="lede">
+    The same workload twice — admit N members to a group in one batched commit —
+    once with the crypto on the main thread and once through
+    <code>@revel/crypto</code>'s Worker. The column that matters is the third
+    one: how long the main thread went without being able to run anything,
+    which is how long the app would have been frozen.
+  </p>
+
+  <p>
+    <button type="button" id="run">Run</button>
+    <label>leaves <input type="text" id="leaves" value="500"></label>
+  </p>
+
+  <div id="out"></div>
+  <div id="error" class="err"></div>
+
+  <p class="note">
+    Both runs load their own copy of the wasm — a Worker cannot share the main
+    thread's instance, and that is the cost of the split: one more module
+    instantiation, measured at 2–5 ms in <code>docs/31</code> §5.
+  </p>
+  <p class="note">
+    <b>Why two Worker rows.</b> On a freshly loaded page the Worker takes about
+    five times as long as the main thread at identical work, and a second run in
+    the same page matches it exactly. It is not scheduling, not warmup, and not
+    "the first Worker" — see <code>docs/31</code> §6 for what has been ruled out.
+    Both rows are shown because hiding the slow one would hide the thing a
+    person actually hits first. <code>?warm=8000</code> sets the warmup.
+  </p>
+
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

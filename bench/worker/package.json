@@ -1,0 +1,16 @@
+{
+  "name": "@revel/bench-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 8788"
+  },
+  "dependencies": {
+    "@revel/crypto": "workspace:*",
+    "@revel/crypto-wasm": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

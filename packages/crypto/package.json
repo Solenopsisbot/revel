@@ -1,0 +1,14 @@
+{
+  "name": "@revel/crypto",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./worker": "./src/worker.ts"
+  },
+  "dependencies": {
+    "@revel/crypto-wasm": "workspace:*"
+  }
+}

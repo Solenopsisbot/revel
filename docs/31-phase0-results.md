@@ -348,7 +348,72 @@ meant anything, and each failure impersonated a result.
   the page. mls-rs has a `GroupStateStorage` seam for handing that to the
   TypeScript store; that is the next piece.
 - **No worker.** See above — this is the one with a deadline attached.
+  Built in §6.
 - **The binding inlines the ratchet tree**, because it uses mls-rs's default
   commit options. That is the configuration `03` §5 rejects and `2` measured as
   4× worse; the browser Welcome column above inherits it. Out-of-band tree
   serving has to be exposed across this boundary before any of it ships.
+
+---
+
+## 6. Off the main thread — measured
+
+§5 ended with "no worker" as the gap with a deadline attached. `packages/crypto`
+closes it: `engine.ts` is the interface `26` §Option C names, `worker.ts` runs
+every one of those calls in a Worker, and `client.ts` is a `CryptoEngine` that
+is really a `postMessage` channel. Nothing above the seam sees wasm.
+
+`pnpm bench:worker` runs one workload — admit 500 members in a single batched
+commit — twice on one page, on the main thread and through the Worker, while a
+`MessageChannel` loop records the longest the main thread ever went without
+getting a turn. That gap is what a person experiences as a freeze.
+
+| engine | work took | longest main-thread stall | dropped frames at 60fps |
+| --- | ---: | ---: | ---: |
+| main thread | 282 ms | **282 ms** | 17 |
+| Worker | 299 ms | **6–33 ms** | 0–2 |
+
+The main-thread stall equalling the work exactly, run after run, is the
+signature of a fully-blocking call and the check that the instrument is
+measuring the right thing. **The freeze is gone.** Reproduced across five runs.
+
+### An unresolved 5×
+
+One thing did not resolve, and it is recorded rather than explained: on a
+**freshly loaded page**, the Worker takes ~1.5 s for the 500-leaf commit the
+main thread does in 282 ms. Run the whole flow a second time in the same page
+and the Worker matches the main thread (299 ms). Five fresh-page measurements:
+1617, 1508, 1552, 1533, 1628 ms.
+
+What it is not:
+
+- **Not CPU scheduling.** An identical pure-JS busy loop is *twice as fast* in a
+  Worker on this machine, so the Worker is not being parked on a slow core.
+- **Not warmup.** Raising the Worker's warmup from 2 s to 8 s changes nothing.
+- **Not "the first Worker the page spawns".** Two Workers in sequence on a fresh
+  page are both slow.
+
+The one thing that reliably makes it fast is having already run the whole flow
+once in that page — which is a difference on the *main thread*, and should not
+be able to affect a separate wasm instance in a separate thread. Something is
+being cached at a level none of these tests isolate.
+
+**It does not change the decision** — the stall is what the Worker exists to
+remove, and it removes it — but it does have a consequence worth acting on now:
+**spawn the Worker at startup and give it something to chew on**, rather than
+lazily on first use. Whatever the cause, the first heavy operation after a page
+load costs about five times what the same operation costs later, and the first
+heavy operation is exactly the one a person is waiting on.
+
+### One design change fell out of building it
+
+Staging members one at a time would have been one `postMessage` per member — 500
+round trips to batch-add 500 people, eating a real slice of what `03` §5's
+batching was supposed to save. `stageAdd` and `stageRemove` take one item or an
+array. The interface only looked right until something used it.
+
+### What is still missing
+
+Persistence, unchanged from §5 and now the next thing: an MLS group still lives
+in Worker memory and dies with the page. Everything that comes after — a real
+`packages/core`, surviving a reload, opening the app twice — waits on it.
