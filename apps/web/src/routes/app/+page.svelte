@@ -101,6 +101,33 @@
     }
   }
 
+  /**
+   * Right-clicking chrome that has no menu should do nothing, not open the
+   * browser's.
+   *
+   * Anything with a menu of its own has already called `preventDefault` by the
+   * time this runs, so it never sees those. What is left is the empty case —
+   * right-clicking a header, a divider, the space between two rooms — where
+   * the native menu offers Back, Reload and Save As, none of which mean
+   * anything inside an app and all of which look like the app leaking.
+   *
+   * The exceptions are where the browser genuinely has something to give:
+   * selected text, a field you can paste into, a link or an image. Those keep
+   * their menu, because "copy that" is a real thing to want and reimplementing
+   * it worse would be the actual mistake.
+   */
+  function swallowEmptyContextMenu(e: MouseEvent) {
+    if (e.defaultPrevented) return;
+    const el = e.target instanceof Element ? e.target : null;
+    if (el?.closest('input, textarea, [contenteditable=""], [contenteditable="true"], a[href], img, video, audio')) {
+      return;
+    }
+    // A selection means "copy" is on the menu, and copy is the one item worth
+    // keeping everywhere.
+    if (!window.getSelection()?.isCollapsed) return;
+    e.preventDefault();
+  }
+
   function openRoomMenu(e: MouseEvent, roomId: string) {
     const room = core.space.rooms.find((r) => r.id === roomId);
     if (!room) return;
@@ -370,6 +397,7 @@
      and so the app root does not have to pretend to be an interactive
      element to carry the handlers. -->
 <svelte:window
+  oncontextmenu={swallowEmptyContextMenu}
   onkeydown={onKey}
   onpointerdown={(e) => layout.narrow && drawers.down(e)}
   onpointermove={(e) => layout.narrow && drawers.move(e)}
@@ -407,7 +435,7 @@
     {#each core.spaces as space (space.id)}
       <button
         class="space"
-        class:active={space.id === core.currentSpaceId}
+        class:active={core.scope === 'space' && space.id === core.currentSpaceId}
         style="--from: var(--face-{space.from}); --to: var(--face-{space.to})"
         onclick={() => { core.openRoom(space.id, space.rooms[0]!.id); navigated(); }}
         oncontextmenu={(e) => openSpaceMenu(e, space.id)}

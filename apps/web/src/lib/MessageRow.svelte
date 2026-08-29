@@ -128,11 +128,16 @@
    * list rather than a second one: two menus for one object drift, and then
    * people learn that one of them is the "real" one.
    *
-   * Skipped when there's a text selection, so right-clicking to copy a quoted
-   * phrase still reaches the browser's own menu.
+   * Stands aside wherever the browser's own menu is the better one: a text
+   * selection (copy that phrase), a link (open in a new tab, copy the
+   * address), an image or a clip (save it). None of those are things worth
+   * reimplementing worse, and taking them away is how an app starts feeling
+   * like it is fighting the machine it runs on.
    */
   function onContext(e: MouseEvent) {
     if (!window.getSelection()?.isCollapsed) return;
+    const el = e.target instanceof Element ? e.target : null;
+    if (el?.closest('a[href], img, video, audio')) return;
     contextMenu.open(e, menuItems, pickMenu, face.name);
   }
 
@@ -741,6 +746,13 @@
     padding: 8px 13px;
     max-width: min(74%, 46rem);
     width: fit-content;
+    /* Rows want `flex: 1` so the text column fills the width. A bubble wants
+       the opposite and has always said so — but `flex: 1` means
+       `flex-basis: 0%`, which beats `width: fit-content` outright, so every
+       bubble has silently been stretching the full width of the room since
+       they were built. Neither `fit-content` nor the max-width above ever got
+       a chance to apply. */
+    flex: 0 1 auto;
   }
   .row.bubble.grouped .body { border-top-left-radius: 16px; }
 
@@ -756,11 +768,28 @@
   .row.bubble.mine .body {
     background: color-mix(in oklab, var(--brand) 26%, var(--ground-2));
     border-radius: 16px 16px 5px 16px;
-    margin-left: auto;
   }
   .row.bubble.mine.grouped .body { border-top-right-radius: 16px; }
   .row.bubble.mine .author-line { flex-direction: row-reverse; }
-  .row.bubble.mine .actions { left: 16px; right: auto; }
+
+  /* The action bar sits over the bubble it acts on.
+     ────────────────────────────────────────────────────────────────────────
+     It used to be pinned to the far side of the row from its own message:
+     hard right while a short bubble sat at the left, and hard left for your
+     own right-aligned ones. Both were as far from the thing they act on as
+     the row allowed.
+
+     Still absolute, deliberately. Laying it out beside the bubble as a flex
+     item reads beautifully on a desktop and is unusable on a phone — with
+     44px touch targets the bar is 187px of a 378px row, and it reserves that
+     space even while hidden, which squeezes every bubble down to 95px. Out of
+     flow it costs nothing, and floating over the near top corner is the
+     treatment every touch messenger already uses. */
+  /* 60px on either side is the avatar column plus its gap: the bubble starts
+     (or ends) just inside that, so the bar lands on the bubble's own corner
+     rather than over the face next to it. */
+  .row.bubble .actions { left: 60px; right: auto; }
+  .row.bubble.mine .actions { left: auto; right: 60px; }
 
   /* The avatar only appears on the first message of a run; the rest indent to
      match so the column stays straight. */
