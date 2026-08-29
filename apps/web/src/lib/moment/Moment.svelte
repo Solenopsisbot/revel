@@ -69,4 +69,12 @@
   .art.portrait { height: min(64dvh, 500px); right: 3%; bottom: -2%; }
 
   @media (max-width: 1000px) { .art { display: none; } .moment { padding: 40px 24px; } }
+  /* On a phone the copy is usually taller than the screen, so every pixel of
+     padding is a pixel of the button pushed below the fold. `flex-start` as
+     well: a centred flex child that overflows its container puts its own top
+     out of reach above the scroll origin, which is the classic way a long
+     form becomes unscrollable at the top. */
+  @media (max-width: 560px) {
+    .moment { padding: 26px 18px; align-items: flex-start; }
+  }
 </style>

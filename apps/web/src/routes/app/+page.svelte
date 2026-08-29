@@ -18,6 +18,8 @@
   import { contextMenu } from '$lib/contextmenu.svelte.js';
   import { roomMenu, spaceMenu, memberMenu } from '$lib/menus.js';
   import { voice } from '$lib/voice/voice.svelte.js';
+  import { layout } from '$lib/layout.svelte.js';
+  import { drawers } from '$lib/drawers.svelte.js';
   import { page } from '$app/state';
 
   // ?settings=<section> opens straight to a pane, so any of them can be
@@ -66,6 +68,10 @@
       e.preventDefault();
       settingsOpen = true;
     }
+    // A drawer is the most specific thing on screen when it is open, so it is
+    // the first thing Escape takes away. Deliberately not `preventDefault`:
+    // nothing else is listening for it at this level.
+    if (e.key === 'Escape' && drawers.open) drawers.close();
   }
 
   function openRoomMenu(e: MouseEvent, roomId: string) {
@@ -174,11 +180,70 @@
       return acc;
     }, {}),
   );
+
+  // ── mobile ────────────────────────────────────────────────────────────────
+
+  let navEl = $state<HTMLElement>();
+  let membersEl = $state<HTMLElement>();
+
+  $effect(() => layout.watch());
+
+  /**
+   * Tell the gesture how wide the panels actually are, so the drag can be 1:1
+   * with the thumb. Measured rather than hardcoded — the widths are `min()`
+   * expressions in CSS and that stays the one place they are decided.
+   *
+   * Depends on `layout.narrow` only. Reading `drawers.x` here would make the
+   * effect re-run on every frame of a drag, and writing a width back into the
+   * store it just read from is the shape of loop that froze the app once
+   * already.
+   */
+  $effect(() => {
+    if (!layout.narrow) return;
+    if (navEl) drawers.setWidth('nav', navEl.offsetWidth);
+    if (membersEl) drawers.setWidth('members', membersEl.offsetWidth);
+  });
+
+  /** Chat is the app; the drawer is transient (`docs/24`). Picking something
+      from it is the end of its job, so it gets out of the way. */
+  function navigated() {
+    if (layout.narrow) drawers.close();
+  }
+
+  /** The members list is a column on a desktop and a drawer on a phone. Same
+      button, same meaning, two mechanisms. */
+  function toggleMembers() {
+    if (layout.narrow) drawers.toggle('members');
+    else core.membersOpen = !core.membersOpen;
+  }
 </script>
 
-<svelte:window onkeydown={onKey} />
+<!-- The drawer gesture listens on the window, not the shell, so a swipe that
+     starts on a drawer and ends off the edge of the screen still resolves —
+     and so the app root does not have to pretend to be an interactive
+     element to carry the handlers. -->
+<svelte:window
+  onkeydown={onKey}
+  onpointerdown={(e) => layout.narrow && drawers.down(e)}
+  onpointermove={(e) => layout.narrow && drawers.move(e)}
+  onpointerup={(e) => drawers.up(e)}
+  onpointercancel={() => drawers.cancel()}
+/>
 
-<div class="shell" class:no-members={!core.membersOpen}>
+<div
+  class="shell"
+  class:no-members={!core.membersOpen}
+  class:narrow={layout.narrow}
+  class:dragging={drawers.dragging}
+  class:drawer-open={drawers.open}
+  style="--nav-open: {drawers.nav}; --mem-open: {drawers.members}"
+>
+  <!-- Rail and rooms are two columns on a desktop and one drawer on a phone,
+       so they need a wrapper to slide together. `display: contents` makes it
+       disappear at desktop widths, leaving the four-column grid untouched —
+       the alternative is a second copy of the navigation markup for mobile,
+       and two copies of anything diverge. -->
+  <div class="nav" bind:this={navEl} inert={layout.narrow && !drawers.nav}>
   <nav class="rail" aria-label="Spaces">
     <button
       class="home"
@@ -197,7 +262,7 @@
         class="space"
         class:active={space.id === core.currentSpaceId}
         style="--from: var(--face-{space.from}); --to: var(--face-{space.to})"
-        onclick={() => core.openRoom(space.id, space.rooms[0]!.id)}
+        onclick={() => { core.openRoom(space.id, space.rooms[0]!.id); navigated(); }}
         oncontextmenu={(e) => openSpaceMenu(e, space.id)}
         title={space.name}
       >{space.initial}</button>
@@ -214,7 +279,7 @@
             class="room dm"
             class:active={dm.id === core.currentRoomId}
             class:unread={!!dm.unread}
-            onclick={() => core.openHome(dm.id)}
+            onclick={() => { core.openHome(dm.id); navigated(); }}
             oncontextmenu={(e) => openDmMenu(e, dm.id)}
           >
             {#if dm.kind === 'group'}
@@ -267,6 +332,7 @@
               if (room.kind === 'voice' && voice.roomId !== room.id) {
                 voice.join(core.currentSpaceId, room.id);
               }
+              navigated();
             }}
             oncontextmenu={(e) => openRoomMenu(e, room.id)}
           >
@@ -323,9 +389,37 @@
       ><Icon name="chevron" size={17} /></button>
     </div>
   </aside>
+  </div>
 
-  <main class="chat">
+  {#if layout.narrow}
+    <!-- Tracks the drag rather than fading in on a timer, so the dimming is
+         part of the same gesture as the panel. Not a <button>: it is a
+         dismiss target, and the thing it dismisses is already reachable from
+         a real labelled control in the header. -->
+    <div
+      class="drawer-scrim"
+      onclick={() => drawers.close()}
+      role="presentation"
+    ></div>
+  {/if}
+
+  <!-- With a drawer fully open the conversation is behind a scrim, so it
+       should be out of the tab order too. Only at *fully* open: `inert` also
+       blocks pointer events, and an edge-swipe starts its drag on this
+       element — going inert on the first millimetre would kill the gesture
+       that is opening the drawer. -->
+  <main class="chat" inert={layout.narrow && (drawers.nav === 1 || drawers.members === 1)}>
     <header class="chat-head">
+      {#if layout.narrow}
+        <!-- The drawer is reachable by swiping from the edge, but a gesture
+             nobody can see is not an affordance. This is the visible one. -->
+        <button
+          class="icon-btn"
+          onclick={() => drawers.toggle('nav')}
+          aria-label="Spaces and rooms"
+          aria-expanded={drawers.nav === 1}
+        ><Icon name="menu" size={20} /></button>
+      {/if}
       <span class="glyph">
         {#if core.scope === 'home'}<Icon name="send" size={17} />
         {:else if core.room.kind === 'voice'}<Icon name="voice" />
@@ -353,8 +447,8 @@
       <WrenSurface onroute={route} />
       <button
         class="icon-btn"
-        aria-pressed={core.membersOpen}
-        onclick={() => (core.membersOpen = !core.membersOpen)}
+        aria-pressed={layout.narrow ? drawers.members === 1 : core.membersOpen}
+        onclick={toggleMembers}
         title="Members"
       ><Icon name="people" size={20} /></button>
     </header>
@@ -390,8 +484,11 @@
     />
   {/if}
 
-  {#if core.membersOpen}
-    <aside class="members" aria-label="Members">
+  <!-- On a phone this is always mounted, because a drawer you can drag has to
+       exist before the drag starts; `--mem-open` is what hides it. On a
+       desktop it is a real column and `membersOpen` decides. -->
+  {#if core.membersOpen || layout.narrow}
+    <aside class="members" bind:this={membersEl} aria-label="Members" inert={layout.narrow && !drawers.members}>
       <div class="cat">In this room — {core.roster.length}</div>
       {#each core.roster as face (face.id)}
         <button
@@ -610,8 +707,65 @@
     border: 1px solid var(--text-mute); color: var(--text-dim); line-height: 1.5;
   }
 
-  @media (max-width: 900px) {
-    .shell, .shell.no-members { grid-template-columns: 68px 1fr; }
-    .members { display: none; }
+  /* On a desktop this wrapper does not exist as far as layout is concerned:
+     rail and sidebar stay direct children of the four-column grid. */
+  .nav { display: contents; }
+
+  /* ── phone: one column, two drawers (docs/24) ───────────────────────────
+     `--nav-open` and `--mem-open` run 0→1 and are written by the gesture, so
+     a drag and a tap drive exactly the same property. There is no separate
+     "animating" path to get out of sync with the dragged one. */
+  @media (max-width: 899px) {
+    .shell, .shell.no-members { grid-template-columns: 100%; }
+
+    .nav, .members {
+      position: fixed; top: 0; bottom: 0; z-index: 41;
+      box-shadow: var(--shadow-panel);
+      transition: translate var(--t-base) var(--ease);
+    }
+    /* Vertical scrolling and pinch stay with the browser; horizontal comes to
+       us. Without this the compositor can start a scroll before the pointer
+       handler runs, and `preventDefault` afterwards is too late — which is the
+       difference between a drawer that tracks your thumb and one that stutters
+       for the first 100ms. Anything inside that genuinely scrolls sideways
+       opts back out where it is defined (see RichText's code blocks). */
+    .nav, .members, .chat { touch-action: pan-y pinch-zoom; }
+    /* While a finger is on it the panel must not also be running a settle
+       transition, or it lags behind the thumb instead of tracking it. */
+    .shell.dragging .nav,
+    .shell.dragging .members,
+    .shell.dragging .drawer-scrim { transition: none; }
+
+    .nav {
+      display: flex; left: 0;
+      /* Never the full width: the sliver of chat still showing is what says
+         this is a drawer over your conversation rather than a page you
+         navigated to. */
+      width: min(330px, 86vw);
+      translate: calc((var(--nav-open) - 1) * 100%) 0;
+    }
+    .nav .rail { flex: none; width: 68px; }
+    .nav .sidebar { flex: 1; min-width: 0; border-right: 0; }
+
+    .members {
+      right: 0; width: min(280px, 78vw);
+      border-left: 1px solid var(--line);
+      translate: calc((1 - var(--mem-open)) * 100%) 0;
+    }
+
+    .drawer-scrim {
+      position: fixed; inset: 0; z-index: 40; background: var(--scrim);
+      opacity: max(var(--nav-open), var(--mem-open));
+      /* Zero-width space for the pointer when both drawers are shut, so the
+         chat underneath stays fully live. */
+      pointer-events: none;
+      transition: opacity var(--t-base) var(--ease);
+    }
+    .shell.drawer-open .drawer-scrim { pointer-events: auto; }
+
+    /* The header is the only chrome left, so it carries the whole title. */
+    .chat-head { gap: 6px; padding: 10px 8px; }
+    .chat-head h1 { font-size: var(--text-base); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chat-head .glyph { display: none; }
   }
 </style>

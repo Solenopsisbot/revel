@@ -59,6 +59,10 @@
   pre {
     position: relative; margin: 6px 0; padding: 11px 13px; overflow-x: auto;
     background: var(--ground-2); border: 1px solid var(--line); border-radius: var(--r-sm);
+    /* The chat column sets `touch-action: pan-y` on a phone so the drawer
+       gesture gets horizontal drags. A code block scrolls sideways itself, so
+       it takes them back. */
+    touch-action: auto;
   }
   pre code { background: none; border: 0; padding: 0; font-size: var(--text-sm); }
   .lang {

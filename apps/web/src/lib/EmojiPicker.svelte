@@ -207,7 +207,7 @@
   </div>
 
   {#if !q}
-    <div class="tabs" role="tablist" aria-label="Emoji categories">
+    <div class="tabs" data-no-swipe role="tablist" aria-label="Emoji categories">
       {#each sections as s (s.id)}
         <button
           class="tab"
@@ -306,6 +306,9 @@
   .tabs {
     display: flex; gap: 1px; padding: 0 8px 6px; border-bottom: 1px solid var(--line);
     overflow-x: auto; scrollbar-width: none;
+    /* Scrolls sideways, so it keeps its own horizontal drags rather than
+       feeding them to the drawer gesture. */
+    touch-action: auto;
   }
   .tabs::-webkit-scrollbar { display: none; }
   .tab {
