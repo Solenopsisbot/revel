@@ -198,6 +198,26 @@ export class Session {
     return DEC.decode(this.#device.importGroup(sealed, this.#account));
   }
 
+  keyPackagesDirty(): boolean {
+    this.#alive();
+    return this.#device.keyPackagesDirty;
+  }
+
+  pendingKeyPackages(): number {
+    this.#alive();
+    return this.#device.pendingKeyPackages;
+  }
+
+  exportKeyPackages(): Uint8Array {
+    this.#alive();
+    return this.#device.exportKeyPackages(this.#account);
+  }
+
+  importKeyPackages(sealed: Uint8Array): number {
+    this.#alive();
+    return this.#device.importKeyPackages(sealed, this.#account);
+  }
+
   loadGroup(groupId: string): GroupState {
     this.#alive();
     // Replacing rather than refusing: loading a group we already hold is what

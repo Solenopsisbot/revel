@@ -498,12 +498,33 @@ That rule now belongs to `packages/core`, and it is the constraint that decides
 how sending is ordered against the store. It is written on the interface in
 `packages/crypto/src/engine.ts` where a caller will actually read it.
 
+### Pending invites, too
+
+Group state was not the only thing dying with the page. A **key package** is
+what someone else needs in order to add this device to a group, and its private
+half never leaves the device that made it. Publish one, close the tab, get added
+while away, and the Welcome that comes back cannot be opened — a member of a
+group they cannot read, which is a worse state than not having been added.
+
+`LocalKeyPackageStore` is the same mechanism as group state, with two
+differences worth naming:
+
+- **Exported whole**, not per entry. There is one per pending invite, they are a
+  few hundred bytes, and their ids are mls-rs internals that nothing outside the
+  crate can interpret — a poor thing to key a public API on.
+- **Importing replaces rather than merges.** mls-rs deletes an entry the moment
+  a join consumes it, and that deletion matters as much as the insert: merging
+  would resurrect a consumed key package, and a key package used twice costs the
+  joiner forward secrecy for the epoch they joined at.
+
+Both directions are tested — `a_pending_invite_survives_a_reload`, and its
+negative `a_reload_without_key_packages_cannot_open_the_welcome`, which asserts
+the bug rather than assuming it stays fixed.
+
+Running total for persistence: **293 → 317 kB brotli**, +8%.
+
 ### What is still missing
 
 - **The store itself.** `packages/crypto` hands out sealed blobs; nothing writes
   them to IndexedDB yet. That is `packages/core`.
-- **Key package storage.** Generate a key package, reload, then get added to a
-  group: the private half is gone and the Welcome cannot be opened. It is the
-  same mechanism as group state — a custom `KeyPackageStorage` — and it is the
-  next small piece. Until then, a pending invite does not survive a reload.
 - **Sealing under the device key**, as above.

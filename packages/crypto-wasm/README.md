@@ -32,5 +32,7 @@ both live in `docs/31` §5.
 
 ## What is not here yet
 
-Key packages are not persisted, so a pending invite does not survive a reload.
-Group state does — see `crates/revel-crypto/src/store.rs` and `docs/31` §7.
+Group state and key packages both survive a reload — see
+`crates/revel-crypto/src/store.rs` and `docs/31` §7. What does not exist is
+anything that writes the sealed blobs to a real database; that is
+`packages/core`.

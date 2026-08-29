@@ -202,6 +202,22 @@ export class WorkerCryptoEngine implements CryptoEngine {
     return this.#call('loadGroup', groupId);
   }
 
+  keyPackagesDirty(): Promise<boolean> {
+    return this.#call('keyPackagesDirty');
+  }
+
+  pendingKeyPackages(): Promise<number> {
+    return this.#call('pendingKeyPackages');
+  }
+
+  exportKeyPackages(): Promise<Uint8Array> {
+    return this.#call('exportKeyPackages');
+  }
+
+  importKeyPackages(sealed: Uint8Array): Promise<number> {
+    return this.#call('importKeyPackages', sealed);
+  }
+
   async close(): Promise<void> {
     if (this.#dead) return;
     try {

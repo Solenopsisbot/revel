@@ -21,4 +21,4 @@ pub mod store;
 pub mod wasm;
 pub use device::{CertError, DeviceCert};
 pub use identity::{DeviceCertIdentityProvider, IdentityError};
-pub use store::{LocalGroupStore, StoreError};
+pub use store::{LocalGroupStore, LocalKeyPackageStore, StoreError};

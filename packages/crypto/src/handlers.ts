@@ -41,6 +41,10 @@ const TABLE: {
   exportGroup: (s, groupId) => s.exportGroup(groupId),
   importGroup: (s, sealed) => s.importGroup(sealed),
   loadGroup: (s, groupId) => s.loadGroup(groupId),
+  keyPackagesDirty: (s) => s.keyPackagesDirty(),
+  pendingKeyPackages: (s) => s.pendingKeyPackages(),
+  exportKeyPackages: (s) => s.exportKeyPackages(),
+  importKeyPackages: (s, sealed) => s.importKeyPackages(sealed),
 };
 
 /**

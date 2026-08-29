@@ -438,3 +438,88 @@ fn restoring_behind_the_last_send_is_refused_by_the_far_side() {
         "a rewound sender's message was accepted; replay protection is not working"
     );
 }
+
+/// A pending invite has to survive a reload too.
+///
+/// Publish a key package, close the tab, get added while away. Without the
+/// private half the Welcome that comes back cannot be opened — a member of a
+/// group they cannot read, which is a worse state than not being added at all.
+#[wasm_bindgen_test]
+fn a_pending_invite_survives_a_reload() {
+    let host_account = Account::new();
+    let host = Device::new(&host_account, "host").ok().unwrap();
+    let mut group = host.create_group(b"g-invited").ok().unwrap();
+
+    // Our device publishes a key package, then everything is written down.
+    let account = Account::new();
+    let laptop = Device::new(&account, "laptop").ok().unwrap();
+    let kp = laptop.key_package().ok().unwrap();
+
+    assert!(laptop.key_packages_dirty().ok().unwrap());
+    assert_eq!(laptop.pending_key_packages().ok().unwrap(), 1);
+    let account_secret = account.secret_key();
+    let device_secret = laptop.secret_key();
+    let sealed_packages = laptop.export_key_packages(&account).ok().unwrap();
+    assert!(!laptop.key_packages_dirty().ok().unwrap());
+
+    // The tab closes.
+    drop(laptop);
+    drop(account);
+
+    // Meanwhile, someone adds us.
+    group.stage_add(&kp).ok().unwrap();
+    let out = group.commit().ok().unwrap();
+    group.apply_pending().ok().unwrap();
+
+    // And we come back.
+    let account = Account::from_secret(&account_secret).ok().unwrap();
+    let laptop = Device::restore(&account, "laptop", &device_secret).ok().unwrap();
+    assert_eq!(
+        laptop.import_key_packages(&sealed_packages, &account).ok().unwrap(),
+        1
+    );
+
+    let mut ours = laptop.join_group(&out.welcome().unwrap()).ok().unwrap();
+    assert_eq!(ours.id(), b"g-invited");
+
+    let sealed = group.encrypt(b"welcome in").ok().unwrap();
+    assert_eq!(ours.process(&sealed).ok().unwrap().data().unwrap(), b"welcome in");
+
+    // Joining consumed it, so there is nothing left outstanding — and that
+    // deletion is itself a change the store must persist.
+    assert_eq!(laptop.pending_key_packages().ok().unwrap(), 0);
+    assert!(laptop.key_packages_dirty().ok().unwrap());
+}
+
+/// Without the key packages, the same reload leaves us unable to join.
+///
+/// The negative of the test above, asserted rather than assumed — this is the
+/// bug the store exists to prevent, and it should stay visible.
+#[wasm_bindgen_test]
+fn a_reload_without_key_packages_cannot_open_the_welcome() {
+    let host_account = Account::new();
+    let host = Device::new(&host_account, "host").ok().unwrap();
+    let mut group = host.create_group(b"g-lost").ok().unwrap();
+
+    let account = Account::new();
+    let laptop = Device::new(&account, "laptop").ok().unwrap();
+    let kp = laptop.key_package().ok().unwrap();
+    let account_secret = account.secret_key();
+    let device_secret = laptop.secret_key();
+
+    drop(laptop);
+    drop(account);
+
+    group.stage_add(&kp).ok().unwrap();
+    let out = group.commit().ok().unwrap();
+    group.apply_pending().ok().unwrap();
+
+    // Same account, same device key — and still no way in, because the private
+    // half of the key package went with the tab.
+    let account = Account::from_secret(&account_secret).ok().unwrap();
+    let laptop = Device::restore(&account, "laptop", &device_secret).ok().unwrap();
+    assert!(
+        laptop.join_group(&out.welcome().unwrap()).is_err(),
+        "a Welcome opened without the key package secret it was sealed to"
+    );
+}

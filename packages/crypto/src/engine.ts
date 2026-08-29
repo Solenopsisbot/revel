@@ -248,6 +248,33 @@ export interface CryptoEngine {
   /** Re-open a group whose state was put back with `importGroup`. */
   loadGroup(groupId: string): Promise<GroupState>;
 
+  /**
+   * Whether a key package has been published or consumed since the last
+   * export.
+   *
+   * The private half of a published key package is what lets a Welcome be
+   * opened. Publish one, close the tab, get added while away, and without it
+   * the room is unreachable — a member of a group they cannot read, which is
+   * worse than not having been added.
+   */
+  keyPackagesDirty(): Promise<boolean>;
+
+  /** How many published key packages are still unused. */
+  pendingKeyPackages(): Promise<number>;
+
+  /** Seal the private halves of every unused key package. */
+  exportKeyPackages(): Promise<Uint8Array>;
+
+  /**
+   * Put them back, **replacing** whatever is loaded. Returns how many.
+   *
+   * Replacing rather than merging: the stored copy is the authority on which
+   * key packages are still unused, and merging would resurrect ones a join has
+   * already consumed. A key package used twice costs the joiner forward
+   * secrecy for the epoch they joined at.
+   */
+  importKeyPackages(sealed: Uint8Array): Promise<number>;
+
   /** End the session and release everything. The engine is unusable after. */
   close(): Promise<void>;
 }

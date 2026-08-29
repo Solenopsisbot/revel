@@ -73,8 +73,15 @@ from it is sent.** Sending advances this device's position in the secret tree,
 and the key and nonce come from that position; restore behind it and the next
 send reuses both. `docs/31` §7 has the detail and the test.
 
+Key packages persist the same way, and need to: publish one, close the tab, get
+added while away, and without its private half the Welcome cannot be opened.
+
+```ts
+if (await crypto.keyPackagesDirty()) {
+  await store.putKeyPackages(await crypto.exportKeyPackages());
+}
+```
+
 ## Not built yet
 
-- **Nothing writes the sealed blobs anywhere.** That is `packages/core`.
-- **Key packages are not persisted**, so a pending invite does not survive a
-  reload. `docs/31` §7.
+**Nothing writes the sealed blobs anywhere.** That is `packages/core`.

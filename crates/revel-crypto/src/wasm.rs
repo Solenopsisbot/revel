@@ -37,7 +37,10 @@ use core::fmt::Display;
 
 use ed25519_dalek::SigningKey;
 use mls_rs::{
-    client_builder::{BaseConfig, WithCryptoProvider, WithGroupStateStorage, WithIdentityProvider},
+    client_builder::{
+        BaseConfig, WithCryptoProvider, WithGroupStateStorage, WithIdentityProvider,
+        WithKeyPackageRepo,
+    },
     group::ReceivedMessage,
     crypto::SignatureSecretKey,
     identity::{basic::BasicCredential, SigningIdentity},
@@ -47,7 +50,11 @@ use mls_rs::{
 use mls_rs_crypto_rustcrypto::RustCryptoProvider;
 use wasm_bindgen::prelude::*;
 
-use crate::{device::DeviceCert, identity::DeviceCertIdentityProvider, store::LocalGroupStore};
+use crate::{
+    device::DeviceCert,
+    identity::DeviceCertIdentityProvider,
+    store::{LocalGroupStore, LocalKeyPackageStore},
+};
 
 /// The suite `docs/03` §1 settles on. Post-quantum is a separate build
 /// (`--features pq`) and a separate measurement; see `docs/31` §4.
@@ -60,9 +67,12 @@ const CS: CipherSuite = CipherSuite::CURVE25519_AES128;
 /// here in the order the builder applies them.
 type Config = WithGroupStateStorage<
     LocalGroupStore,
-    WithCryptoProvider<
-        RustCryptoProvider,
-        WithIdentityProvider<DeviceCertIdentityProvider, BaseConfig>,
+    WithKeyPackageRepo<
+        LocalKeyPackageStore,
+        WithCryptoProvider<
+            RustCryptoProvider,
+            WithIdentityProvider<DeviceCertIdentityProvider, BaseConfig>,
+        >,
     >,
 >;
 
@@ -155,6 +165,8 @@ pub struct Device {
     secret: Vec<u8>,
     /// Shared with the client's config — mls-rs writes here, we read here.
     store: LocalGroupStore,
+    /// Likewise, for the private halves of published key packages.
+    packages: LocalKeyPackageStore,
 }
 
 #[wasm_bindgen]
@@ -195,17 +207,20 @@ impl Device {
         let encoded = cert.encode();
         let credential = BasicCredential::new(encoded.clone()).into_credential();
         let store = LocalGroupStore::new();
+        let packages = LocalKeyPackageStore::new();
 
         Ok(Device {
             client: MlsClient::builder()
                 .identity_provider(DeviceCertIdentityProvider)
                 .crypto_provider(crypto)
+                .key_package_repo(packages.clone())
                 .group_state_storage(store.clone())
                 .signing_identity(SigningIdentity::new(credential, public), signer, CS)
                 .build(),
             cert: encoded,
             secret,
             store,
+            packages,
         })
     }
 
@@ -328,6 +343,42 @@ impl Device {
     #[wasm_bindgen(js_name = forgetGroup)]
     pub fn forget_group(&self, group_id: &[u8]) -> Result<(), JsError> {
         self.store.forget(group_id).map_err(js)
+    }
+
+    /// Whether any key package has been published or consumed since the last
+    /// export.
+    #[wasm_bindgen(getter, js_name = keyPackagesDirty)]
+    pub fn key_packages_dirty(&self) -> Result<bool, JsError> {
+        self.packages.is_dirty().map_err(js)
+    }
+
+    /// How many published key packages are still unused.
+    #[wasm_bindgen(getter, js_name = pendingKeyPackages)]
+    pub fn pending_key_packages(&self) -> Result<usize, JsError> {
+        self.packages.len().map_err(js)
+    }
+
+    /// Seal the private halves of every unused key package.
+    ///
+    /// Exported whole rather than one at a time: there is one per pending
+    /// invite, they are small, and their ids are mls-rs internals that nothing
+    /// outside this crate can interpret.
+    #[wasm_bindgen(js_name = exportKeyPackages)]
+    pub fn export_key_packages(&self, account: &Account) -> Result<Vec<u8>, JsError> {
+        self.packages.export(&account.key.to_bytes()).map_err(js)
+    }
+
+    /// Put them back, **replacing** whatever is here. Returns how many.
+    ///
+    /// Replacing rather than merging, because the stored copy is the authority
+    /// on which key packages are still unused — merging would resurrect ones a
+    /// join has already consumed, and a key package used twice costs the joiner
+    /// forward secrecy for the epoch they joined at.
+    #[wasm_bindgen(js_name = importKeyPackages)]
+    pub fn import_key_packages(&self, sealed: &[u8], account: &Account) -> Result<usize, JsError> {
+        self.packages
+            .import(sealed, &account.key.to_bytes())
+            .map_err(js)
     }
 }
 

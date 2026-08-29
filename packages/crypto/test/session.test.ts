@@ -242,6 +242,72 @@ describeIfBuilt('Session', () => {
     phone.close();
   });
 
+  it('opens a Welcome that arrived while it was closed', () => {
+    // Publish a key package, go away, get added, come back. Without the
+    // private half the Welcome cannot be opened and the room is unreachable.
+    const host = new Session({ deviceLabel: 'host' });
+    host.createGroup('g-invited');
+
+    const laptop = new Session({ deviceLabel: 'laptop' });
+    const kp = laptop.keyPackage();
+    expect(laptop.keyPackagesDirty()).toBe(true);
+    expect(laptop.pendingKeyPackages()).toBe(1);
+
+    const stored = {
+      accountSecret: laptop.exportAccountSecret(),
+      deviceSecret: laptop.exportDeviceSecret(),
+      packages: laptop.exportKeyPackages(),
+    };
+    expect(laptop.keyPackagesDirty()).toBe(false);
+    laptop.close();
+
+    // Added while away.
+    host.stageAdd('g-invited', kp);
+    const out = host.commit('g-invited');
+    host.applyPending('g-invited');
+
+    const back = new Session({
+      accountSecret: stored.accountSecret,
+      deviceSecret: stored.deviceSecret,
+      deviceLabel: 'laptop',
+    });
+    expect(back.importKeyPackages(stored.packages)).toBe(1);
+    expect(back.joinGroup(out.welcome as Uint8Array).groupId).toBe('g-invited');
+
+    const got = back.process('g-invited', host.encrypt('g-invited', HELLO));
+    expect(got.kind).toBe('application');
+
+    // The join consumed it, which is itself a change worth persisting.
+    expect(back.pendingKeyPackages()).toBe(0);
+    expect(back.keyPackagesDirty()).toBe(true);
+
+    back.close();
+    host.close();
+  });
+
+  it('cannot open that Welcome without the key packages', () => {
+    // The negative, asserted rather than assumed: this is the bug the key
+    // package store exists to prevent, and it should stay visible.
+    const host = new Session({ deviceLabel: 'host' });
+    host.createGroup('g-lost');
+
+    const laptop = new Session({ deviceLabel: 'laptop' });
+    const kp = laptop.keyPackage();
+    const accountSecret = laptop.exportAccountSecret();
+    const deviceSecret = laptop.exportDeviceSecret();
+    laptop.close();
+
+    host.stageAdd('g-lost', kp);
+    const out = host.commit('g-lost');
+    host.applyPending('g-lost');
+
+    const back = new Session({ accountSecret, deviceSecret, deviceLabel: 'laptop' });
+    expect(() => back.joinGroup(out.welcome as Uint8Array)).toThrow();
+
+    back.close();
+    host.close();
+  });
+
   it('keeps stored state through forget and drops it on discard', () => {
     const alice = new Session({ deviceLabel: 'laptop' });
     alice.createGroup('g-keep');

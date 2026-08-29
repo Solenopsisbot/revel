@@ -46,6 +46,8 @@ use aes_gcm::{AeadCore, Aes256Gcm, Key, Nonce};
 use hkdf::Hkdf;
 use mls_rs_core::error::IntoAnyError;
 use mls_rs_core::group::{EpochRecord, GroupState, GroupStateStorage};
+use mls_rs_core::key_package::{KeyPackageData, KeyPackageStorage};
+use mls_rs_core::mls_rs_codec::{MlsDecode, MlsEncode};
 use sha2::Sha256;
 use zeroize::Zeroizing;
 
@@ -57,6 +59,11 @@ const STATE_KEY_INFO: &[u8] = b"revel/group-state/v1";
 /// Magic and version on every sealed blob, so a stored group from a future
 /// build is refused rather than misparsed.
 const SEAL_MAGIC: &[u8; 8] = b"REVELGS\x01";
+
+/// The same, for the key package store. A different magic so that handing one
+/// kind of blob to the other's importer fails immediately instead of
+/// half-parsing into nonsense.
+const KP_MAGIC: &[u8; 8] = b"REVELKP\x01";
 
 /// How many prior epochs to keep, matching mls-rs's own default.
 ///
@@ -344,6 +351,128 @@ fn open(sealed: &[u8], account_secret: &[u8]) -> Result<Zeroizing<Vec<u8>>, Stor
         .map_err(|_| StoreError::NotOurs)
 }
 
+// ---------------------------------------------------------------------------
+// Key packages
+// ---------------------------------------------------------------------------
+
+/// Where mls-rs keeps the private half of a key package until it is used.
+///
+/// This is small but not optional. A key package is what someone else needs in
+/// order to add this device to a group, and the private half never leaves the
+/// device that made it. Publish one, close the tab, and get added while away:
+/// without this the Welcome that comes back cannot be opened, and the room is
+/// unreachable — a member of a group they cannot read.
+///
+/// mls-rs deletes an entry the moment a join consumes it, and **that deletion
+/// matters as much as the insert**. A key package is single use; resurrecting a
+/// consumed one from stale storage would let it be used twice, which costs the
+/// joiner forward secrecy for the epoch they joined at.
+///
+/// Exported whole rather than per entry. There is one of these per pending
+/// invite, they are a few hundred bytes each, and an id nobody outside mls-rs
+/// can interpret is a poor thing to key a public API on.
+#[derive(Debug, Clone, Default)]
+pub struct LocalKeyPackageStore {
+    /// Ordered so the exported bytes are deterministic for a given content.
+    packages: Arc<Mutex<BTreeMap<Vec<u8>, Vec<u8>>>>,
+    dirty: Arc<Mutex<bool>>,
+}
+
+impl LocalKeyPackageStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Whether anything has been inserted or deleted since the last export.
+    pub fn is_dirty(&self) -> Result<bool, StoreError> {
+        Ok(*self.dirty.lock()?)
+    }
+
+    /// How many key packages are outstanding — i.e. published and not yet used.
+    pub fn len(&self) -> Result<usize, StoreError> {
+        Ok(self.packages.lock()?.len())
+    }
+
+    pub fn is_empty(&self) -> Result<bool, StoreError> {
+        Ok(self.packages.lock()?.is_empty())
+    }
+
+    /// Seal the whole store, and clear the dirty flag.
+    pub fn export(&self, account_secret: &[u8]) -> Result<Vec<u8>, StoreError> {
+        let plain = encode_map(KP_MAGIC, &*self.packages.lock()?);
+        let sealed = seal(&plain, account_secret)?;
+        *self.dirty.lock()? = false;
+        Ok(sealed)
+    }
+
+    /// Put the whole store back, **replacing** what is here.
+    ///
+    /// Replacing rather than merging: the stored copy is the authority on which
+    /// key packages are still unused, and merging would bring deleted ones back
+    /// from the dead.
+    pub fn import(&self, sealed: &[u8], account_secret: &[u8]) -> Result<usize, StoreError> {
+        let plain = open(sealed, account_secret)?;
+        let map = decode_map(KP_MAGIC, &plain)?;
+        let n = map.len();
+        *self.packages.lock()? = map;
+        Ok(n)
+    }
+}
+
+impl KeyPackageStorage for LocalKeyPackageStore {
+    type Error = StoreError;
+
+    fn delete(&mut self, id: &[u8]) -> Result<(), Self::Error> {
+        self.packages.lock()?.remove(id);
+        *self.dirty.lock()? = true;
+        Ok(())
+    }
+
+    fn insert(&mut self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error> {
+        let encoded = pkg.mls_encode_to_vec().map_err(|_| StoreError::Malformed)?;
+        self.packages.lock()?.insert(id, encoded);
+        *self.dirty.lock()? = true;
+        Ok(())
+    }
+
+    fn get(&self, id: &[u8]) -> Result<Option<KeyPackageData>, Self::Error> {
+        self.packages
+            .lock()?
+            .get(id)
+            .map(|bytes| KeyPackageData::mls_decode(&mut &bytes[..]).map_err(|_| StoreError::Malformed))
+            .transpose()
+    }
+}
+
+/// `magic | u32 count | (u32 klen, k, u32 vlen, v)*`
+fn encode_map(magic: &[u8; 8], map: &BTreeMap<Vec<u8>, Vec<u8>>) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(magic);
+    out.extend_from_slice(&(map.len() as u32).to_be_bytes());
+    for (k, v) in map {
+        out.extend_from_slice(&(k.len() as u32).to_be_bytes());
+        out.extend_from_slice(k);
+        out.extend_from_slice(&(v.len() as u32).to_be_bytes());
+        out.extend_from_slice(v);
+    }
+    out
+}
+
+fn decode_map(magic: &[u8; 8], bytes: &[u8]) -> Result<BTreeMap<Vec<u8>, Vec<u8>>, StoreError> {
+    let mut r = Reader { bytes, at: 0 };
+    if r.take(magic.len())? != magic {
+        return Err(StoreError::WrongVersion);
+    }
+    let count = r.u32()? as usize;
+    let mut map = BTreeMap::new();
+    for _ in 0..count {
+        let k = r.length_prefixed()?.to_vec();
+        let v = r.length_prefixed()?.to_vec();
+        map.insert(k, v);
+    }
+    Ok(map)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,6 +613,68 @@ mod tests {
         // The id length prefix sits right after the magic.
         plain[8..12].copy_from_slice(&u32::MAX.to_be_bytes());
         assert!(matches!(decode(&plain), Err(StoreError::Malformed)));
+    }
+
+    #[test]
+    fn key_packages_round_trip_and_track_dirtiness() {
+        let secret = [9u8; 32];
+        let mut store = LocalKeyPackageStore::new();
+        assert!(!store.is_dirty().unwrap());
+
+        // KeyPackageData is opaque here, so drive the map directly — the codec
+        // is mls-rs's and has its own tests.
+        store
+            .packages
+            .lock()
+            .unwrap()
+            .insert(b"kp-1".to_vec(), b"encoded".to_vec());
+        *store.dirty.lock().unwrap() = true;
+
+        let sealed = store.export(&secret).unwrap();
+        assert!(!store.is_dirty().unwrap());
+
+        let other = LocalKeyPackageStore::new();
+        assert_eq!(other.import(&sealed, &secret).unwrap(), 1);
+        assert_eq!(other.len().unwrap(), 1);
+
+        // Deleting is a change too — a consumed key package that comes back
+        // from stale storage could be used twice.
+        store.delete(b"kp-1").unwrap();
+        assert!(store.is_dirty().unwrap());
+        assert!(store.is_empty().unwrap());
+    }
+
+    #[test]
+    fn importing_replaces_rather_than_merges() {
+        let secret = [9u8; 32];
+        let empty = LocalKeyPackageStore::new().export(&secret).unwrap();
+
+        let store = LocalKeyPackageStore::new();
+        store
+            .packages
+            .lock()
+            .unwrap()
+            .insert(b"kp-1".to_vec(), b"encoded".to_vec());
+
+        assert_eq!(store.import(&empty, &secret).unwrap(), 0);
+        assert!(
+            store.is_empty().unwrap(),
+            "a deleted key package came back from the dead"
+        );
+    }
+
+    #[test]
+    fn the_two_stores_do_not_accept_each_others_blobs() {
+        let secret = [9u8; 32];
+        let groups = LocalGroupStore::new();
+        groups.groups.lock().unwrap().insert(b"g-1".to_vec(), data(b"state"));
+        let group_blob = groups.export(b"g-1", &secret).unwrap();
+
+        let packages = LocalKeyPackageStore::new();
+        assert!(matches!(
+            packages.import(&group_blob, &secret),
+            Err(StoreError::WrongVersion)
+        ));
     }
 
     #[test]
