@@ -125,7 +125,11 @@ export function canGrant(actor: bigint, wanted: bigint, isOwner = false): boolea
 }
 
 /** You cannot act on a role at or above your own highest. */
-export function canActOnRole(actorHighest: number, targetPosition: number, isOwner = false): boolean {
+export function canActOnRole(
+  actorHighest: number,
+  targetPosition: number,
+  isOwner = false,
+): boolean {
   if (isOwner) return true;
   return actorHighest > targetPosition;
 }

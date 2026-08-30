@@ -11,6 +11,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { mountGroups, nudgeCommitter } from './groups.js';
 import type { Hub } from './hub.js';
 import { canPurge, canRead, canSend } from './policy.js';
+import { mountRooms } from './rooms.js';
 import type { Store } from './store/types.js';
 
 export interface AppDeps {
@@ -124,6 +125,8 @@ export function createApp(deps: AppDeps) {
     });
     return c.body(null, 204);
   });
+
+  mountRooms(app, { store: deps.store, ids: deps.ids, authenticate: deps.authenticate });
 
   mountGroups(app, {
     store: deps.store,

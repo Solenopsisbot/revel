@@ -298,6 +298,7 @@ function pairedToServer() {
   for (const id of [ROOM1, ROOM2, PRIVATE]) {
     store.rooms.set(id, {
       id,
+      kind: 'space',
       spaceId: 'space1',
       groupId: null,
       streamPaging: false,

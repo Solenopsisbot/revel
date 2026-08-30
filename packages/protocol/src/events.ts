@@ -43,10 +43,7 @@ export const BlobRef = z.object({
 
 /** Rendered as a node tree, never as raw HTML. */
 export const RichText: z.ZodType<unknown> = z.lazy(() =>
-  z.union([
-    z.string(),
-    z.array(z.union([z.string(), z.object({ t: z.string() }).passthrough()])),
-  ]),
+  z.union([z.string(), z.array(z.union([z.string(), z.object({ t: z.string() }).passthrough()]))]),
 );
 
 const base = { v: z.literal(1) };
@@ -79,9 +76,20 @@ export const EncryptedEvent = z.discriminatedUnion('type', [
   }),
   evt({ ...base, type: z.literal('m.edit'), target: Id, body: RichText }),
   evt({ ...base, type: z.literal('m.redact'), target: Id, reason: z.string().max(500).optional() }),
-  evt({ ...base, type: z.literal('m.reaction'), target: Id, key: z.string().max(64), remove: z.boolean().optional() }),
+  evt({
+    ...base,
+    type: z.literal('m.reaction'),
+    target: Id,
+    key: z.string().max(64),
+    remove: z.boolean().optional(),
+  }),
   evt({ ...base, type: z.literal('m.receipt'), upTo: Id }),
-  evt({ ...base, type: z.literal('m.typing'), face: FaceRef.optional(), stop: z.boolean().optional() }),
+  evt({
+    ...base,
+    type: z.literal('m.typing'),
+    face: FaceRef.optional(),
+    stop: z.boolean().optional(),
+  }),
   evt({ ...base, type: z.literal('m.pin'), target: Id, unpin: z.boolean().optional() }),
   /**
    * One per (target, author, kind). Translations, transcripts, notes — the
@@ -95,7 +103,12 @@ export const EncryptedEvent = z.discriminatedUnion('type', [
     kind: z.string().max(64),
     body: RichText,
   }),
-  evt({ ...base, type: z.literal('room.name'), name: z.string().max(200), topic: z.string().max(2000).optional() }),
+  evt({
+    ...base,
+    type: z.literal('room.name'),
+    name: z.string().max(200),
+    topic: z.string().max(2000).optional(),
+  }),
   /** This account's faces as present in this room — so the server never learns
    *  a plural system's roster (`docs/11`). */
   evt({ ...base, type: z.literal('room.faces'), faces: z.array(FaceRef).max(64) }),

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import type { Event } from '@revel/protocol';
-import { Hub, type Connection } from '../src/hub.js';
+import { describe, expect, it } from 'vitest';
+import { type Connection, Hub } from '../src/hub.js';
 
 const conn = (pub: string, account: string, sink: unknown[]): Connection => ({
   devicePub: pub,

@@ -675,3 +675,64 @@ and the test asserted the field name it had watched the route produce.
 It only became visible when a client first had to *use* the value, to fetch the
 tree for that group. The route now maps to the protocol shape explicitly and the
 test validates against the schema instead of a remembered name.
+
+---
+
+## 10. Rooms, and the line the server cannot cross
+
+Until this, `apps/server` could carry a conversation perfectly well and there
+was no way to *start* one: every room in every test was poked straight into the
+store, and a client that reloaded had no way to discover what it was a member of
+except its own local copy — which is exactly the thing a reload is allowed to
+lose. `docs/04` §5's `/rooms` is now real for the phase 2 set: DMs and group DMs,
+`docs/03` §4's "rooms with no space and an explicit-list audience".
+
+Spaces are deliberately not here. `docs/06` puts them in phase 3 with roles,
+overrides, invites and bans, and half a space is worse than none — a room with a
+`space_id` pointing at nothing resolves its permissions against roles that do
+not exist.
+
+### The derived DM id, and why it needs a collision check
+
+`docs/03` §4 wants the 1:1 DM id derived from the sorted account pair, so that
+opening is idempotent and a client can name the room before it exists. Sixty-
+three bits of SHA-256, formatted as a snowflake — no timestamp, and none needed:
+`docs/04` §6 requires time-sortable ids for *events*, because a room's total
+order depends on it. A room id only has to be unique.
+
+Two details that are easy to get wrong and expensive to fix later:
+
+- **Length-prefixed, not delimited.** With a plain separator, `("ab", "c")` and
+  `("a", "bc")` hash the same bytes, and two unrelated pairs share a room.
+- **The server checks the members before handing the room over.** An accidental
+  collision at 63 bits is not a real concern; a *deliberate* one would be a way
+  to squat somebody's DM. Refusing turns the worst case from two pairs sharing a
+  room into an error somebody can report.
+
+### Membership is delivery, not access
+
+The clearest statement of the architecture the whole design rests on, and it now
+has a test on both sides:
+
+> `POST /rooms/:id/members` puts somebody in a room. They can see it exists.
+> They cannot read a word in it until a **member's client** commits them into
+> the MLS group.
+
+The server can hand out membership and cannot hand out keys. The same asymmetry
+runs the other way: leaving a room stops delivery and does not take back what a
+device already holds, which is why a kick that has to bite is a Remove commit
+first and a membership row second.
+
+### Left undone on purpose
+
+**Removing somebody else from a group DM.** It needs a notion of who owns one,
+and `docs/04` §1's `rooms` table has no owner column — the only owner in the
+schema belongs to a space. Inventing one here would be inventing the spec, so a
+group DM that has gone wrong is currently left rather than cleaned up. Worth
+deciding before group DMs are something people use.
+
+**Account discovery.** You can open a DM with an account id and there is no way
+to find one from a handle, because there is no `accounts` table yet —
+registration is phase 1. "Does this account exist" currently means "has a device
+ever been enrolled for it", which is enough to refuse a typo and not enough to
+be a directory.

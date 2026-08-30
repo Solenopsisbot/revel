@@ -102,6 +102,7 @@ describe('opening a group', () => {
 
     h.store.rooms.set('room2', {
       id: 'room2',
+      kind: 'space',
       spaceId: 'space1',
       groupId: group,
       streamPaging: false,
@@ -616,6 +617,7 @@ describe('welcomes', () => {
     // A second room, a second group, the same person invited to both.
     h.store.rooms.set('room2', {
       id: 'room2',
+      kind: 'space',
       spaceId: 'space1',
       groupId: null,
       streamPaging: false,

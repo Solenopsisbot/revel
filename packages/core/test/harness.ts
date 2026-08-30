@@ -128,11 +128,28 @@ export class World {
     return new World();
   }
 
+  /**
+   * Start a DM the way a person does: through the server, no store poking.
+   *
+   * `room()` below is the shortcut for scenarios that are about something else
+   * — it invents a space room and puts everyone in it. This is the real path,
+   * and the difference matters for any scenario about *starting* a
+   * conversation rather than having one.
+   */
+  async dm(from: Client, to: Client): Promise<string> {
+    return (await from.transport.createDm(to.account)).id;
+  }
+
+  async groupRoom(from: Client, others: Client[]): Promise<string> {
+    return (await from.transport.createGroupRoom(others.map((o) => o.account))).id;
+  }
+
   /** A room in the shared space, with everyone who has joined so far in it. */
   room(): string {
     const id = String(++this.#rooms);
     this.store.rooms.set(id, {
       id,
+      kind: 'space',
       spaceId: SPACE,
       groupId: null,
       streamPaging: false,
@@ -278,6 +295,7 @@ export class Client {
 
   rooms!: RoomSync;
   groups!: GroupSync;
+  transport!: HttpTransport;
   groupTransport!: HttpGroupTransport;
   ws!: WebSocketStream;
 
@@ -317,6 +335,7 @@ export class Client {
     const fetch = world.fetchAs(client.device);
     const transport = new HttpTransport({ baseUrl: 'http://host', fetch });
     const groupTransport = new HttpGroupTransport({ baseUrl: 'http://host', fetch });
+    client.transport = transport;
     client.groupTransport = groupTransport;
 
     client.ws = new WebSocketStream({
@@ -459,6 +478,30 @@ export class Client {
   }
 
   // -- groups ---------------------------------------------------------------
+
+  /** Every room the server says this account is in. */
+  async knownRooms() {
+    return this.transport.listRooms();
+  }
+
+  /**
+   * The cold-start path: ask what rooms exist, bind the ones that have a group,
+   * open one for the rest.
+   *
+   * A `RoomInfo` carries the group id, which is the only way a client that has
+   * lost its local state learns which MLS group opens which conversation.
+   */
+  async discover(): Promise<string[]> {
+    const found: string[] = [];
+    for (const room of await this.knownRooms()) {
+      found.push(room.id);
+      if (this.bound.has(room.id)) continue;
+      if (!room.group) continue;
+      this.bound.add(room.id);
+      await this.bind(room.id, room.group);
+    }
+    return found;
+  }
 
   /** Open a group for a room and bind it. Returns the group id. */
   async open(roomId: string): Promise<string> {

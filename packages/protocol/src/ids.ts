@@ -117,3 +117,42 @@ export const DevicePub = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'not a devic
 
 /** A snowflake, for schemas. `isSnowflake` is the runtime check. */
 export const Snowflake = z.string().regex(/^\d{1,20}$/, 'not a snowflake');
+
+/**
+ * The room id for a 1:1 DM between two accounts.
+ *
+ * `docs/03` §4: "The 1:1 DM id is deterministic from the sorted account pair so
+ * opening is idempotent (Kith's trick)." Sorted, so both ends compute the same
+ * one; derived, so a client can name the room before it exists — which is what
+ * makes a DM deep link work and what stops two people who open each other at
+ * the same moment creating two rooms.
+ *
+ * Sixty-three bits of SHA-256, formatted as a snowflake. It carries no
+ * timestamp, and does not need to: `docs/04` §6 requires time-sortable ids for
+ * *events*, because a room's total order depends on it. A room id only has to
+ * be unique.
+ *
+ * **Collisions are the server's problem, not this function's.** Sixty-three
+ * bits is far past the point of accident, but a deliberate collision would be a
+ * way to squat somebody's DM. The server therefore checks that a room at this
+ * id has the members it should, and refuses rather than merging — which turns
+ * the worst case from a confidentiality bug into a visible error.
+ *
+ * Async because the hash is: `crypto.subtle` is the one implementation present
+ * in every browser and in Node without a dependency, and computing a DM id is
+ * nowhere near a hot path.
+ */
+export async function dmRoomId(a: string, b: string): Promise<string> {
+  const [lo, hi] = a < b ? [a, b] : [b, a];
+  // Domain-separated, so this hash can never be confused with another use of
+  // the same two account ids, and length-prefixed rather than delimited so no
+  // pair of accounts can be spelled two ways.
+  const input = new TextEncoder().encode(`revel/dm/v1\n${lo.length}:${lo}\n${hi.length}:${hi}`);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', input));
+
+  let value = 0n;
+  for (let i = 0; i < 8; i++) value = (value << 8n) | BigInt(digest[i] as number);
+  // Top bit cleared: a snowflake is a signed 64-bit value everywhere it is
+  // stored, and a database that reads this back as negative is a bad afternoon.
+  return String(value & 0x7fff_ffff_ffff_ffffn);
+}

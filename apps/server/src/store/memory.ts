@@ -42,6 +42,44 @@ export class MemoryStore implements Store {
   async getRoom(id: string) {
     return this.rooms.get(id) ?? null;
   }
+
+  async createRoom(room: Room, members: string[]) {
+    const existing = this.rooms.get(room.id);
+    if (existing) return { room: existing, created: false };
+
+    this.rooms.set(room.id, room);
+    for (const accountId of members) await this.addMember(room.id, accountId);
+    return { room, created: true };
+  }
+
+  async listAccountRooms(accountId: string) {
+    const out: Room[] = [];
+    for (const membership of this.memberships.values()) {
+      if (membership.accountId !== accountId) continue;
+      const room = this.rooms.get(membership.roomId);
+      if (room) out.push(room);
+    }
+    return out;
+  }
+
+  async listRoomMembers(roomId: string) {
+    return [...this.memberships.values()].filter((m) => m.roomId === roomId);
+  }
+
+  async addMember(roomId: string, accountId: string, roleIds: string[] = []) {
+    this.memberships.set(`${roomId}:${accountId}`, { roomId, accountId, roleIds });
+  }
+
+  async removeMember(roomId: string, accountId: string) {
+    this.memberships.delete(`${roomId}:${accountId}`);
+  }
+
+  async accountExists(accountId: string) {
+    for (const device of this.devices.values()) {
+      if (device.accountId === accountId && !device.revokedAt) return true;
+    }
+    return false;
+  }
   async getMembership(roomId: string, accountId: string) {
     return this.memberships.get(`${roomId}:${accountId}`) ?? null;
   }

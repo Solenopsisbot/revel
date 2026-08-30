@@ -1,6 +1,6 @@
+import { everything, Permission, serialize } from '@revel/protocol';
 import { describe, expect, it } from 'vitest';
-import { Permission, everything, serialize } from '@revel/protocol';
-import { body, harness, EVERYONE } from './helpers.js';
+import { body, EVERYONE, harness } from './helpers.js';
 
 describe('sending an event', () => {
   it('stores it and returns it with a server-assigned id', async () => {
@@ -131,7 +131,10 @@ describe('metadata hints the room did not opt into', () => {
 
   it('allows it with MENTION_EVERYONE', async () => {
     const h = harness({ notifyHints: true });
-    const shouty = h.role('role-shouty', Permission.VIEW | Permission.SEND | Permission.MENTION_EVERYONE);
+    const shouty = h.role(
+      'role-shouty',
+      Permission.VIEW | Permission.SEND | Permission.MENTION_EVERYONE,
+    );
     h.join('alice', 'dev-a', [shouty]);
     const many = Array.from({ length: 40 }, (_, i) => String(i + 1));
     expect((await h.send('dev-a', body({ notify: many }))).status).toBe(201);

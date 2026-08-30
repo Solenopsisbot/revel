@@ -19,6 +19,7 @@ export function harness(opts: { streamPaging?: boolean; notifyHints?: boolean } 
 
   store.rooms.set('room1', {
     id: 'room1',
+    kind: 'space',
     spaceId: 'space1',
     groupId: null,
     streamPaging: opts.streamPaging ?? false,

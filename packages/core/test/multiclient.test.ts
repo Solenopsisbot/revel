@@ -129,6 +129,114 @@ scenarios('a conversation', () => {
 
 // ---------------------------------------------------------------------------
 
+scenarios('starting from nothing', () => {
+  it('two people who have never spoken end up in a DM', async () => {
+    // The whole cold path, through the real routes: no room poked into the
+    // store, no group handed over, nothing but two accounts that know each
+    // other's id.
+    const world = await World.create();
+    const alice = await world.join('alice');
+    const bob = await world.join('bob');
+    await bob.replenish();
+
+    const room = await world.dm(alice, bob);
+    const group = await alice.open(room);
+    await alice.invite(group, [bob.account]);
+    await world.settle();
+
+    await bob.discover();
+    await bob.sync();
+    await alice.say(room, 'hello, stranger');
+    await world.settle();
+
+    expect(bob.texts(room)).toEqual(['hello, stranger']);
+    await world.close();
+  });
+
+  it('gives both of them the same room, opened at the same moment', async () => {
+    // The id is derived from the sorted pair (`docs/03` §4), so simultaneous
+    // opens converge instead of racing to make two rooms nobody can reconcile.
+    const world = await World.create();
+    const alice = await world.join('alice');
+    const bob = await world.join('bob');
+
+    const [a, b] = await Promise.all([world.dm(alice, bob), world.dm(bob, alice)]);
+    expect(a).toBe(b);
+    await world.close();
+  });
+
+  it('tells a client which group opens which room', async () => {
+    // The directory's job, and the reason `RoomInfo` carries `group` at all. A
+    // Welcome names a group; the room list is the only thing that says which
+    // conversation that group is for. Without it a client can join a group and
+    // still not know what it has joined.
+    const world = await World.create();
+    const alice = await world.join('alice');
+    const bob = await world.join('bob');
+    await bob.replenish();
+
+    const room = await world.dm(alice, bob);
+    const group = await alice.open(room);
+    await alice.invite(group, [bob.account]);
+    await world.settle();
+    await bob.discover();
+    await bob.sync();
+
+    await alice.say(room, 'said before the wipe');
+    await world.settle();
+    expect(bob.texts(room)).toEqual(['said before the wipe']);
+
+    const info = (await bob.knownRooms())[0];
+    expect(info?.id).toBe(room);
+    expect(info?.group).toBe(group);
+    expect(info?.kind).toBe('dm');
+    expect(info?.members.sort()).toEqual([alice.account, bob.account].sort());
+    await world.close();
+  });
+
+  it('adds somebody to a group DM without giving them the keys', async () => {
+    // The architecture in one scenario. The server can hand out membership; it
+    // cannot hand out keys. Carol can see the room and read nothing until a
+    // member commits her in.
+    const world = await World.create();
+    const alice = await world.join('alice');
+    const bob = await world.join('bob');
+    const carol = await world.join('carol');
+    await bob.replenish();
+    await carol.replenish();
+
+    const room = await world.groupRoom(alice, [bob]);
+    const group = await alice.open(room);
+    await alice.invite(group, [bob.account]);
+    await world.settle();
+    await bob.discover();
+    await bob.sync();
+
+    await alice.say(room, 'before carol');
+    await world.settle();
+
+    await alice.transport.addMembers(room, [carol.account]);
+    await carol.discover();
+    await world.settle();
+
+    // In the room, no keys.
+    expect((await carol.knownRooms()).map((r) => r.id)).toEqual([room]);
+    expect(carol.texts(room)).toEqual([]);
+
+    // Now the commit that actually lets her in.
+    await alice.invite(group, [carol.account]);
+    await world.settle();
+    await carol.sync();
+    await alice.say(room, 'after carol');
+    await world.settle();
+
+    expect(carol.texts(room)).toEqual(['after carol']);
+    await world.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 scenarios('Welcome lag', () => {
   it('delivers a Welcome to a device that was offline when it was invited', async () => {
     // `docs/03` §5: "the Host stores the Welcome for each added leaf and serves

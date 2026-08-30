@@ -14,10 +14,17 @@ import type {
   HandshakeRecord,
   KeyPackageSupply,
   KeyPackageUpload,
+  RoomKind,
 } from '@revel/protocol';
 
 export interface Room {
   id: string;
+  /**
+   * `docs/04` §1's `rooms.kind`. Decides what may be done to the membership: a
+   * 1:1 DM's id is derived from exactly two accounts, so it can never gain a
+   * third without the id describing something untrue.
+   */
+  kind: RoomKind;
   spaceId: string | null;
   /**
    * The MLS group whose keys open this room's events, or null before one
@@ -62,6 +69,32 @@ export interface Device {
 
 export interface Store {
   getRoom(id: string): Promise<Room | null>;
+
+  /**
+   * Create a room, or return the one already at that id.
+   *
+   * Idempotent because a 1:1 DM's id is derived from its two accounts
+   * (`dmRoomId`), so two people opening each other at the same moment must end
+   * up in one room rather than racing to create two. `created` is how the route
+   * tells 201 from 200.
+   */
+  createRoom(room: Room, members: string[]): Promise<{ room: Room; created: boolean }>;
+
+  /** Every room this account is a member of. What a cold client asks for first. */
+  listAccountRooms(accountId: string): Promise<Room[]>;
+  listRoomMembers(roomId: string): Promise<Membership[]>;
+  addMember(roomId: string, accountId: string, roleIds?: string[]): Promise<void>;
+  removeMember(roomId: string, accountId: string): Promise<void>;
+
+  /**
+   * Whether the server has ever seen this account.
+   *
+   * There is no `accounts` table yet — registration is phase 1 (`docs/06`) —
+   * so an account exists exactly when a device has been enrolled for it. Good
+   * enough for the one thing this is for: refusing to open a DM with a string
+   * somebody typed wrong, rather than creating a room nobody can ever be in.
+   */
+  accountExists(accountId: string): Promise<boolean>;
   getMembership(roomId: string, accountId: string): Promise<Membership | null>;
   getRoles(spaceId: string, roleIds: string[]): Promise<Role[]>;
   getOverrides(roomId: string): Promise<Override[]>;

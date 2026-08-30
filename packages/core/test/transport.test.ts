@@ -142,7 +142,9 @@ function host() {
 
   store.rooms.set('room1', {
     id: 'room1',
+    kind: 'space',
     spaceId: 'space1',
+    groupId: null,
     streamPaging: false,
     notifyHints: false,
   });
@@ -185,6 +187,70 @@ function host() {
 }
 
 const payload = (text: string) => encodePayload(new TextEncoder().encode(text));
+
+describe('the directory, against the real server', () => {
+  /** Real account ids: base64url of a public key, never a snowflake. */
+  const A = 'k7Yb3QzL0pW9xNvR2sTgHfMdEcJaUiOb1nKlPqRsTuV';
+  const B = 'Qa2Wd4Rf6Tg8Yh0Uj1Ik3Ol5Pz7Xc9Vb2Nm4As6Dfg';
+
+  function pair() {
+    const h = host();
+    h.store.devices.set('dev-1', { pub: 'dev-1', accountId: A, revokedAt: null });
+    h.store.devices.set('dev-2', { pub: 'dev-2', accountId: B, revokedAt: null });
+    return { ...h, one: h.transportAs('dev-1'), two: h.transportAs('dev-2') };
+  }
+
+  it('opens a DM and finds it in the list', async () => {
+    const h = pair();
+    const room = await h.one.createDm(B);
+    expect(room.kind).toBe('dm');
+    expect(await h.one.listRooms()).toEqual([room]);
+  });
+
+  it('converges when both sides open at once', async () => {
+    const h = pair();
+    const [a, b] = await Promise.all([h.one.createDm(B), h.two.createDm(A)]);
+    expect(a.id).toBe(b.id);
+  });
+
+  it('opens a group DM and adds to it', async () => {
+    const h = pair();
+    const room = await h.one.createGroupRoom([B]);
+    expect(room.members.sort()).toEqual([A, B].sort());
+
+    h.store.devices.set('dev-3', {
+      pub: 'dev-3',
+      accountId: 'Zx1Cv3Bn5Mq7Wr9Ty0Ui2Op4As6Df8Gh1Jk3Ll5Zzz',
+      revokedAt: null,
+    });
+    const after = await h.one.addMembers(room.id, ['Zx1Cv3Bn5Mq7Wr9Ty0Ui2Op4As6Df8Gh1Jk3Ll5Zzz']);
+    expect(after.members).toHaveLength(3);
+  });
+
+  it('leaves a group DM', async () => {
+    const h = pair();
+    const room = await h.one.createGroupRoom([B]);
+    await h.two.leaveRoom(room.id);
+    expect(await h.two.listRooms()).toEqual([]);
+  });
+
+  it('turns a refusal into a TransportError with the server‘s reason', async () => {
+    const h = pair();
+    const failed = (await h.one
+      .createDm('NotAnAccountTheServerHasEverHeardOf12345678')
+      .catch((e: unknown) => e)) as TransportError;
+    expect(failed).toBeInstanceOf(TransportError);
+    expect(failed.reason).toBe('no_such_account');
+    expect(failed.retryable).toBe(false);
+  });
+
+  it('gets one room by id, and is refused one it is not in', async () => {
+    const h = pair();
+    const room = await h.one.createDm(B);
+    expect((await h.one.getRoom(room.id)).id).toBe(room.id);
+    await expect(h.transportAs(STRANGER).getRoom(room.id)).rejects.toThrow(/not_a_member/);
+  });
+});
 
 let nonces = 0;
 const nonce = () => `nonce-${++nonces}-abcdefgh`;

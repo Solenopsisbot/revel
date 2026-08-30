@@ -11,7 +11,7 @@
  * Neither of them knows what an event *means*. They move opaque payloads, which
  * is the same thing the server does, for the same reason.
  */
-import type { Event, EventInput } from '@revel/protocol';
+import type { Event, EventInput, RoomInfo } from '@revel/protocol';
 
 export interface FetchOptions {
   /** Page backwards: only events older than this id. */
@@ -37,6 +37,37 @@ export interface Transport {
   fetchEvents(roomId: string, options?: FetchOptions): Promise<Event[]>;
   /** Append an event. */
   send(roomId: string, input: EventInput): Promise<SendResult>;
+
+  // -- the directory ---------------------------------------------------------
+  //
+  // Which rooms exist and who is in them. Separate from the reducer's idea of a
+  // room in every way that matters: a `RoomInfo` has no messages, no name and
+  // no faces, because the server has never seen any of those. What it has is
+  // what policy is enforced on.
+
+  /**
+   * Every room this account is in.
+   *
+   * What a client asks for when it has nothing, or when it comes back and
+   * suspects it missed being added to something. Not on the cold-open path —
+   * `docs/29` §5 budgets 300 ms to a painted room from the *local* store, and
+   * this is the network.
+   */
+  listRooms(): Promise<RoomInfo[]>;
+  getRoom(roomId: string): Promise<RoomInfo>;
+
+  /**
+   * Open a DM. Idempotent: the id is derived from the sorted account pair
+   * (`docs/03` §4), so asking twice — or both people asking at once — is one
+   * room.
+   */
+  createDm(account: string): Promise<RoomInfo>;
+  /** Open a group DM. Not idempotent; a second one is a second conversation. */
+  createGroupRoom(accounts: string[]): Promise<RoomInfo>;
+
+  addMembers(roomId: string, accounts: string[]): Promise<RoomInfo>;
+  /** Yourself only. Does not remove your MLS leaf — a member has to commit that. */
+  leaveRoom(roomId: string): Promise<void>;
 }
 
 /** Live events, once something is delivering them. */
@@ -119,7 +150,39 @@ export class HttpTransport implements Transport {
     };
   }
 
+  async listRooms(): Promise<RoomInfo[]> {
+    const body = await this.#json<{ rooms: RoomInfo[] }>('/rooms', { method: 'GET' });
+    return body.rooms;
+  }
+
+  getRoom(roomId: string): Promise<RoomInfo> {
+    return this.#json(`/rooms/${encodeURIComponent(roomId)}`, { method: 'GET' });
+  }
+
+  createDm(account: string): Promise<RoomInfo> {
+    return this.#json('/rooms/dm', { method: 'POST', body: JSON.stringify({ account }) });
+  }
+
+  createGroupRoom(accounts: string[]): Promise<RoomInfo> {
+    return this.#json('/rooms/group', { method: 'POST', body: JSON.stringify({ accounts }) });
+  }
+
+  addMembers(roomId: string, accounts: string[]): Promise<RoomInfo> {
+    return this.#json(`/rooms/${encodeURIComponent(roomId)}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ accounts }),
+    });
+  }
+
+  async leaveRoom(roomId: string): Promise<void> {
+    await this.#request(`/rooms/${encodeURIComponent(roomId)}/members/me`, { method: 'DELETE' });
+  }
+
   async #json<T>(path: string, init: RequestInit): Promise<T> {
+    return (await this.#request(path, init)).json() as Promise<T>;
+  }
+
+  async #request(path: string, init: RequestInit): Promise<Response> {
     const response = await this.#fetch(`${this.#baseUrl}${path}`, {
       ...init,
       headers: {
@@ -140,6 +203,6 @@ export class HttpTransport implements Transport {
       throw new TransportError(response.status, reason ?? `http_${response.status}`);
     }
 
-    return (await response.json()) as T;
+    return response;
   }
 }
