@@ -6,8 +6,9 @@
  * one screen rather than scattered across three components' templates. The
  * handlers stay with the state they mutate; these functions only describe.
  */
-import type { Item } from './menu.js';
+
 import type { NotifyLevel, Room, Space } from './fake/data.js';
+import type { Item } from './menu.js';
 
 /** Rows for choosing a room's notification level, ticked to show the current
     one and where it came from. Shared by the room menu and the space menu. */
@@ -59,14 +60,8 @@ export function spaceMenu(space: Space): Item[] {
  * A member row. The agent case is deliberately different: the useful actions
  * for software are "what is it" and "who runs it", not "message them".
  */
-export function memberMenu(opts: {
-  name: string;
-  isAgent: boolean;
-  isMe: boolean;
-}): Item[] {
-  const rows: Item[] = [
-    { id: 'profile', label: 'View profile', icon: 'user' },
-  ];
+export function memberMenu(opts: { name: string; isAgent: boolean; isMe: boolean }): Item[] {
+  const rows: Item[] = [{ id: 'profile', label: 'View profile', icon: 'user' }];
   if (!opts.isMe) {
     rows.push(
       opts.isAgent

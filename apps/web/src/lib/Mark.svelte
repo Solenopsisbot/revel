@@ -1,15 +1,19 @@
 <script lang="ts">
-  /**
-   * The mark: three overlapping discs, each ringed in whatever is behind it.
-   * A few people in a place, everyone visible — the product's thesis rather
-   * than an ornament. Rotated 18° about the centroid, baked in so no call site
-   * can ship the upright version (`docs/15`).
-   */
-  let { size = 32, faces = false, stroke = 'var(--ground-0)' }: {
-    size?: number;
-    faces?: boolean;
-    stroke?: string;
-  } = $props();
+/**
+ * The mark: three overlapping discs, each ringed in whatever is behind it.
+ * A few people in a place, everyone visible — the product's thesis rather
+ * than an ornament. Rotated 18° about the centroid, baked in so no call site
+ * can ship the upright version (`docs/15`).
+ */
+let {
+  size = 32,
+  faces = false,
+  stroke = 'var(--ground-0)',
+}: {
+  size?: number;
+  faces?: boolean;
+  stroke?: string;
+} = $props();
 </script>
 
 <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden="true" style="display:block;flex:none">

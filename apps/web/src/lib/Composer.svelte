@@ -1,94 +1,94 @@
 <script lang="ts">
-  import Avatar from './Avatar.svelte';
-  import Icon from './Icon.svelte';
-  import { core } from './fake/core.svelte.js';
-  import { conversation } from './fake/conversation.svelte.js';
-  import { layout } from './layout.svelte.js';
+import Avatar from './Avatar.svelte';
+import { conversation } from './fake/conversation.svelte.js';
+import { core } from './fake/core.svelte.js';
+import Icon from './Icon.svelte';
+import { layout } from './layout.svelte.js';
 
-  /**
-   * The thread this composer posts into, if it is the one in a thread panel.
-   *
-   * One component for both, because a thread reply is an ordinary message with
-   * one extra field (`docs/03`) — everything else about composing, the face
-   * switcher, the growth, the drop target, the send rules, is identical, and a
-   * second copy would diverge on the first change to any of them.
-   */
-  let { thread }: { thread?: string } = $props();
+/**
+ * The thread this composer posts into, if it is the one in a thread panel.
+ *
+ * One component for both, because a thread reply is an ordinary message with
+ * one extra field (`docs/03`) — everything else about composing, the face
+ * switcher, the growth, the drop target, the send rules, is identical, and a
+ * second copy would diverge on the first change to any of them.
+ */
+let { thread }: { thread?: string } = $props();
 
-  let draft = $state('');
-  let input = $state<HTMLTextAreaElement>();
-  let dragging = $state(false);
+let draft = $state('');
+let input = $state<HTMLTextAreaElement>();
+let dragging = $state(false);
 
-  const face = $derived(core.faces[core.speakingAs]!);
+const face = $derived(core.faces[core.speakingAs]!);
 
-  /**
-   * Whether this composer is the one stray keystrokes belong to. With a thread
-   * open there are two on screen, and both grabbing at every keypress would
-   * make typing land wherever the DOM happened to order them.
-   */
-  const active = $derived(thread ? core.openThreadId === thread : !core.openThreadId);
+/**
+ * Whether this composer is the one stray keystrokes belong to. With a thread
+ * open there are two on screen, and both grabbing at every keypress would
+ * make typing land wherever the DOM happened to order them.
+ */
+const active = $derived(thread ? core.openThreadId === thread : !core.openThreadId);
 
-  function submit() {
-    // Clearing the reply target is `core.send`'s job, not the composer's.
-    if (thread) core.sendToThread(thread, draft);
-    else core.send(draft);
-    draft = '';
-    // Someone replies, so the typing indicator and arrival animation have
-    // something to do.
-    core.simulateTyping('rae', 2600);
-    if (input) input.style.height = 'auto';
+function submit() {
+  // Clearing the reply target is `core.send`'s job, not the composer's.
+  if (thread) core.sendToThread(thread, draft);
+  else core.send(draft);
+  draft = '';
+  // Someone replies, so the typing indicator and arrival animation have
+  // something to do.
+  core.simulateTyping('rae', 2600);
+  if (input) input.style.height = 'auto';
+}
+
+function onKey(e: KeyboardEvent) {
+  // Enter sends on a fine pointer only; on touch it is a newline and the
+  // button sends (`docs/24`). matchMedia, not screen width.
+  const fine = window.matchMedia('(pointer: fine)').matches;
+  if (e.key === 'Enter' && !e.shiftKey && fine) {
+    e.preventDefault();
+    submit();
   }
-
-  function onKey(e: KeyboardEvent) {
-    // Enter sends on a fine pointer only; on touch it is a newline and the
-    // button sends (`docs/24`). matchMedia, not screen width.
-    const fine = window.matchMedia('(pointer: fine)').matches;
-    if (e.key === 'Enter' && !e.shiftKey && fine) {
-      e.preventDefault();
-      submit();
-    }
-    if (e.key === 'Escape') {
-      // Escape clears the most specific thing first, then the next.
-      if (core.speakingAsOpen) core.speakingAsOpen = false;
-      else if (core.replyTo) core.replyTo = null;
-    }
+  if (e.key === 'Escape') {
+    // Escape clears the most specific thing first, then the next.
+    if (core.speakingAsOpen) core.speakingAsOpen = false;
+    else if (core.replyTo) core.replyTo = null;
   }
+}
 
-  /**
-   * Start typing anywhere and the characters land in the composer.
-   *
-   * Lives here rather than in the shell because this component owns the
-   * textarea, and "typing goes to the message box" is a fact about the message
-   * box. Focusing during `keydown` and *not* preventing the default is what
-   * makes the keystroke itself arrive: the browser inserts text after keydown,
-   * into whatever is focused by then. Handling the character by hand instead
-   * double-types on the browsers that already delivered it.
-   */
-  function typeToFocus(e: KeyboardEvent) {
-    if (!active) return;
-    if (!input || document.activeElement === input) return;
-    // A shortcut is not typing. ⌘K, ⌘, and friends must still work.
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    // Exactly one character: letters, digits, punctuation, space. Enter, Tab,
-    // Escape and the arrows are navigation and belong to whatever has focus.
-    if (e.key.length !== 1) return;
+/**
+ * Start typing anywhere and the characters land in the composer.
+ *
+ * Lives here rather than in the shell because this component owns the
+ * textarea, and "typing goes to the message box" is a fact about the message
+ * box. Focusing during `keydown` and *not* preventing the default is what
+ * makes the keystroke itself arrive: the browser inserts text after keydown,
+ * into whatever is focused by then. Handling the character by hand instead
+ * double-types on the browsers that already delivered it.
+ */
+function typeToFocus(e: KeyboardEvent) {
+  if (!active) return;
+  if (!input || document.activeElement === input) return;
+  // A shortcut is not typing. ⌘K, ⌘, and friends must still work.
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // Exactly one character: letters, digits, punctuation, space. Enter, Tab,
+  // Escape and the arrows are navigation and belong to whatever has focus.
+  if (e.key.length !== 1) return;
 
-    const el = e.target instanceof HTMLElement ? e.target : null;
-    if (el) {
-      const tag = el.tagName;
-      // Somebody else is already taking text — a search field, the command
-      // bar, a settings input, a message being edited.
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) return;
-      // An open dialog owns the keyboard while it is up.
-      if (el.closest('[role="dialog"], [role="alertdialog"]')) return;
-    }
-    input.focus();
+  const el = e.target instanceof HTMLElement ? e.target : null;
+  if (el) {
+    const tag = el.tagName;
+    // Somebody else is already taking text — a search field, the command
+    // bar, a settings input, a message being edited.
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) return;
+    // An open dialog owns the keyboard while it is up.
+    if (el.closest('[role="dialog"], [role="alertdialog"]')) return;
   }
+  input.focus();
+}
 
-  function grow(el: HTMLTextAreaElement) {
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
-  }
+function grow(el: HTMLTextAreaElement) {
+  el.style.height = 'auto';
+  el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+}
 </script>
 
 <svelte:window onkeydown={typeToFocus} />

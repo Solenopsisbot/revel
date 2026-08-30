@@ -1,110 +1,106 @@
 <script lang="ts">
-  /**
-   * The command surface (`docs/12` §"Wren is the command surface").
-   *
-   * One input, opened with ⌘K, taking both fuzzy commands and plain phrasing.
-   * It is the same surface as asking Wren, which is why her face is on it and
-   * why "explain" results render *here* rather than navigating somewhere — an
-   * answer is a result, not a destination.
-   */
-  import Icon from '../Icon.svelte';
-  import { core } from '../fake/core.svelte.js';
-  import { buildCommands, score, type Command, type Ctx } from './commands.js';
+/**
+ * The command surface (`docs/12` §"Wren is the command surface").
+ *
+ * One input, opened with ⌘K, taking both fuzzy commands and plain phrasing.
+ * It is the same surface as asking Wren, which is why her face is on it and
+ * why "explain" results render *here* rather than navigating somewhere — an
+ * answer is a result, not a destination.
+ */
 
-  let {
-    open = $bindable(false),
-    ctx,
-  }: { open?: boolean; ctx: Ctx } = $props();
+import { core } from '../fake/core.svelte.js';
+import Icon from '../Icon.svelte';
+import { buildCommands, type Command, type Ctx, score } from './commands.js';
 
-  let q = $state('');
-  let sel = $state(0);
-  let field = $state<HTMLInputElement>();
-  /** An Explain answer, held open until you type again or close. */
-  let answer = $state<{ title: string; body: string } | null>(null);
+let { open = $bindable(false), ctx }: { open?: boolean; ctx: Ctx } = $props();
 
-  const all = $derived(open ? buildCommands(ctx) : []);
+let q = $state('');
+let sel = $state(0);
+let field = $state<HTMLInputElement>();
+/** An Explain answer, held open until you type again or close. */
+let answer = $state<{ title: string; body: string } | null>(null);
 
-  const results = $derived.by(() => {
-    if (!q.trim()) {
-      // No query: a short useful default rather than 60 rows of everything.
-      const order = ['Explain', 'Go to', 'Configure', 'Create', 'Security'];
-      return [...all]
-        .sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group))
-        .slice(0, 9);
-    }
-    return all
-      .map((c) => ({ c, s: score(c, q.trim()) }))
-      .filter((x) => x.s >= 0)
-      .sort((a, b) => b.s - a.s)
-      .slice(0, 12)
-      .map((x) => x.c);
-  });
+const all = $derived(open ? buildCommands(ctx) : []);
 
-  /** Group headers, computed from the result order so they never lie. */
-  const grouped = $derived.by(() => {
-    const out: { group: string; items: Command[] }[] = [];
-    for (const c of results) {
-      const last = out[out.length - 1];
-      if (last && last.group === c.group) last.items.push(c);
-      else out.push({ group: c.group, items: [c] });
-    }
-    return out;
-  });
-
-  const flat = $derived(grouped.flatMap((g) => g.items));
-
-  $effect(() => {
-    if (!open) return;
-    // Opening it counts as having found it, which is what Wren's "there's a
-    // command bar" notice is watching for.
-    core.commandSurfaceUsed = true;
-    field?.focus();
-  });
-
-  $effect(() => {
-    void q;
-    sel = 0;
-    answer = null;
-  });
-
-  function run(c: Command) {
-    const result = c.run();
-    if (typeof result === 'string') {
-      // An explanation. Stay open and show it.
-      answer = { title: c.label, body: result };
-      return;
-    }
-    close();
+const results = $derived.by(() => {
+  if (!q.trim()) {
+    // No query: a short useful default rather than 60 rows of everything.
+    const order = ['Explain', 'Go to', 'Configure', 'Create', 'Security'];
+    return [...all].sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group)).slice(0, 9);
   }
+  return all
+    .map((c) => ({ c, s: score(c, q.trim()) }))
+    .filter((x) => x.s >= 0)
+    .sort((a, b) => b.s - a.s)
+    .slice(0, 12)
+    .map((x) => x.c);
+});
 
-  function close() {
-    open = false;
-    q = '';
-    answer = null;
-    sel = 0;
+/** Group headers, computed from the result order so they never lie. */
+const grouped = $derived.by(() => {
+  const out: { group: string; items: Command[] }[] = [];
+  for (const c of results) {
+    const last = out[out.length - 1];
+    if (last && last.group === c.group) last.items.push(c);
+    else out.push({ group: c.group, items: [c] });
   }
+  return out;
+});
 
-  function onKey(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      if (answer) answer = null;
-      else close();
-      return;
-    }
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      sel = Math.min(flat.length - 1, sel + 1);
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      sel = Math.max(0, sel - 1);
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const c = flat[sel];
-      if (c) run(c);
-    }
+const flat = $derived(grouped.flatMap((g) => g.items));
+
+$effect(() => {
+  if (!open) return;
+  // Opening it counts as having found it, which is what Wren's "there's a
+  // command bar" notice is watching for.
+  core.commandSurfaceUsed = true;
+  field?.focus();
+});
+
+$effect(() => {
+  void q;
+  sel = 0;
+  answer = null;
+});
+
+function run(c: Command) {
+  const result = c.run();
+  if (typeof result === 'string') {
+    // An explanation. Stay open and show it.
+    answer = { title: c.label, body: result };
+    return;
   }
+  close();
+}
+
+function close() {
+  open = false;
+  q = '';
+  answer = null;
+  sel = 0;
+}
+
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (answer) answer = null;
+    else close();
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    sel = Math.min(flat.length - 1, sel + 1);
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    sel = Math.max(0, sel - 1);
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const c = flat[sel];
+    if (c) run(c);
+  }
+}
 </script>
 
 {#if open}

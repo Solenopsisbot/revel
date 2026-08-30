@@ -1,22 +1,23 @@
 <script lang="ts">
-  /**
-   * The persistent bar that keeps a call alive while you read another room.
-   *
-   * This is the whole reason the controller lives outside the components
-   * (`docs/21`): you can walk off to check something and the conversation
-   * carries on. Clicking the bar walks you back.
-   *
-   * Only rendered when you are in a call and *not* looking at it — when you
-   * are, the stage already has these controls and two sets would be one too
-   * many.
-   */
-  import Icon from '../Icon.svelte';
-  import Avatar from '../Avatar.svelte';
-  import { core } from '../fake/core.svelte.js';
-  import { voice } from './voice.svelte.js';
+/**
+ * The persistent bar that keeps a call alive while you read another room.
+ *
+ * This is the whole reason the controller lives outside the components
+ * (`docs/21`): you can walk off to check something and the conversation
+ * carries on. Clicking the bar walks you back.
+ *
+ * Only rendered when you are in a call and *not* looking at it — when you
+ * are, the stage already has these controls and two sets would be one too
+ * many.
+ */
 
-  const others = $derived(voice.participants.filter((p) => p.faceId !== core.speakingAs));
-  const broken = $derived(voice.participants.some((p) => p.diverged));
+import Avatar from '../Avatar.svelte';
+import { core } from '../fake/core.svelte.js';
+import Icon from '../Icon.svelte';
+import { voice } from './voice.svelte.js';
+
+const others = $derived(voice.participants.filter((p) => p.faceId !== core.speakingAs));
+const broken = $derived(voice.participants.some((p) => p.diverged));
 </script>
 
 <div class="bar" class:broken>

@@ -1,28 +1,25 @@
 <script lang="ts">
-  /**
-   * The overflow menu. One column of labelled actions with drawn icons and,
-   * where a shortcut exists, the shortcut — a menu that hides its own
-   * keyboard equivalents trains people to keep using the menu.
-   *
-   * Rows keep their declared order so a caller can group them with `header`;
-   * the one exception is `danger`, which is always sorted to the bottom under
-   * a rule. A destructive action sitting between two harmless ones is how
-   * people delete things they meant to pin.
-   */
-  import Icon from './Icon.svelte';
-  import type { Item } from './menu.js';
+/**
+ * The overflow menu. One column of labelled actions with drawn icons and,
+ * where a shortcut exists, the shortcut — a menu that hides its own
+ * keyboard equivalents trains people to keep using the menu.
+ *
+ * Rows keep their declared order so a caller can group them with `header`;
+ * the one exception is `danger`, which is always sorted to the bottom under
+ * a rule. A destructive action sitting between two harmless ones is how
+ * people delete things they meant to pin.
+ */
+import Icon from './Icon.svelte';
+import type { Item } from './menu.js';
 
-  let {
-    items,
-    onpick,
-  }: { items: Item[]; onpick: (id: string) => void } = $props();
+let { items, onpick }: { items: Item[]; onpick: (id: string) => void } = $props();
 
-  const safe = $derived(items.filter((i) => !i.danger));
-  const danger = $derived(items.filter((i) => i.danger));
+const safe = $derived(items.filter((i) => !i.danger));
+const danger = $derived(items.filter((i) => i.danger));
 
-  /** True when any row in the menu is checkable, so the whole menu indents to
+/** True when any row in the menu is checkable, so the whole menu indents to
       one tick column rather than each row jumping left and right. */
-  const checkable = $derived(items.some((i) => i.checked !== undefined));
+const checkable = $derived(items.some((i) => i.checked !== undefined));
 </script>
 
 <div class="menu" role="menu" class:checkable>

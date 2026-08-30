@@ -1,36 +1,36 @@
 <script lang="ts">
-  /**
-   * Rung 4 — the only surface allowed to take focus.
-   *
-   * Three categories reach here and nothing else: an irreversible action, a
-   * live safety condition, or a genuine cliff edge (`docs/12`). This component
-   * does not decide that; `wren.rungFor()` does, and it will not hand this one
-   * anything that hasn't earned it.
-   *
-   * There is no scrim-click-to-dismiss and no Escape. Every popup that gets
-   * here has a "go back" action of its own, and a modal you can dismiss by
-   * missing it is a modal that didn't need to be one.
-   */
-  import WrenNotice from './WrenNotice.svelte';
-  import { wren, type Notice } from './wren.svelte.js';
+/**
+ * Rung 4 — the only surface allowed to take focus.
+ *
+ * Three categories reach here and nothing else: an irreversible action, a
+ * live safety condition, or a genuine cliff edge (`docs/12`). This component
+ * does not decide that; `wren.rungFor()` does, and it will not hand this one
+ * anything that hasn't earned it.
+ *
+ * There is no scrim-click-to-dismiss and no Escape. Every popup that gets
+ * here has a "go back" action of its own, and a modal you can dismiss by
+ * missing it is a modal that didn't need to be one.
+ */
+import WrenNotice from './WrenNotice.svelte';
+import { type Notice, wren } from './wren.svelte.js';
 
-  let {
-    notice,
-    onact,
-  }: {
-    notice: Notice;
-    onact: (actionId: string, dismissive: boolean) => void;
-  } = $props();
+let {
+  notice,
+  onact,
+}: {
+  notice: Notice;
+  onact: (actionId: string, dismissive: boolean) => void;
+} = $props();
 
-  // Her face matches what she is saying. Safety and cliff-edge get serious;
-  // the irreversible-action confirmations get alert.
-  const face = $derived(notice.severity === 'coral' ? 'serious' : 'alert');
-  let panel = $state<HTMLElement>();
+// Her face matches what she is saying. Safety and cliff-edge get serious;
+// the irreversible-action confirmations get alert.
+const face = $derived(notice.severity === 'coral' ? 'serious' : 'alert');
+let panel = $state<HTMLElement>();
 
-  $effect(() => {
-    void notice.id;
-    panel?.focus();
-  });
+$effect(() => {
+  void notice.id;
+  panel?.focus();
+});
 </script>
 
 <div class="scrim"></div>

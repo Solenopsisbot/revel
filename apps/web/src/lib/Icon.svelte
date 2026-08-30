@@ -1,170 +1,202 @@
 <script lang="ts">
-  /**
-   * Drawn icons only.
-   *
-   * The rule from `docs/07` is about *emoji*, not about pictures: no emoji
-   * anywhere in product chrome, ever, except inside the emoji picker and in
-   * reactions — both of which are user content rather than design. Line icons
-   * are how the chrome is meant to speak.
-   *
-   * Every icon is a 24×24 stroke drawing on the same grid with the same
-   * 2px weight, so any two of them sit at the same optical size next to each
-   * other. Icons that need more than one stroke pass an array; the component
-   * renders each entry as its own <path> so joins stay clean.
-   */
-  const paths: Record<string, string | string[]> = {
-    // ---- chrome ----------------------------------------------------------
-    gear: [
-      'M20.27 10.56 A8.40 8.40 0 0 1 20.27 13.44 L17.91 13.03 A6.00 6.00 0 0 1 16.91 15.45 L18.87 16.83 A8.40 8.40 0 0 1 16.83 18.87 L15.45 16.91 A6.00 6.00 0 0 1 13.03 17.91 L13.44 20.27 A8.40 8.40 0 0 1 10.56 20.27 L10.97 17.91 A6.00 6.00 0 0 1 8.55 16.91 L7.17 18.87 A8.40 8.40 0 0 1 5.13 16.83 L7.09 15.45 A6.00 6.00 0 0 1 6.09 13.03 L3.73 13.44 A8.40 8.40 0 0 1 3.73 10.56 L6.09 10.97 A6.00 6.00 0 0 1 7.09 8.55 L5.13 7.17 A8.40 8.40 0 0 1 7.17 5.13 L8.55 7.09 A6.00 6.00 0 0 1 10.97 6.09 L10.56 3.73 A8.40 8.40 0 0 1 13.44 3.73 L13.03 6.09 A6.00 6.00 0 0 1 15.45 7.09 L16.83 5.13 A8.40 8.40 0 0 1 18.87 7.17 L16.91 8.55 A6.00 6.00 0 0 1 17.91 10.97 Z',
-      'M14.6 12a2.6 2.6 0 1 1-5.2 0 2.6 2.6 0 0 1 5.2 0z',
-    ],
-    chevron: 'M6 9.5l6 6 6-6',
-    'chevron-right': 'M9.5 6l6 6-6 6',
-    'chevron-left': 'M14.5 6l-6 6 6 6',
-    check: 'M4 12.5l5 5L20 6.5',
-    x: 'M6 6l12 12M18 6L6 18',
-    plus: 'M12 5v14M5 12h14',
-    minus: 'M5 12h14',
-    more: ['M6 12h.01', 'M12 12h.01', 'M18 12h.01'],
-    menu: 'M4 7h16M4 12h16M4 17h16',
-    search: ['M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z', 'M16.2 16.2L21 21'],
-    'arrow-down': 'M12 4.5v15M5.5 13l6.5 6.5L18.5 13',
-    'arrow-up': 'M12 19.5v-15M5.5 11L12 4.5 18.5 11',
-    hash: 'M9 3.5L7 20.5M17 3.5l-2 17M4 8.8h16M3.4 15.2h16',
-    globe: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.2 9.5h17.6M3.2 14.5h17.6M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z',
-    bell: [
-      'M18 9a6 6 0 1 0-12 0c0 5-2 6.5-2 6.5h16S18 14 18 9z',
-      'M10.3 19a2 2 0 0 0 3.4 0',
-    ],
-    'bell-off': [
-      'M18 9a6 6 0 0 0-8.5-5.4M6.2 6.2A6 6 0 0 0 6 9c0 5-2 6.5-2 6.5h12',
-      'M10.3 19a2 2 0 0 0 3.4 0',
-      'M3 3l18 18',
-    ],
-    shield: ['M12 3l7.5 3v6c0 4.4-3.1 7.9-7.5 9.3C7.6 19.9 4.5 16.4 4.5 12V6z'],
-    lock: ['M6.5 10.5h11v9h-11z', 'M8.8 10.5V7.8a3.2 3.2 0 0 1 6.4 0v2.7'],
-    // The head is a real circle. It used to be `a4 4 0 1 0 0-.01` — an arc
-    // whose start and end are the same point, which is undefined-ish and got
-    // rendered as an accidental near-circle in the wrong place.
-    key: ['M15.5 13.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M11.4 12.6L3.5 20.5M6.5 17.5l2 2M9 15l1.6 1.6'],
-    user: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M4.5 20a7.5 7.5 0 0 1 15 0'],
-    people: 'M9 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.8 19.5a6.4 6.4 0 0 1 12.4 0M16.5 5.4a3.5 3.5 0 0 1 0 6.6M18 19.5a6.5 6.5 0 0 0-1.6-4.3',
-    palette: [
-      'M12 21a9 9 0 1 1 0-18c4.7 0 8.5 3.2 8.5 7 0 2.3-2 3.4-3.7 3.4h-1.9c-1.4 0-2.5 1-2.5 2.3 0 .6.2 1 .5 1.5.3.4.4.8.4 1.2 0 .9-.6 1.6-1.3 1.6z',
-      'M7.6 12.4h.01', 'M9.8 8.4h.01', 'M14.4 7.9h.01',
-    ],
-    database: [
-      'M12 7.5c4.1 0 7.5-1 7.5-2.2S16.1 3 12 3 4.5 4 4.5 5.3 7.9 7.5 12 7.5z',
-      'M4.5 5.3v13.4c0 1.2 3.4 2.3 7.5 2.3s7.5-1 7.5-2.3V5.3',
-      'M4.5 12c0 1.2 3.4 2.2 7.5 2.2s7.5-1 7.5-2.2',
-    ],
-    sparkle: [
-      'M12 3.5l1.9 4.9 4.9 1.9-4.9 1.9-1.9 4.9-1.9-4.9-4.9-1.9 4.9-1.9z',
-      'M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z',
-    ],
-    info: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 11v5.5', 'M12 7.6h.01'],
-    warn: ['M12 3.6L21 19.4H3z', 'M12 9.6v4.2', 'M12 16.6h.01'],
+/**
+ * Drawn icons only.
+ *
+ * The rule from `docs/07` is about *emoji*, not about pictures: no emoji
+ * anywhere in product chrome, ever, except inside the emoji picker and in
+ * reactions — both of which are user content rather than design. Line icons
+ * are how the chrome is meant to speak.
+ *
+ * Every icon is a 24×24 stroke drawing on the same grid with the same
+ * 2px weight, so any two of them sit at the same optical size next to each
+ * other. Icons that need more than one stroke pass an array; the component
+ * renders each entry as its own <path> so joins stay clean.
+ */
+const paths: Record<string, string | string[]> = {
+  // ---- chrome ----------------------------------------------------------
+  gear: [
+    'M20.27 10.56 A8.40 8.40 0 0 1 20.27 13.44 L17.91 13.03 A6.00 6.00 0 0 1 16.91 15.45 L18.87 16.83 A8.40 8.40 0 0 1 16.83 18.87 L15.45 16.91 A6.00 6.00 0 0 1 13.03 17.91 L13.44 20.27 A8.40 8.40 0 0 1 10.56 20.27 L10.97 17.91 A6.00 6.00 0 0 1 8.55 16.91 L7.17 18.87 A8.40 8.40 0 0 1 5.13 16.83 L7.09 15.45 A6.00 6.00 0 0 1 6.09 13.03 L3.73 13.44 A8.40 8.40 0 0 1 3.73 10.56 L6.09 10.97 A6.00 6.00 0 0 1 7.09 8.55 L5.13 7.17 A8.40 8.40 0 0 1 7.17 5.13 L8.55 7.09 A6.00 6.00 0 0 1 10.97 6.09 L10.56 3.73 A8.40 8.40 0 0 1 13.44 3.73 L13.03 6.09 A6.00 6.00 0 0 1 15.45 7.09 L16.83 5.13 A8.40 8.40 0 0 1 18.87 7.17 L16.91 8.55 A6.00 6.00 0 0 1 17.91 10.97 Z',
+    'M14.6 12a2.6 2.6 0 1 1-5.2 0 2.6 2.6 0 0 1 5.2 0z',
+  ],
+  chevron: 'M6 9.5l6 6 6-6',
+  'chevron-right': 'M9.5 6l6 6-6 6',
+  'chevron-left': 'M14.5 6l-6 6 6 6',
+  check: 'M4 12.5l5 5L20 6.5',
+  x: 'M6 6l12 12M18 6L6 18',
+  plus: 'M12 5v14M5 12h14',
+  minus: 'M5 12h14',
+  more: ['M6 12h.01', 'M12 12h.01', 'M18 12h.01'],
+  menu: 'M4 7h16M4 12h16M4 17h16',
+  search: ['M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z', 'M16.2 16.2L21 21'],
+  'arrow-down': 'M12 4.5v15M5.5 13l6.5 6.5L18.5 13',
+  'arrow-up': 'M12 19.5v-15M5.5 11L12 4.5 18.5 11',
+  hash: 'M9 3.5L7 20.5M17 3.5l-2 17M4 8.8h16M3.4 15.2h16',
+  globe:
+    'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.2 9.5h17.6M3.2 14.5h17.6M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z',
+  bell: ['M18 9a6 6 0 1 0-12 0c0 5-2 6.5-2 6.5h16S18 14 18 9z', 'M10.3 19a2 2 0 0 0 3.4 0'],
+  'bell-off': [
+    'M18 9a6 6 0 0 0-8.5-5.4M6.2 6.2A6 6 0 0 0 6 9c0 5-2 6.5-2 6.5h12',
+    'M10.3 19a2 2 0 0 0 3.4 0',
+    'M3 3l18 18',
+  ],
+  shield: ['M12 3l7.5 3v6c0 4.4-3.1 7.9-7.5 9.3C7.6 19.9 4.5 16.4 4.5 12V6z'],
+  lock: ['M6.5 10.5h11v9h-11z', 'M8.8 10.5V7.8a3.2 3.2 0 0 1 6.4 0v2.7'],
+  // The head is a real circle. It used to be `a4 4 0 1 0 0-.01` — an arc
+  // whose start and end are the same point, which is undefined-ish and got
+  // rendered as an accidental near-circle in the wrong place.
+  key: ['M15.5 13.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M11.4 12.6L3.5 20.5M6.5 17.5l2 2M9 15l1.6 1.6'],
+  user: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M4.5 20a7.5 7.5 0 0 1 15 0'],
+  people:
+    'M9 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.8 19.5a6.4 6.4 0 0 1 12.4 0M16.5 5.4a3.5 3.5 0 0 1 0 6.6M18 19.5a6.5 6.5 0 0 0-1.6-4.3',
+  palette: [
+    'M12 21a9 9 0 1 1 0-18c4.7 0 8.5 3.2 8.5 7 0 2.3-2 3.4-3.7 3.4h-1.9c-1.4 0-2.5 1-2.5 2.3 0 .6.2 1 .5 1.5.3.4.4.8.4 1.2 0 .9-.6 1.6-1.3 1.6z',
+    'M7.6 12.4h.01',
+    'M9.8 8.4h.01',
+    'M14.4 7.9h.01',
+  ],
+  database: [
+    'M12 7.5c4.1 0 7.5-1 7.5-2.2S16.1 3 12 3 4.5 4 4.5 5.3 7.9 7.5 12 7.5z',
+    'M4.5 5.3v13.4c0 1.2 3.4 2.3 7.5 2.3s7.5-1 7.5-2.3V5.3',
+    'M4.5 12c0 1.2 3.4 2.2 7.5 2.2s7.5-1 7.5-2.2',
+  ],
+  sparkle: [
+    'M12 3.5l1.9 4.9 4.9 1.9-4.9 1.9-1.9 4.9-1.9-4.9-4.9-1.9 4.9-1.9z',
+    'M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z',
+  ],
+  info: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 11v5.5', 'M12 7.6h.01'],
+  warn: ['M12 3.6L21 19.4H3z', 'M12 9.6v4.2', 'M12 16.6h.01'],
 
-    // ---- messages --------------------------------------------------------
-    send: 'M21 3L10.5 13.5M21 3l-6.8 18-3.7-7.5L3 9.8z',
-    reply: 'M10 9L5 14l5 5M5 14h9a5 5 0 0 0 5-5V6',
-    forward: 'M14 9l5 5-5 5M19 14h-9a5 5 0 0 1-5-5V6',
-    pencil: ['M4 20h4L19.2 8.8a2.4 2.4 0 0 0-3.4-3.4L4.6 16.6z', 'M14.6 6.6l3.4 3.4'],
-    trash: ['M4.5 6.8h15', 'M9.3 6.8V4.6h5.4v2.2', 'M6.5 6.8l1 13.2h9l1-13.2', 'M10.3 10.5v6M13.7 10.5v6'],
-    pin: ['M14.8 3.2l6 6-2.7 1-1.6 5.2-7-7L14 6.2z', 'M9.5 14.5L4 20'],
-    copy: ['M9.5 9.5h9v10h-9z', 'M14.5 6.5v-2h-9v10h2'],
-    link: [
-      'M10.6 13.4a3.6 3.6 0 0 0 5.1 0l2.9-2.9a3.6 3.6 0 0 0-5.1-5.1l-1.4 1.4',
-      'M13.4 10.6a3.6 3.6 0 0 0-5.1 0l-2.9 2.9a3.6 3.6 0 0 0 5.1 5.1l1.4-1.4',
-    ],
-    react: [
-      'M12 21a9 9 0 1 0-8.8-11',
-      'M8.4 14.2a4.4 4.4 0 0 0 7.2 0',
-      'M9 9.3h.01', 'M15 9.3h.01',
-      'M4.2 15.5v5M1.7 18h5',
-    ],
-    eye: ['M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z'],
-    'eye-off': ['M4 4l16 16', 'M9.6 5.3A9.4 9.4 0 0 1 12 5c6 0 9.5 6 9.5 6a17 17 0 0 1-3.3 3.9M6.4 7.3A17 17 0 0 0 2.5 11s3.5 6 9.5 6a9.6 9.6 0 0 0 3.6-.7', 'M10 10a2.9 2.9 0 0 0 4 4'],
-    clock: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 7.2V12l3.2 2'],
+  // ---- messages --------------------------------------------------------
+  send: 'M21 3L10.5 13.5M21 3l-6.8 18-3.7-7.5L3 9.8z',
+  reply: 'M10 9L5 14l5 5M5 14h9a5 5 0 0 0 5-5V6',
+  forward: 'M14 9l5 5-5 5M19 14h-9a5 5 0 0 1-5-5V6',
+  pencil: ['M4 20h4L19.2 8.8a2.4 2.4 0 0 0-3.4-3.4L4.6 16.6z', 'M14.6 6.6l3.4 3.4'],
+  trash: [
+    'M4.5 6.8h15',
+    'M9.3 6.8V4.6h5.4v2.2',
+    'M6.5 6.8l1 13.2h9l1-13.2',
+    'M10.3 10.5v6M13.7 10.5v6',
+  ],
+  pin: ['M14.8 3.2l6 6-2.7 1-1.6 5.2-7-7L14 6.2z', 'M9.5 14.5L4 20'],
+  copy: ['M9.5 9.5h9v10h-9z', 'M14.5 6.5v-2h-9v10h2'],
+  link: [
+    'M10.6 13.4a3.6 3.6 0 0 0 5.1 0l2.9-2.9a3.6 3.6 0 0 0-5.1-5.1l-1.4 1.4',
+    'M13.4 10.6a3.6 3.6 0 0 0-5.1 0l-2.9 2.9a3.6 3.6 0 0 0 5.1 5.1l1.4-1.4',
+  ],
+  react: [
+    'M12 21a9 9 0 1 0-8.8-11',
+    'M8.4 14.2a4.4 4.4 0 0 0 7.2 0',
+    'M9 9.3h.01',
+    'M15 9.3h.01',
+    'M4.2 15.5v5M1.7 18h5',
+  ],
+  eye: [
+    'M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z',
+    'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  ],
+  'eye-off': [
+    'M4 4l16 16',
+    'M9.6 5.3A9.4 9.4 0 0 1 12 5c6 0 9.5 6 9.5 6a17 17 0 0 1-3.3 3.9M6.4 7.3A17 17 0 0 0 2.5 11s3.5 6 9.5 6a9.6 9.6 0 0 0 3.6-.7',
+    'M10 10a2.9 2.9 0 0 0 4 4',
+  ],
+  clock: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 7.2V12l3.2 2'],
 
-    // ---- media -----------------------------------------------------------
-    attach: 'M20.5 11.5l-8.4 8.4a4.6 4.6 0 0 1-6.5-6.5l8.7-8.7a3.1 3.1 0 0 1 4.4 4.4l-8.6 8.6a1.6 1.6 0 0 1-2.2-2.2l7.8-7.8',
-    image: ['M3.5 4.5h17v15h-17z', 'M8.3 10.4a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z', 'M3.5 16.4l4.8-4.6 5 4.6 3-2.7 4.2 3.9'],
-    file: ['M6 3.5h7.5L18.5 8.5v12h-12.5z', 'M13.3 3.5v5.2h5'],
-    play: 'M8 5.2l11 6.8-11 6.8z',
-    pause: ['M9 5.5v13', 'M15 5.5v13'],
-    download: 'M12 4v11M7 10.5l5 5 5-5M4.5 19.5h15',
-    mic: ['M12 14.5a3.2 3.2 0 0 0 3.2-3.2V6.2a3.2 3.2 0 1 0-6.4 0v5.1a3.2 3.2 0 0 0 3.2 3.2z', 'M6 11a6 6 0 0 0 12 0', 'M12 17.5v3'],
-    'mic-off': ['M15.2 8V6.2a3.2 3.2 0 0 0-6.2-1.1M8.8 9.4v1.9a3.2 3.2 0 0 0 5 2.6', 'M6 11a6 6 0 0 0 9.5 4.9', 'M12 17.5v3', 'M3 3l18 18'],
-    voice: 'M4 9.5h3L12 5v14l-5-4.5H4zM16 9.5a4 4 0 0 1 0 5M18.8 7a8 8 0 0 1 0 10',
-    'voice-off': ['M4 9.5h3L12 5v14l-5-4.5H4z', 'M16.5 10l5 4M21.5 10l-5 4'],
-    headphones: ['M4.5 15v-3a7.5 7.5 0 0 1 15 0v3', 'M4.5 13.5h2.2v6H4.5zM17.3 13.5h2.2v6h-2.2z'],
-    camera: ['M4 7.5h4l1.5-2h5L16 7.5h4v12H4z', 'M12 16.8a3.4 3.4 0 1 0 0-6.8 3.4 3.4 0 0 0 0 6.8z'],
-    screen: ['M3 5h18v11H3z', 'M8.5 20h7', 'M12 16v4'],
-    hangup: ['M2.8 13.5c4.6-4.4 13.8-4.4 18.4 0l-2 2.6-3.6-.8-.6-2.6a11 11 0 0 0-5.9 0l-.6 2.6-3.6.8z'],
-    hand: ['M9 12.5V6a1.5 1.5 0 0 1 3 0v5.5M12 11V4.8a1.5 1.5 0 0 1 3 0V12M15 11.5V7.4a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.6a5 5 0 0 1-4-2l-3-4.2a1.6 1.6 0 0 1 2.4-2L9 15.2'],
-    stop: ['M6.5 6.5h11v11h-11z'],
+  // ---- media -----------------------------------------------------------
+  attach:
+    'M20.5 11.5l-8.4 8.4a4.6 4.6 0 0 1-6.5-6.5l8.7-8.7a3.1 3.1 0 0 1 4.4 4.4l-8.6 8.6a1.6 1.6 0 0 1-2.2-2.2l7.8-7.8',
+  image: [
+    'M3.5 4.5h17v15h-17z',
+    'M8.3 10.4a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z',
+    'M3.5 16.4l4.8-4.6 5 4.6 3-2.7 4.2 3.9',
+  ],
+  file: ['M6 3.5h7.5L18.5 8.5v12h-12.5z', 'M13.3 3.5v5.2h5'],
+  play: 'M8 5.2l11 6.8-11 6.8z',
+  pause: ['M9 5.5v13', 'M15 5.5v13'],
+  download: 'M12 4v11M7 10.5l5 5 5-5M4.5 19.5h15',
+  mic: [
+    'M12 14.5a3.2 3.2 0 0 0 3.2-3.2V6.2a3.2 3.2 0 1 0-6.4 0v5.1a3.2 3.2 0 0 0 3.2 3.2z',
+    'M6 11a6 6 0 0 0 12 0',
+    'M12 17.5v3',
+  ],
+  'mic-off': [
+    'M15.2 8V6.2a3.2 3.2 0 0 0-6.2-1.1M8.8 9.4v1.9a3.2 3.2 0 0 0 5 2.6',
+    'M6 11a6 6 0 0 0 9.5 4.9',
+    'M12 17.5v3',
+    'M3 3l18 18',
+  ],
+  voice: 'M4 9.5h3L12 5v14l-5-4.5H4zM16 9.5a4 4 0 0 1 0 5M18.8 7a8 8 0 0 1 0 10',
+  'voice-off': ['M4 9.5h3L12 5v14l-5-4.5H4z', 'M16.5 10l5 4M21.5 10l-5 4'],
+  headphones: ['M4.5 15v-3a7.5 7.5 0 0 1 15 0v3', 'M4.5 13.5h2.2v6H4.5zM17.3 13.5h2.2v6h-2.2z'],
+  camera: ['M4 7.5h4l1.5-2h5L16 7.5h4v12H4z', 'M12 16.8a3.4 3.4 0 1 0 0-6.8 3.4 3.4 0 0 0 0 6.8z'],
+  screen: ['M3 5h18v11H3z', 'M8.5 20h7', 'M12 16v4'],
+  hangup: [
+    'M2.8 13.5c4.6-4.4 13.8-4.4 18.4 0l-2 2.6-3.6-.8-.6-2.6a11 11 0 0 0-5.9 0l-.6 2.6-3.6.8z',
+  ],
+  hand: [
+    'M9 12.5V6a1.5 1.5 0 0 1 3 0v5.5M12 11V4.8a1.5 1.5 0 0 1 3 0V12M15 11.5V7.4a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.6a5 5 0 0 1-4-2l-3-4.2a1.6 1.6 0 0 1 2.4-2L9 15.2',
+  ],
+  stop: ['M6.5 6.5h11v11h-11z'],
 
-    // ---- spaces ----------------------------------------------------------
-    grid: ['M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z'],
-    compass: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M15.6 8.4l-2 5.2-5.2 2 2-5.2z'],
-    door: ['M14.5 3.5h4v17h-4', 'M14.5 3.5L5.5 5.2v13.6l9 1.7z', 'M11.6 12.2h.01'],
-  };
+  // ---- spaces ----------------------------------------------------------
+  grid: ['M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z'],
+  compass: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M15.6 8.4l-2 5.2-5.2 2 2-5.2z'],
+  door: ['M14.5 3.5h4v17h-4', 'M14.5 3.5L5.5 5.2v13.6l9 1.7z', 'M11.6 12.2h.01'],
+};
 
-  /**
-   * Per-glyph corrections, in grid units.
-   *
-   * The comment above promises every icon sits on the same 24x24 grid so any
-   * two read at the same optical size side by side. Twenty of them didn't —
-   * their ink was drawn off-centre, by up to 1.75 units, which is about a
-   * pixel and a half at the sizes these render at and reads as "the icon is
-   * sitting wrong in its button".
-   *
-   * These numbers are measured, not guessed: render the glyph, take its
-   * `getBBox`, and the correction is whatever moves the ink's centre onto
-   * (12, 12). Redo that if you add or redraw an icon.
-   *
-   * `play` is the one deliberate exception. A right-pointing triangle centred
-   * by its bounding box looks left-heavy, so it keeps about half a unit of
-   * offset — the correction below takes it from +1.5 to +0.55 rather than to
-   * zero.
-   */
-  const nudge: Record<string, [number, number]> = {
-    key: [0.5, -1],
-    sparkle: [-1.25, -0.3],
-    play: [-0.95, 0],
-    people: [1.18, -0.25],
-    hangup: [0, -1.15],
-    hand: [0.89, -0.15],
-    'voice-off': [-0.75, 0],
-    react: [0.66, 0],
-    search: [-0.5, -0.5],
-    attach: [-0.44, -0.45],
-    pin: [-0.4, 0.4],
-    bell: [0, 0.53],
-    chevron: [0, -0.5],
-    'chevron-right': [-0.5, 0],
-    'chevron-left': [0.5, 0],
-    warn: [0, 0.5],
-    reply: [0, -0.5],
-    forward: [0, -0.5],
-    camera: [0, -0.5],
-    screen: [0, -0.5],
-  };
+/**
+ * Per-glyph corrections, in grid units.
+ *
+ * The comment above promises every icon sits on the same 24x24 grid so any
+ * two read at the same optical size side by side. Twenty of them didn't —
+ * their ink was drawn off-centre, by up to 1.75 units, which is about a
+ * pixel and a half at the sizes these render at and reads as "the icon is
+ * sitting wrong in its button".
+ *
+ * These numbers are measured, not guessed: render the glyph, take its
+ * `getBBox`, and the correction is whatever moves the ink's centre onto
+ * (12, 12). Redo that if you add or redraw an icon.
+ *
+ * `play` is the one deliberate exception. A right-pointing triangle centred
+ * by its bounding box looks left-heavy, so it keeps about half a unit of
+ * offset — the correction below takes it from +1.5 to +0.55 rather than to
+ * zero.
+ */
+const nudge: Record<string, [number, number]> = {
+  key: [0.5, -1],
+  sparkle: [-1.25, -0.3],
+  play: [-0.95, 0],
+  people: [1.18, -0.25],
+  hangup: [0, -1.15],
+  hand: [0.89, -0.15],
+  'voice-off': [-0.75, 0],
+  react: [0.66, 0],
+  search: [-0.5, -0.5],
+  attach: [-0.44, -0.45],
+  pin: [-0.4, 0.4],
+  bell: [0, 0.53],
+  chevron: [0, -0.5],
+  'chevron-right': [-0.5, 0],
+  'chevron-left': [0.5, 0],
+  warn: [0, 0.5],
+  reply: [0, -0.5],
+  forward: [0, -0.5],
+  camera: [0, -0.5],
+  screen: [0, -0.5],
+};
 
-  let {
-    name,
-    size = 18,
-    stroke = 2,
-  }: { name: keyof typeof paths | string; size?: number; stroke?: number } = $props();
+let {
+  name,
+  size = 18,
+  stroke = 2,
+}: { name: keyof typeof paths | string; size?: number; stroke?: number } = $props();
 
-  const shift = $derived(nudge[name as string]);
+const shift = $derived(nudge[name as string]);
 
-  const list = $derived.by(() => {
-    const p = paths[name];
-    if (!p) return [];
-    return Array.isArray(p) ? p : [p];
-  });
+const list = $derived.by(() => {
+  const p = paths[name];
+  if (!p) return [];
+  return Array.isArray(p) ? p : [p];
+});
 </script>
 
 <svg

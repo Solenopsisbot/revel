@@ -1,72 +1,73 @@
 <script lang="ts">
-  /**
-   * Space → Rooms (`docs/18`): the list, create/delete, and per-room settings.
-   *
-   * The audience picker is the careful one. A room's audience *is* its
-   * encryption group — the crypto boundary — while who can post or pin are
-   * rules the space enforces. Users must not be misled about which is which,
-   * so the picker says the difference in three lines at the point of decision
-   * and never says "MLS", "epoch" or "key group".
-   *
-   * Audience is immutable after creation. There is no re-encryption story for
-   * a populated room, so the control is disabled afterwards *with the reason*
-   * rather than greying out mysteriously.
-   */
-  import Icon from '$lib/Icon.svelte';
-  import { core } from '$lib/fake/core.svelte.js';
-  import type { Audience, Room } from '$lib/fake/data.js';
+/**
+ * Space → Rooms (`docs/18`): the list, create/delete, and per-room settings.
+ *
+ * The audience picker is the careful one. A room's audience *is* its
+ * encryption group — the crypto boundary — while who can post or pin are
+ * rules the space enforces. Users must not be misled about which is which,
+ * so the picker says the difference in three lines at the point of decision
+ * and never says "MLS", "epoch" or "key group".
+ *
+ * Audience is immutable after creation. There is no re-encryption story for
+ * a populated room, so the control is disabled afterwards *with the reason*
+ * rather than greying out mysteriously.
+ */
 
-  let { initialRoom }: { initialRoom?: string } = $props();
+import { core } from '$lib/fake/core.svelte.js';
+import type { Audience, Room } from '$lib/fake/data.js';
+import Icon from '$lib/Icon.svelte';
 
-  const space = $derived(core.space);
-  /** Which room's settings are open. Seeded from the prop — the caller can
+let { initialRoom }: { initialRoom?: string } = $props();
+
+const space = $derived(core.space);
+/** Which room's settings are open. Seeded from the prop — the caller can
       deep-link straight to one room — and owned by this component after that,
       so picking a different room from the list doesn't fight the prop. */
-  let editing = $state<string | null>(null);
-  $effect(() => {
-    if (initialRoom) editing = initialRoom;
-  });
-  let creating = $state(false);
-  let newName = $state('');
-  let newKind = $state<'text' | 'voice'>('text');
-  /** The audience for a room that doesn't exist yet — the only time it's editable. */
-  let newAudience = $state<Audience>({ kind: 'everyone' });
+let editing = $state<string | null>(null);
+$effect(() => {
+  if (initialRoom) editing = initialRoom;
+});
+let creating = $state(false);
+let newName = $state('');
+let newKind = $state<'text' | 'voice'>('text');
+/** The audience for a room that doesn't exist yet — the only time it's editable. */
+let newAudience = $state<Audience>({ kind: 'everyone' });
 
-  const room = $derived(space.rooms.find((r) => r.id === editing));
+const room = $derived(space.rooms.find((r) => r.id === editing));
 
-  function describe(a: Audience): string {
-    if (a.kind === 'everyone') return 'Everyone in this space';
-    if (a.kind === 'roles') return `People with ${a.roles.join(' or ')}`;
-    return `${a.faceIds.length} people, picked`;
-  }
+function describe(a: Audience): string {
+  if (a.kind === 'everyone') return 'Everyone in this space';
+  if (a.kind === 'roles') return `People with ${a.roles.join(' or ')}`;
+  return `${a.faceIds.length} people, picked`;
+}
 
-  /** Nudge toward reusing an existing group: a second identical audience is a
+/** Nudge toward reusing an existing group: a second identical audience is a
       second key group with a real cost (`docs/18`). */
-  function matches(a: Audience): string | null {
-    if (a.kind !== 'roles') return null;
-    const twin = space.rooms.find(
-      (r) => r.audience.kind === 'roles' && r.audience.roles.join() === a.roles.join(),
-    );
-    return twin ? `#${twin.name}` : null;
-  }
+function matches(a: Audience): string | null {
+  if (a.kind !== 'roles') return null;
+  const twin = space.rooms.find(
+    (r) => r.audience.kind === 'roles' && r.audience.roles.join() === a.roles.join(),
+  );
+  return twin ? `#${twin.name}` : null;
+}
 
-  function create() {
-    const name = newName.trim();
-    if (!name) return;
-    core.createRoom(space.id, name, newKind);
-    const made = space.rooms[space.rooms.length - 1];
-    if (made) made.audience = newAudience;
-    creating = false;
-    newName = '';
-    newKind = 'text';
-    newAudience = { kind: 'everyone' };
-  }
+function create() {
+  const name = newName.trim();
+  if (!name) return;
+  core.createRoom(space.id, name, newKind);
+  const made = space.rooms[space.rooms.length - 1];
+  if (made) made.audience = newAudience;
+  creating = false;
+  newName = '';
+  newKind = 'text';
+  newAudience = { kind: 'everyone' };
+}
 
-  function toggleRole(a: Audience, role: string): Audience {
-    if (a.kind !== 'roles') return { kind: 'roles', roles: [role] };
-    const roles = a.roles.includes(role) ? a.roles.filter((r) => r !== role) : [...a.roles, role];
-    return roles.length ? { kind: 'roles', roles } : { kind: 'everyone' };
-  }
+function toggleRole(a: Audience, role: string): Audience {
+  if (a.kind !== 'roles') return { kind: 'roles', roles: [role] };
+  const roles = a.roles.includes(role) ? a.roles.filter((r) => r !== role) : [...a.roles, role];
+  return roles.length ? { kind: 'roles', roles } : { kind: 'everyone' };
+}
 </script>
 
 <h2>Rooms</h2>

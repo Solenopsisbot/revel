@@ -1,68 +1,70 @@
 <script lang="ts">
-  /**
-   * Settings → Notifications (`docs/19`): global rules, per-space and per-room
-   * overrides, quiet hours, sounds, lock-screen previews.
-   *
-   * The design choice worth defending is that every room row shows the level
-   * it is *actually getting* and where that came from. Every notification
-   * screen ever built answers "what is this set to"; almost none answer "why
-   * is this room quiet", which is the only question anyone brings to the
-   * screen. `core.notifyFor` returns both, so the row can say "Mentions ·
-   * from Solexsis" rather than leaving you to work it out.
-   */
-  import Icon from '$lib/Icon.svelte';
-  import { core } from '$lib/fake/core.svelte.js';
-  import { layout } from '$lib/layout.svelte.js';
-  import type { NotifyLevel } from '$lib/fake/data.js';
+/**
+ * Settings → Notifications (`docs/19`): global rules, per-space and per-room
+ * overrides, quiet hours, sounds, lock-screen previews.
+ *
+ * The design choice worth defending is that every room row shows the level
+ * it is *actually getting* and where that came from. Every notification
+ * screen ever built answers "what is this set to"; almost none answer "why
+ * is this room quiet", which is the only question anyone brings to the
+ * screen. `core.notifyFor` returns both, so the row can say "Mentions ·
+ * from Solexsis" rather than leaving you to work it out.
+ */
 
-  const LEVELS: { id: NotifyLevel; label: string }[] = [
-    { id: 'all', label: 'Everything' },
-    { id: 'mentions', label: 'Mentions' },
-    { id: 'none', label: 'Nothing' },
-  ];
+import { core } from '$lib/fake/core.svelte.js';
+import type { NotifyLevel } from '$lib/fake/data.js';
+import Icon from '$lib/Icon.svelte';
+import { layout } from '$lib/layout.svelte.js';
 
-  const n = $derived(core.notifications);
+const LEVELS: { id: NotifyLevel; label: string }[] = [
+  { id: 'all', label: 'Everything' },
+  { id: 'mentions', label: 'Mentions' },
+  { id: 'none', label: 'Nothing' },
+];
 
-  /** Rooms that carry an explicit override, so the list leads with the
+const n = $derived(core.notifications);
+
+/** Rooms that carry an explicit override, so the list leads with the
       decisions someone actually made rather than a wall of inherited rows. */
-  const overridden = $derived(
-    core.spaces.flatMap((s) =>
-      s.rooms.filter((r) => r.notify).map((r) => ({ space: s, room: r })),
-    ),
-  );
+const overridden = $derived(
+  core.spaces.flatMap((s) => s.rooms.filter((r) => r.notify).map((r) => ({ space: s, room: r }))),
+);
 
-  let addingFor = $state<string | null>(null);
+let addingFor = $state<string | null>(null);
 
-  /**
-   * What push actually does on the device you are holding.
-   *
-   * `docs/24`: "This is where mobile hurts, and pretending otherwise helps
-   * nobody… the notification settings screen on iOS states the limitation
-   * plainly instead of showing a toggle that silently does nothing."
-   *
-   * So this is not a support-matrix table for everyone to read. It is a
-   * statement about *this* device, and it exists to stop the app implying a
-   * capability it doesn't have. `?platform=ios` forces it for review.
-   */
-  const delivery = $derived.by(() => {
-    if (!layout.ios) {
-      return { warn: false, line: 'Push works on this device. Notifications arrive whether or not Revel is open.' };
-    }
-    if (!layout.standalone) {
-      return {
-        warn: true,
-        line: 'Safari on iOS only delivers push to an app added to the Home Screen. Until Revel is added, nothing on this screen can reach you while it is closed.',
-      };
-    }
+/**
+ * What push actually does on the device you are holding.
+ *
+ * `docs/24`: "This is where mobile hurts, and pretending otherwise helps
+ * nobody… the notification settings screen on iOS states the limitation
+ * plainly instead of showing a toggle that silently does nothing."
+ *
+ * So this is not a support-matrix table for everyone to read. It is a
+ * statement about *this* device, and it exists to stop the app implying a
+ * capability it doesn't have. `?platform=ios` forces it for review.
+ */
+const delivery = $derived.by(() => {
+  if (!layout.ios) {
+    return {
+      warn: false,
+      line: 'Push works on this device. Notifications arrive whether or not Revel is open.',
+    };
+  }
+  if (!layout.standalone) {
     return {
       warn: true,
-      line: 'Push works here, and less well than we would like. What follows is Apple\u2019s doing, not a setting you have got wrong.',
+      line: 'Safari on iOS only delivers push to an app added to the Home Screen. Until Revel is added, nothing on this screen can reach you while it is closed.',
     };
-  });
+  }
+  return {
+    warn: true,
+    line: 'Push works here, and less well than we would like. What follows is Apple\u2019s doing, not a setting you have got wrong.',
+  };
+});
 
-  /** With no push at all, a lock-screen preview toggle is a control that does
+/** With no push at all, a lock-screen preview toggle is a control that does
       nothing. Disabling it and saying why beats letting it lie. */
-  const noPush = $derived(layout.ios && !layout.standalone);
+const noPush = $derived(layout.ios && !layout.standalone);
 </script>
 
 <h2>Notifications</h2>

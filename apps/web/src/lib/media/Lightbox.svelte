@@ -1,23 +1,27 @@
 <script lang="ts">
-  /**
-   * Full-screen media viewer.
-   *
-   * Deliberately spare: the picture is the content, so the chrome is one row
-   * of controls that fades unless you ask for it. Arrow keys step through the
-   * other attachments on the same message, which is the only navigation that
-   * makes sense here — a global "next image in the room" would need an index
-   * the client doesn't keep.
-   */
-  import Icon from '$lib/Icon.svelte';
-  import { bytes } from '$lib/format.js';
-  import { lightbox } from './lightbox.svelte.js';
+/**
+ * Full-screen media viewer.
+ *
+ * Deliberately spare: the picture is the content, so the chrome is one row
+ * of controls that fades unless you ask for it. Arrow keys step through the
+ * other attachments on the same message, which is the only navigation that
+ * makes sense here — a global "next image in the room" would need an index
+ * the client doesn't keep.
+ */
 
-  function onKey(e: KeyboardEvent) {
-    if (!lightbox.open) return;
-    if (e.key === 'Escape') { e.stopPropagation(); lightbox.close(); }
-    if (e.key === 'ArrowRight') lightbox.step(1);
-    if (e.key === 'ArrowLeft') lightbox.step(-1);
+import { bytes } from '$lib/format.js';
+import Icon from '$lib/Icon.svelte';
+import { lightbox } from './lightbox.svelte.js';
+
+function onKey(e: KeyboardEvent) {
+  if (!lightbox.open) return;
+  if (e.key === 'Escape') {
+    e.stopPropagation();
+    lightbox.close();
   }
+  if (e.key === 'ArrowRight') lightbox.step(1);
+  if (e.key === 'ArrowLeft') lightbox.step(-1);
+}
 </script>
 
 <svelte:window onkeydown={onKey} />

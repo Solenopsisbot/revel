@@ -1,28 +1,24 @@
 <script lang="ts">
-  import type { Face } from './fake/data.js';
+import type { Face } from './fake/data.js';
 
-  let {
-    face,
-    size = 40,
-    dot = false,
-  }: { face: Face; size?: number; dot?: boolean } = $props();
+let { face, size = 40, dot = false }: { face: Face; size?: number; dot?: boolean } = $props();
 
-  const initial = $derived(face.name.charAt(0).toUpperCase());
+const initial = $derived(face.name.charAt(0).toUpperCase());
 
-  /**
-   * The presence dot takes its colour from the actual status. It used to be
-   * mint unconditionally, which meant someone shown as `busy` in the roster
-   * still got a green dot — the list said one thing and the dot said another.
-   */
-  const statusColour = $derived(
-    face.status === 'busy'
-      ? 'var(--face-rose)'
-      : face.status === 'away'
-        ? 'var(--face-gold)'
-        : face.status === 'invisible'
-          ? 'var(--text-mute)'
-          : 'var(--face-mint)',
-  );
+/**
+ * The presence dot takes its colour from the actual status. It used to be
+ * mint unconditionally, which meant someone shown as `busy` in the roster
+ * still got a green dot — the list said one thing and the dot said another.
+ */
+const statusColour = $derived(
+  face.status === 'busy'
+    ? 'var(--face-rose)'
+    : face.status === 'away'
+      ? 'var(--face-gold)'
+      : face.status === 'invisible'
+        ? 'var(--text-mute)'
+        : 'var(--face-mint)',
+);
 </script>
 
 <span

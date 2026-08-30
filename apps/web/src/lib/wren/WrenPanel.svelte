@@ -1,48 +1,49 @@
 <script lang="ts">
-  /**
-   * Wren's inbox.
-   *
-   * This is rung 1, and rung 1 is where essentially everything lives
-   * (`docs/12`). It is opened, used, and closed — there is no "Wren's tips"
-   * surface that sits on screen, and she is not a sidebar pet.
-   *
-   * The volume control is in here as well as in settings, because the moment
-   * you want to turn someone down is the moment they have just spoken.
-   */
-  import Popover from '../Popover.svelte';
-  import Icon from '../Icon.svelte';
-  import WrenNotice from './WrenNotice.svelte';
-  import { wren, type Notice, type Volume } from './wren.svelte.js';
+/**
+ * Wren's inbox.
+ *
+ * This is rung 1, and rung 1 is where essentially everything lives
+ * (`docs/12`). It is opened, used, and closed — there is no "Wren's tips"
+ * surface that sits on screen, and she is not a sidebar pet.
+ *
+ * The volume control is in here as well as in settings, because the moment
+ * you want to turn someone down is the moment they have just spoken.
+ */
 
-  let {
-    anchor,
-    onclose,
-    onroute,
-  }: {
-    anchor: HTMLElement | undefined;
-    onclose: () => void;
-    /** Where an action wants to take you, when the honest answer is a screen. */
-    onroute: (to: { settings?: string; members?: boolean }) => void;
-  } = $props();
+import Icon from '../Icon.svelte';
+import Popover from '../Popover.svelte';
+import WrenNotice from './WrenNotice.svelte';
+import { type Notice, type Volume, wren } from './wren.svelte.js';
 
-  const VOLUMES: { id: Volume; label: string; hint: string }[] = [
-    { id: 'quiet', label: 'Quiet', hint: 'Panel only. Never interrupts.' },
-    { id: 'normal', label: 'Normal', hint: 'Interrupts only for the three things that earn it.' },
-    { id: 'chatty', label: 'Chatty', hint: 'Adds the housekeeping ones.' },
-  ];
+let {
+  anchor,
+  onclose,
+  onroute,
+}: {
+  anchor: HTMLElement | undefined;
+  onclose: () => void;
+  /** Where an action wants to take you, when the honest answer is a screen. */
+  onroute: (to: { settings?: string; members?: boolean }) => void;
+} = $props();
 
-  let showVolume = $state(false);
+const VOLUMES: { id: Volume; label: string; hint: string }[] = [
+  { id: 'quiet', label: 'Quiet', hint: 'Panel only. Never interrupts.' },
+  { id: 'normal', label: 'Normal', hint: 'Interrupts only for the three things that earn it.' },
+  { id: 'chatty', label: 'Chatty', hint: 'Adds the housekeeping ones.' },
+];
 
-  function act(n: Notice, actionId: string, dismissive: boolean) {
-    const to = wren.act(n, actionId);
-    // A dismissive action resolves the notice by hand; every other action
-    // resolves it by changing the state it was describing.
-    if (dismissive) wren.dismiss(n.id);
-    if (to) {
-      onroute(to);
-      onclose();
-    }
+let showVolume = $state(false);
+
+function act(n: Notice, actionId: string, dismissive: boolean) {
+  const to = wren.act(n, actionId);
+  // A dismissive action resolves the notice by hand; every other action
+  // resolves it by changing the state it was describing.
+  if (dismissive) wren.dismiss(n.id);
+  if (to) {
+    onroute(to);
+    onclose();
   }
+}
 </script>
 
 <Popover {anchor} align="end" prefer="bottom" {onclose}>

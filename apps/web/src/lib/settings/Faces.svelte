@@ -1,42 +1,42 @@
 <script lang="ts">
-  /**
-   * Settings → Faces (`docs/11`, `docs/19`).
-   *
-   * The list is also the editor: clicking Edit opens the fields in place
-   * rather than pushing a second modal on top of the settings modal, which is
-   * two layers of chrome to get at four text inputs.
-   *
-   * The public-linking toggle is the load-bearing control on this page and it
-   * is off by default. Some systems are out and some very much aren't, and the
-   * copy says exactly that instead of a neutral "privacy option" euphemism.
-   */
-  import Avatar from '$lib/Avatar.svelte';
-  import Icon from '$lib/Icon.svelte';
-  import { core } from '$lib/fake/core.svelte.js';
-  import type { FaceColour } from '$lib/fake/data.js';
+/**
+ * Settings → Faces (`docs/11`, `docs/19`).
+ *
+ * The list is also the editor: clicking Edit opens the fields in place
+ * rather than pushing a second modal on top of the settings modal, which is
+ * two layers of chrome to get at four text inputs.
+ *
+ * The public-linking toggle is the load-bearing control on this page and it
+ * is off by default. Some systems are out and some very much aren't, and the
+ * copy says exactly that instead of a neutral "privacy option" euphemism.
+ */
+import Avatar from '$lib/Avatar.svelte';
+import { core } from '$lib/fake/core.svelte.js';
+import type { FaceColour } from '$lib/fake/data.js';
+import Icon from '$lib/Icon.svelte';
 
-  let { editing = $bindable<string | null>(null) }: { editing?: string | null } = $props();
+let { editing = $bindable<string | null>(null) }: { editing?: string | null } = $props();
 
-  const COLOURS: FaceColour[] = ['gold', 'rose', 'violet', 'sky', 'mint', 'coral', 'lilac', 'aqua'];
-  const STATUSES = [
-    { id: 'here', label: 'Here' },
-    { id: 'away', label: 'Away' },
-    { id: 'busy', label: 'Busy' },
-    { id: 'invisible', label: 'Invisible' },
-  ] as const;
+const COLOURS: FaceColour[] = ['gold', 'rose', 'violet', 'sky', 'mint', 'coral', 'lilac', 'aqua'];
+const STATUSES = [
+  { id: 'here', label: 'Here' },
+  { id: 'away', label: 'Away' },
+  { id: 'busy', label: 'Busy' },
+  { id: 'invisible', label: 'Invisible' },
+] as const;
 
-  const myFaces = $derived(core.myFaces);
-  const face = $derived(myFaces.find((f) => f.id === editing));
+const myFaces = $derived(core.myFaces);
+const face = $derived(myFaces.find((f) => f.id === editing));
 
-  let adding = $state(false);
-  let newName = $state('');
+let adding = $state(false);
+let newName = $state('');
 
-  function add() {
-    if (!newName.trim()) return;
-    core.addFace(newName);
-    newName = '';
-    adding = false;
-  }
+function add() {
+  if (!newName.trim()) return;
+  core.addFace(newName);
+  newName = '';
+  adding = false;
+}
 </script>
 
 <h2>Faces</h2>

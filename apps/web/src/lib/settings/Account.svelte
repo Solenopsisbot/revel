@@ -1,5 +1,5 @@
 <script lang="ts">
-  let moving = $state(false);
+let moving = $state(false);
 </script>
 
 <h2>Account</h2>

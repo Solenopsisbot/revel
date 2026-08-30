@@ -1,27 +1,27 @@
 <script lang="ts">
-  // FullAutoFill is the same union the DOM typings use for the attribute, so a
-  // caller cannot pass a token the browser will ignore.
-  import type { FullAutoFill } from 'svelte/elements';
+// FullAutoFill is the same union the DOM typings use for the attribute, so a
+// caller cannot pass a token the browser will ignore.
+import type { FullAutoFill } from 'svelte/elements';
 
-  let {
-    label,
-    value = $bindable(''),
-    type = 'text',
-    placeholder = '',
-    hint = '',
-    suffix = '',
-    autocomplete,
-    invalid = false,
-  }: {
-    label: string;
-    value?: string;
-    type?: 'text' | 'password';
-    placeholder?: string;
-    hint?: string;
-    suffix?: string;
-    autocomplete?: FullAutoFill;
-    invalid?: boolean;
-  } = $props();
+let {
+  label,
+  value = $bindable(''),
+  type = 'text',
+  placeholder = '',
+  hint = '',
+  suffix = '',
+  autocomplete,
+  invalid = false,
+}: {
+  label: string;
+  value?: string;
+  type?: 'text' | 'password';
+  placeholder?: string;
+  hint?: string;
+  suffix?: string;
+  autocomplete?: FullAutoFill;
+  invalid?: boolean;
+} = $props();
 </script>
 
 <label class="field">

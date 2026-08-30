@@ -1,23 +1,28 @@
 <script lang="ts">
-  /**
-   * A DM call, ringing.
-   *
-   * The second shape of call from `docs/21`: a voice room is a place you walk
-   * into and a DM call is a phone call. Three buttons rather than two, because
-   * **"answer muted" is the option people actually want** when they aren't
-   * sure what they're walking into — and burying it behind "answer, then
-   * scramble for the mic button" is how every other app gets this wrong.
-   *
-   * Not a modal over the whole app: it is a card, so a ring while you are
-   * mid-sentence somewhere else doesn't seize the window.
-   */
-  import Avatar from '../Avatar.svelte';
-  import Icon from '../Icon.svelte';
-  import { core } from '../fake/core.svelte.js';
-  import { voice } from './voice.svelte.js';
+/**
+ * A DM call, ringing.
+ *
+ * The second shape of call from `docs/21`: a voice room is a place you walk
+ * into and a DM call is a phone call. Three buttons rather than two, because
+ * **"answer muted" is the option people actually want** when they aren't
+ * sure what they're walking into — and burying it behind "answer, then
+ * scramble for the mic button" is how every other app gets this wrong.
+ *
+ * Not a modal over the whole app: it is a card, so a ring while you are
+ * mid-sentence somewhere else doesn't seize the window.
+ */
+import Avatar from '../Avatar.svelte';
+import { core } from '../fake/core.svelte.js';
+import { directory } from '../fake/directory.svelte.js';
+import Icon from '../Icon.svelte';
+import { voice } from './voice.svelte.js';
 
-  const from = $derived(core.faces[voice.incoming!.fromFaceId]!);
-  const dm = $derived(core.dms.find((d) => d.id === voice.incoming!.dmId));
+const from = $derived(core.faces[voice.incoming!.fromFaceId]!);
+const dm = $derived(core.dms.find((d) => d.id === voice.incoming!.dmId));
+const dmTitle = $derived.by(() => {
+  const info = directory.dms().find((r) => r.id === voice.incoming?.dmId);
+  return info ? directory.title(info) : '';
+});
 </script>
 
 <div class="ring" role="alertdialog" aria-label="Incoming call from {from.name}">
@@ -26,7 +31,7 @@
     <b>{from.name}</b>
     <span>
       calling
-      {#if dm && dm.kind === 'group'}· {dm.name ?? core.dmTitle(dm)}{/if}
+      {#if dm && dm.kind === 'group'}· {dm.name ?? dmTitle}{/if}
     </span>
   </div>
 

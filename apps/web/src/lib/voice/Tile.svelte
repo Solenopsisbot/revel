@@ -1,22 +1,22 @@
 <script lang="ts">
-  /**
-   * One participant.
-   *
-   * The face's colour is the speaking ring, so the identity colour that names
-   * someone in chat is the one that identifies their voice. Plural systems get
-   * that for free — the tile shows the *face* that joined, not the account.
-   *
-   * Tiles never reorder. A grid that reshuffles on every utterance is unusable
-   * in a four-way conversation, so speaking is a ring and nothing else moves.
-   */
-  import Avatar from '../Avatar.svelte';
-  import Icon from '../Icon.svelte';
-  import { core } from '../fake/core.svelte.js';
-  import { voice, type Participant } from './voice.svelte.js';
+/**
+ * One participant.
+ *
+ * The face's colour is the speaking ring, so the identity colour that names
+ * someone in chat is the one that identifies their voice. Plural systems get
+ * that for free — the tile shows the *face* that joined, not the account.
+ *
+ * Tiles never reorder. A grid that reshuffles on every utterance is unusable
+ * in a four-way conversation, so speaking is a ring and nothing else moves.
+ */
+import Avatar from '../Avatar.svelte';
+import { core } from '../fake/core.svelte.js';
+import Icon from '../Icon.svelte';
+import { type Participant, voice } from './voice.svelte.js';
 
-  let { p, me }: { p: Participant; me: boolean } = $props();
+let { p, me }: { p: Participant; me: boolean } = $props();
 
-  const face = $derived(core.faces[p.faceId]!);
+const face = $derived(core.faces[p.faceId]!);
 </script>
 
 <div

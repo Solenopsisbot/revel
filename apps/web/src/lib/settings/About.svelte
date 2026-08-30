@@ -1,18 +1,18 @@
 <script lang="ts">
-  import { core } from '$lib/fake/core.svelte.js';
-  import { layout } from '$lib/layout.svelte.js';
+import { core } from '$lib/fake/core.svelte.js';
+import { layout } from '$lib/layout.svelte.js';
 
-  /**
-   * "What the server can see" is generated from the room's real configuration,
-   * never canned (`docs/12`). A hardcoded reassurance that silently stops
-   * matching reality is worse than none.
-   */
-  const agents = $derived(core.roster.filter((f) => f.agent));
-  const humans = $derived(core.roster.filter((f) => !f.agent));
-  // Everything, not just the timeline: a thread reply is an event the
-  // server counted like any other, and this screen is only persuasive
-  // while it is exactly true.
-  const count = $derived(core.everythingInRoom.length);
+/**
+ * "What the server can see" is generated from the room's real configuration,
+ * never canned (`docs/12`). A hardcoded reassurance that silently stops
+ * matching reality is worse than none.
+ */
+const agents = $derived(core.roster.filter((f) => f.agent));
+const humans = $derived(core.roster.filter((f) => !f.agent));
+// Everything, not just the timeline: a thread reply is an event the
+// server counted like any other, and this screen is only persuasive
+// while it is exactly true.
+const count = $derived(core.everythingInRoom.length);
 </script>
 
 <h2>About</h2>

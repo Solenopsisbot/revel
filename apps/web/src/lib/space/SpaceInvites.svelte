@@ -1,60 +1,61 @@
 <script lang="ts">
-  /**
-   * Space settings → Invites (`docs/18` §Joining, `docs/03` §4).
-   *
-   * The link is `revel.chat/i/<code>#<key>` and the shape is the point: the
-   * fragment carries the key material and **never reaches the server**, which
-   * is the Wormhole trick Kith already proved. So the Host is holding a row it
-   * cannot open, and anyone with the link can — which is exactly why expiry
-   * and use counts exist. They are not tidiness, they are the blast radius.
-   *
-   * The screen shows the key half rather than hiding it, because a link you
-   * cannot see the shape of is a link you cannot reason about, and "the part
-   * after the # never leaves your browser" is a claim best made next to the
-   * part it is about.
-   *
-   * The history switch is `docs/18`'s "said once on the invite page" line,
-   * made at the moment it is decided rather than explained afterwards.
-   */
-  import Avatar from '$lib/Avatar.svelte';
-  import Icon from '$lib/Icon.svelte';
-  import { core } from '$lib/fake/core.svelte.js';
-  import { ago } from '$lib/format.js';
-  import { resolve } from './perms.js';
+/**
+ * Space settings → Invites (`docs/18` §Joining, `docs/03` §4).
+ *
+ * The link is `revel.chat/i/<code>#<key>` and the shape is the point: the
+ * fragment carries the key material and **never reaches the server**, which
+ * is the Wormhole trick Kith already proved. So the Host is holding a row it
+ * cannot open, and anyone with the link can — which is exactly why expiry
+ * and use counts exist. They are not tidiness, they are the blast radius.
+ *
+ * The screen shows the key half rather than hiding it, because a link you
+ * cannot see the shape of is a link you cannot reason about, and "the part
+ * after the # never leaves your browser" is a claim best made next to the
+ * part it is about.
+ *
+ * The history switch is `docs/18`'s "said once on the invite page" line,
+ * made at the moment it is decided rather than explained afterwards.
+ */
+import Avatar from '$lib/Avatar.svelte';
+import { core } from '$lib/fake/core.svelte.js';
+import { ago } from '$lib/format.js';
+import Icon from '$lib/Icon.svelte';
+import { resolve } from './perms.js';
 
-  const space = $derived(core.space);
-  const mine = $derived(core.myMembership);
-  const mayInvite = $derived(!!mine?.owner || resolve(space, mine?.roles ?? []).has('INVITE'));
+const space = $derived(core.space);
+const mine = $derived(core.myMembership);
+const mayInvite = $derived(!!mine?.owner || resolve(space, mine?.roles ?? []).has('INVITE'));
 
-  let uses = $state<'1' | '10' | '∞'>('10');
-  let days = $state<'1' | '7' | '30' | 'never'>('7');
-  let history = $state(true);
-  let copied = $state<string | null>(null);
+let uses = $state<'1' | '10' | '∞'>('10');
+let days = $state<'1' | '7' | '30' | 'never'>('7');
+let history = $state(true);
+let copied = $state<string | null>(null);
 
-  function link(code: string, key: string) {
-    return `revel.chat/i/${code}#${key}`;
-  }
+function link(code: string, key: string) {
+  return `revel.chat/i/${code}#${key}`;
+}
 
-  function copy(code: string, key: string) {
-    void navigator.clipboard?.writeText(`https://${link(code, key)}`);
-    copied = code;
-    setTimeout(() => (copied = null), 1600);
-  }
+function copy(code: string, key: string) {
+  void navigator.clipboard?.writeText(`https://${link(code, key)}`);
+  copied = code;
+  setTimeout(() => (copied = null), 1600);
+}
 
-  function make() {
-    core.createInvite({
-      maxUses: uses === '∞' ? undefined : Number(uses),
-      days: days === 'never' ? undefined : Number(days),
-      history,
-    });
-  }
+function make() {
+  core.createInvite({
+    maxUses: uses === '∞' ? undefined : Number(uses),
+    days: days === 'never' ? undefined : Number(days),
+    history,
+  });
+}
 
-  /** Spent, expired, or live — and which, because they read differently. */
-  function status(i: { uses: number; maxUses?: number; expiresAt?: number }) {
-    if (i.maxUses !== undefined && i.uses >= i.maxUses) return { dead: true, why: 'All used up' };
-    if (i.expiresAt !== undefined && i.expiresAt < Date.now()) return { dead: true, why: `Expired ${ago(i.expiresAt)}` };
-    return { dead: false, why: '' };
-  }
+/** Spent, expired, or live — and which, because they read differently. */
+function status(i: { uses: number; maxUses?: number; expiresAt?: number }) {
+  if (i.maxUses !== undefined && i.uses >= i.maxUses) return { dead: true, why: 'All used up' };
+  if (i.expiresAt !== undefined && i.expiresAt < Date.now())
+    return { dead: true, why: `Expired ${ago(i.expiresAt)}` };
+  return { dead: false, why: '' };
+}
 </script>
 
 <h2>Invites</h2>

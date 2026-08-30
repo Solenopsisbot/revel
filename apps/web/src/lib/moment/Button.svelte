@@ -1,17 +1,17 @@
 <script lang="ts">
-  let {
-    children,
-    variant = 'primary',
-    disabled = false,
-    onclick,
-    type = 'button',
-  }: {
-    children: import('svelte').Snippet;
-    variant?: 'primary' | 'secondary' | 'ghost';
-    disabled?: boolean;
-    onclick?: () => void;
-    type?: 'button' | 'submit';
-  } = $props();
+let {
+  children,
+  variant = 'primary',
+  disabled = false,
+  onclick,
+  type = 'button',
+}: {
+  children: import('svelte').Snippet;
+  variant?: 'primary' | 'secondary' | 'ghost';
+  disabled?: boolean;
+  onclick?: () => void;
+  type?: 'button' | 'submit';
+} = $props();
 </script>
 
 <button class="btn {variant}" {disabled} {onclick} {type}>{@render children()}</button>

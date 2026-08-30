@@ -1,13 +1,13 @@
 <script lang="ts">
-  /**
-   * The device list reads `core`, not a local array, because Wren reads the
-   * same list to decide whether to mention a device nobody has touched in
-   * three months. Revoking one from her panel has to make it disappear from
-   * here, and vice versa — two copies would drift within a week.
-   */
-  import { core } from '$lib/fake/core.svelte.js';
+/**
+ * The device list reads `core`, not a local array, because Wren reads the
+ * same list to decide whether to mention a device nobody has touched in
+ * three months. Revoking one from her panel has to make it disappear from
+ * here, and vice versa — two copies would drift within a week.
+ */
+import { core } from '$lib/fake/core.svelte.js';
 
-  let fingerprints = $state(false);
+let fingerprints = $state(false);
 </script>
 
 <h2>Devices</h2>

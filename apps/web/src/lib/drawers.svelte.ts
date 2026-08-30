@@ -111,7 +111,16 @@ class Drawers {
     else if (e.clientX <= EDGE) lo = 0;
     else hi = 0;
 
-    this.g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), from: this.x, lo, hi, axis: null };
+    this.g = {
+      id: e.pointerId,
+      x0: e.clientX,
+      y0: e.clientY,
+      t0: performance.now(),
+      from: this.x,
+      lo,
+      hi,
+      axis: null,
+    };
   }
 
   move(e: PointerEvent) {

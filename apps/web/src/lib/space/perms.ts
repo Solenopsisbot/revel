@@ -58,14 +58,22 @@ export const PERM_GROUPS: PermGroup[] = [
   {
     name: 'The space',
     perms: [
-      { id: 'MANAGE_ROOMS', name: 'Manage rooms', blurb: 'Create, rename, recategorise and delete rooms.' },
+      {
+        id: 'MANAGE_ROOMS',
+        name: 'Manage rooms',
+        blurb: 'Create, rename, recategorise and delete rooms.',
+      },
       {
         id: 'MANAGE_ROLES',
         name: 'Manage roles',
         blurb: 'Create roles and change what they can do — including, eventually, their own.',
         heavy: true,
       },
-      { id: 'MANAGE_SPACE', name: 'Manage the space', blurb: 'Change its name, description and whether it is listed.' },
+      {
+        id: 'MANAGE_SPACE',
+        name: 'Manage the space',
+        blurb: 'Change its name, description and whether it is listed.',
+      },
       {
         id: 'MANAGE_AGENTS',
         name: 'Manage agents',
@@ -79,8 +87,17 @@ export const PERM_GROUPS: PermGroup[] = [
     name: 'Membership',
     perms: [
       { id: 'INVITE', name: 'Create invites', blurb: 'Make links that let new people in.' },
-      { id: 'KICK', name: 'Remove members', blurb: 'Take someone out. A new invite lets them back.' },
-      { id: 'BAN', name: 'Ban members', blurb: 'Take someone out and keep them out, across rejoins.', heavy: true },
+      {
+        id: 'KICK',
+        name: 'Remove members',
+        blurb: 'Take someone out. A new invite lets them back.',
+      },
+      {
+        id: 'BAN',
+        name: 'Ban members',
+        blurb: 'Take someone out and keep them out, across rejoins.',
+        heavy: true,
+      },
     ],
   },
   {
@@ -90,7 +107,8 @@ export const PERM_GROUPS: PermGroup[] = [
       {
         id: 'ADMINISTRATOR',
         name: 'Administrator',
-        blurb: 'Every permission here, plus immunity to per-room restrictions. Give it to people, not to roles you hand out.',
+        blurb:
+          'Every permission here, plus immunity to per-room restrictions. Give it to people, not to roles you hand out.',
         heavy: true,
       },
     ],
@@ -121,7 +139,10 @@ export function resolve(space: Space, roleNames: string[]): Set<Perm> {
 
 /** The highest rank among a set of roles. Nobody is rank 0. */
 export function rankOf(space: Space, roleNames: string[]): number {
-  return space.roles.reduce((max, r) => (roleNames.includes(r.name) ? Math.max(max, r.rank) : max), 0);
+  return space.roles.reduce(
+    (max, r) => (roleNames.includes(r.name) ? Math.max(max, r.rank) : max),
+    0,
+  );
 }
 
 export type Refusal = { ok: true } | { ok: false; why: string };

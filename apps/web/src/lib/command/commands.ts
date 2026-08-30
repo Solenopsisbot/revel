@@ -14,11 +14,19 @@
  * from the room's real configuration.
  */
 import { core, MY_ACCOUNT } from '../fake/core.svelte.js';
-import { theme, THEMES } from '../theme.svelte.js';
-import { voice } from '../voice/voice.svelte.js';
-import { wren } from '../wren/wren.svelte.js';
+import { directory } from '../fake/directory.svelte.js';
+
+/** Named by who is in it, through the directory seam (`docs/11`: by account). */
+const titleOf = (roomId: string) => {
+  const info = directory.dms().find((r) => r.id === roomId);
+  return info ? directory.title(info) : roomId;
+};
+
 import { search } from '../search/search.svelte.js';
 import { SECTIONS } from '../settings/sections.js';
+import { THEMES, theme } from '../theme.svelte.js';
+import { voice } from '../voice/voice.svelte.js';
+import { wren } from '../wren/wren.svelte.js';
 
 export type Group = 'Go to' | 'Create' | 'Configure' | 'Security' | 'Explain';
 
@@ -68,9 +76,13 @@ export function whatTheServerSees(): string {
   if (room.audience.kind === 'everyone') {
     parts.push('Everyone in this space holds the keys here.');
   } else if (room.audience.kind === 'roles') {
-    parts.push(`Only people with ${room.audience.roles.join(' or ')} hold the keys here, so the group is smaller than the space.`);
+    parts.push(
+      `Only people with ${room.audience.roles.join(' or ')} hold the keys here, so the group is smaller than the space.`,
+    );
   } else {
-    parts.push(`Only the ${room.audience.faceIds.length} people picked for this room hold the keys.`);
+    parts.push(
+      `Only the ${room.audience.faceIds.length} people picked for this room hold the keys.`,
+    );
   }
 
   if (agents.length) {
@@ -80,7 +92,9 @@ export function whatTheServerSees(): string {
   }
 
   if (room.kind === 'voice') {
-    parts.push('Audio frames are encrypted with a key from the same group, so the media server forwards packets it cannot decode.');
+    parts.push(
+      'Audio frames are encrypted with a key from the same group, so the media server forwards packets it cannot decode.',
+    );
   }
 
   return parts.join('\n\n');
@@ -116,7 +130,7 @@ export function buildCommands(ctx: Ctx): Command[] {
   for (const dm of core.dms) {
     out.push({
       id: `dm:${dm.id}`,
-      label: dm.name ?? core.dmTitle(dm),
+      label: dm.name ?? titleOf(dm.id),
       hint: dm.kind === 'group' ? 'Group' : 'Direct message',
       icon: 'send',
       group: 'Go to',

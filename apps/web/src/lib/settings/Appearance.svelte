@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { THEMES, theme } from '$lib/theme.svelte.js';
-  import Icon from '$lib/Icon.svelte';
+import Icon from '$lib/Icon.svelte';
+import { THEMES, theme } from '$lib/theme.svelte.js';
 </script>
 
 <h2>Appearance</h2>

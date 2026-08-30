@@ -35,7 +35,11 @@ export type Category = 'keys' | 'readers' | 'more' | 'housekeeping';
 export const CATEGORIES: { id: Category; name: string; blurb: string }[] = [
   { id: 'keys', name: 'Keys and devices', blurb: 'Recovery, devices, key changes' },
   { id: 'readers', name: 'Who can read this', blurb: 'Agents, history, invite links' },
-  { id: 'more', name: 'Getting more out of it', blurb: 'Translation, transcription, the command bar' },
+  {
+    id: 'more',
+    name: 'Getting more out of it',
+    blurb: 'Translation, transcription, the command bar',
+  },
   { id: 'housekeeping', name: 'Housekeeping', blurb: 'Storage, models, leftover history' },
 ];
 

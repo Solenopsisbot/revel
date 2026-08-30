@@ -19,6 +19,7 @@
 import type { UiMessage as Message } from '../fake/conversation.svelte.js';
 import { conversation } from '../fake/conversation.svelte.js';
 import { core } from '../fake/core.svelte.js';
+import { directory } from '../fake/directory.svelte.js';
 
 /** Where to look. Defaults to the room you are in and widens in one click. */
 export type Scope = 'room' | 'space' | 'everywhere';
@@ -219,8 +220,12 @@ class Search {
       const r = core.spaces.find((s) => s.id === spaceId)?.rooms.find((x) => x.id === roomId);
       return `#${r?.name ?? roomId}`;
     }
-    const dm = core.dms.find((d) => d.id === roomId);
-    return dm ? (dm.name ?? core.dmTitle(dm)) : roomId;
+    const named = core.dms.find((d) => d.id === roomId)?.name;
+    if (named) return named;
+    // Through the seam, so a conversation is named by who is in it rather than
+    // by which of their faces happened to be listed (`docs/11`).
+    const info = directory.dms().find((r) => r.id === roomId);
+    return info ? directory.title(info) : roomId;
   }
 
   /**

@@ -1,44 +1,44 @@
 <script lang="ts">
-  import Icon from '$lib/Icon.svelte';
-  import { SECTIONS } from '$lib/settings/sections.js';
-  import Account from '$lib/settings/Account.svelte';
-  import Faces from '$lib/settings/Faces.svelte';
-  import Devices from '$lib/settings/Devices.svelte';
-  import Appearance from '$lib/settings/Appearance.svelte';
-  import About from '$lib/settings/About.svelte';
-  import Wren from '$lib/settings/Wren.svelte';
-  import Notifications from '$lib/settings/Notifications.svelte';
-  import Language from '$lib/settings/Language.svelte';
-  import Privacy from '$lib/settings/Privacy.svelte';
-  import Storage from '$lib/settings/Storage.svelte';
+import Icon from '$lib/Icon.svelte';
+import About from '$lib/settings/About.svelte';
+import Account from '$lib/settings/Account.svelte';
+import Appearance from '$lib/settings/Appearance.svelte';
+import Devices from '$lib/settings/Devices.svelte';
+import Faces from '$lib/settings/Faces.svelte';
+import Language from '$lib/settings/Language.svelte';
+import Notifications from '$lib/settings/Notifications.svelte';
+import Privacy from '$lib/settings/Privacy.svelte';
+import Storage from '$lib/settings/Storage.svelte';
+import { SECTIONS } from '$lib/settings/sections.js';
+import Wren from '$lib/settings/Wren.svelte';
 
-  let {
-    open = $bindable(false),
-    section = $bindable('account'),
-    /** Which face the Faces pane opens on. Lets the profile card's "Edit this
+let {
+  open = $bindable(false),
+  section = $bindable('account'),
+  /** Which face the Faces pane opens on. Lets the profile card's "Edit this
         face" land on the right one rather than on the list. */
-    face = $bindable<string | null>(null),
-  }: {
-    open?: boolean;
-    section?: string;
-    face?: string | null;
-  } = $props();
+  face = $bindable<string | null>(null),
+}: {
+  open?: boolean;
+  section?: string;
+  face?: string | null;
+} = $props();
 
-  const meta = $derived(SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]!);
-  let panel = $state<HTMLElement>();
+const meta = $derived(SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]!);
+let panel = $state<HTMLElement>();
 
-  function onKey(e: KeyboardEvent) {
-    if (!open) return;
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      open = false;
-    }
+function onKey(e: KeyboardEvent) {
+  if (!open) return;
+  if (e.key === 'Escape') {
+    e.stopPropagation();
+    open = false;
   }
+}
 
-  // Focus the panel when it opens so Escape and tabbing land somewhere sane.
-  $effect(() => {
-    if (open) panel?.focus();
-  });
+// Focus the panel when it opens so Escape and tabbing land somewhere sane.
+$effect(() => {
+  if (open) panel?.focus();
+});
 </script>
 
 <svelte:window onkeydown={onKey} />

@@ -1,37 +1,38 @@
 <script lang="ts">
-  /**
-   * First run: one overlay, once.
-   *
-   * `docs/19` originally had this as a DM with Wren, which was the wrong shape
-   * for her — `docs/09` is explicit that she cannot be in a room, because a
-   * mascot who could read your conversations is exactly the ghost reader the
-   * product swears doesn't exist. An overlay is the honest surface: it is the
-   * client talking to you, on your device, in the one place that isn't a room.
-   *
-   * It is also the reason her introduction can say something a welcome *bot*
-   * never could. `docs/08`'s bot leads with "you can see me in the member list
-   * right now" — Wren leads with the opposite, and hers is the stronger claim.
-   *
-   * Deliberately **one screen, not a carousel.** `docs/19`: no tour, no coach
-   * marks, no progress ring. The three cliff screens already spent the user's
-   * patience on the things that genuinely can't be recovered from, and that
-   * budget is finite.
-   */
-  import Moment from '$lib/moment/Moment.svelte';
-  import Button from '$lib/moment/Button.svelte';
-  import { wren } from '$lib/wren/wren.svelte.js';
+/**
+ * First run: one overlay, once.
+ *
+ * `docs/19` originally had this as a DM with Wren, which was the wrong shape
+ * for her — `docs/09` is explicit that she cannot be in a room, because a
+ * mascot who could read your conversations is exactly the ghost reader the
+ * product swears doesn't exist. An overlay is the honest surface: it is the
+ * client talking to you, on your device, in the one place that isn't a room.
+ *
+ * It is also the reason her introduction can say something a welcome *bot*
+ * never could. `docs/08`'s bot leads with "you can see me in the member list
+ * right now" — Wren leads with the opposite, and hers is the stronger claim.
+ *
+ * Deliberately **one screen, not a carousel.** `docs/19`: no tour, no coach
+ * marks, no progress ring. The three cliff screens already spent the user's
+ * patience on the things that genuinely can't be recovered from, and that
+ * budget is finite.
+ */
 
-  let { onclose }: { onclose: () => void } = $props();
+import Button from '$lib/moment/Button.svelte';
+import Moment from '$lib/moment/Moment.svelte';
+import { wren } from '$lib/wren/wren.svelte.js';
 
-  /**
-   * She says you can ignore her, and then hands you the switch. Advising you
-   * that a setting exists would be the Clippy move; doing the thing is her own
-   * rule from `docs/12`, and it applies to her introduction too.
-   */
-  function quiet() {
-    wren.setVolume('quiet');
-    onclose();
-  }
+let { onclose }: { onclose: () => void } = $props();
+
+/**
+ * She says you can ignore her, and then hands you the switch. Advising you
+ * that a setting exists would be the Clippy move; doing the thing is her own
+ * rule from `docs/12`, and it applies to her introduction too.
+ */
+function quiet() {
+  wren.setVolume('quiet');
+  onclose();
+}
 </script>
 
 <div class="overlay" role="dialog" aria-modal="true" aria-label="Welcome">

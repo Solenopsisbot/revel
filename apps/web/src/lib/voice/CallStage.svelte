@@ -1,48 +1,49 @@
 <script lang="ts">
-  /**
-   * The in-call view, shown where the message list would be when you are
-   * looking at the voice room you're in.
-   *
-   * The main bar has four controls because a bar with nine means nobody finds
-   * any of them (`docs/21`). Devices, noise suppression, push-to-talk and the
-   * rest live behind `⋯`.
-   */
-  import Icon from '../Icon.svelte';
-  import Menu from '../Menu.svelte';
-  import Popover from '../Popover.svelte';
-  import Tile from './Tile.svelte';
-  import { core } from '../fake/core.svelte.js';
-  import { voice } from './voice.svelte.js';
-  import { layout } from '../layout.svelte.js';
-  import type { Item } from '../menu.js';
+/**
+ * The in-call view, shown where the message list would be when you are
+ * looking at the voice room you're in.
+ *
+ * The main bar has four controls because a bar with nine means nobody finds
+ * any of them (`docs/21`). Devices, noise suppression, push-to-talk and the
+ * rest live behind `⋯`.
+ */
 
-  let moreBtn = $state<HTMLElement>();
-  let moreOpen = $state(false);
+import { core } from '../fake/core.svelte.js';
+import Icon from '../Icon.svelte';
+import { layout } from '../layout.svelte.js';
+import Menu from '../Menu.svelte';
+import type { Item } from '../menu.js';
+import Popover from '../Popover.svelte';
+import Tile from './Tile.svelte';
+import { voice } from './voice.svelte.js';
 
-  const moreItems = $derived<Item[]>([
-    { id: 'input', label: 'Microphone: MacBook Pro', icon: 'mic', header: 'Devices' },
-    { id: 'output', label: 'Output: MacBook Pro', icon: 'headphones' },
-    { id: 'noise', label: 'Noise suppression', icon: 'sparkle', header: 'Processing', checked: true },
-    { id: 'echo', label: 'Echo cancellation', checked: true },
-    { id: 'ptt', label: 'Push to talk', checked: false },
-    // `docs/24`: on-device captions are desktop-only in v1, "and the UI says
-    // so rather than offering a toggle that produces a slideshow". A greyed
-    // row that names the reason beats an absent one — otherwise the answer to
-    // "where are the captions" is silence.
-    {
-      id: 'captions',
-      label: layout.coarse ? 'Live captions — desktop only for now' : 'Live captions',
-      icon: 'globe',
-      header: 'Captions',
-      disabled: layout.coarse,
-    },
-    { id: 'diverge', label: 'Simulate a key mismatch', icon: 'warn', header: 'Testing' },
-  ]);
+let moreBtn = $state<HTMLElement>();
+let moreOpen = $state(false);
 
-  function pickMore(id: string) {
-    moreOpen = false;
-    if (id === 'diverge') voice.simulateDivergence();
-  }
+const moreItems = $derived<Item[]>([
+  { id: 'input', label: 'Microphone: MacBook Pro', icon: 'mic', header: 'Devices' },
+  { id: 'output', label: 'Output: MacBook Pro', icon: 'headphones' },
+  { id: 'noise', label: 'Noise suppression', icon: 'sparkle', header: 'Processing', checked: true },
+  { id: 'echo', label: 'Echo cancellation', checked: true },
+  { id: 'ptt', label: 'Push to talk', checked: false },
+  // `docs/24`: on-device captions are desktop-only in v1, "and the UI says
+  // so rather than offering a toggle that produces a slideshow". A greyed
+  // row that names the reason beats an absent one — otherwise the answer to
+  // "where are the captions" is silence.
+  {
+    id: 'captions',
+    label: layout.coarse ? 'Live captions — desktop only for now' : 'Live captions',
+    icon: 'globe',
+    header: 'Captions',
+    disabled: layout.coarse,
+  },
+  { id: 'diverge', label: 'Simulate a key mismatch', icon: 'warn', header: 'Testing' },
+]);
+
+function pickMore(id: string) {
+  moreOpen = false;
+  if (id === 'diverge') voice.simulateDivergence();
+}
 </script>
 
 <div class="stage">

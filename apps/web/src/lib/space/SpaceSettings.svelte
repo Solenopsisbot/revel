@@ -1,67 +1,73 @@
 <script lang="ts">
-  /**
-   * Space settings (`docs/18` §"Space settings — the IA").
-   *
-   * One modal, left-hand tabs, ordered by how often they're touched. Tabs that
-   * aren't built are listed rather than hidden, same rule as the account
-   * settings sheet: a settings screen that quietly omits half its own map is
-   * harder to reason about than one that says what's coming.
-   */
-  import Icon from '$lib/Icon.svelte';
-  import { core } from '$lib/fake/core.svelte.js';
-  import { wren } from '$lib/wren/wren.svelte.js';
-  import SpaceOverview from './SpaceOverview.svelte';
-  import SpaceRooms from './SpaceRooms.svelte';
-  import SpaceAudiences from './SpaceAudiences.svelte';
-  import SpacePeople from './SpacePeople.svelte';
-  import SpaceRoles from './SpaceRoles.svelte';
-  import SpaceInvites from './SpaceInvites.svelte';
-  import SpaceModeration from './SpaceModeration.svelte';
+/**
+ * Space settings (`docs/18` §"Space settings — the IA").
+ *
+ * One modal, left-hand tabs, ordered by how often they're touched. Tabs that
+ * aren't built are listed rather than hidden, same rule as the account
+ * settings sheet: a settings screen that quietly omits half its own map is
+ * harder to reason about than one that says what's coming.
+ */
 
-  let {
-    open = $bindable(false),
-    tab = $bindable('overview'),
-    room = $bindable<string | undefined>(undefined),
-  }: { open?: boolean; tab?: string; room?: string } = $props();
+import { core } from '$lib/fake/core.svelte.js';
+import Icon from '$lib/Icon.svelte';
+import { wren } from '$lib/wren/wren.svelte.js';
+import SpaceAudiences from './SpaceAudiences.svelte';
+import SpaceInvites from './SpaceInvites.svelte';
+import SpaceModeration from './SpaceModeration.svelte';
+import SpaceOverview from './SpaceOverview.svelte';
+import SpacePeople from './SpacePeople.svelte';
+import SpaceRoles from './SpaceRoles.svelte';
+import SpaceRooms from './SpaceRooms.svelte';
 
-  const TABS = [
-    { id: 'overview', name: 'Overview', blurb: 'Name, icon, who it’s for', built: true },
-    { id: 'rooms', name: 'Rooms', blurb: 'List, create, per-room settings', built: true },
-    { id: 'audiences', name: 'Who can see what', blurb: 'The encryption boundary, per room', built: true },
-    { id: 'people', name: 'People', blurb: 'Members, roles, kick and ban', built: true },
-    { id: 'roles', name: 'Roles', blurb: 'The permission editor', built: true },
-    { id: 'invites', name: 'Invites', blurb: 'Active links, uses, expiry', built: true },
-    { id: 'moderation', name: 'Moderation', blurb: 'Reports, bans, purge log', built: true },
-    { id: 'danger', name: 'Danger', blurb: 'Transfer ownership, delete', built: true },
-  ];
+let {
+  open = $bindable(false),
+  tab = $bindable('overview'),
+  room = $bindable<string | undefined>(undefined),
+}: { open?: boolean; tab?: string; room?: string } = $props();
 
-  const meta = $derived(TABS.find((t) => t.id === tab) ?? TABS[0]!);
-  let panel = $state<HTMLElement>();
+const TABS = [
+  { id: 'overview', name: 'Overview', blurb: 'Name, icon, who it’s for', built: true },
+  { id: 'rooms', name: 'Rooms', blurb: 'List, create, per-room settings', built: true },
+  {
+    id: 'audiences',
+    name: 'Who can see what',
+    blurb: 'The encryption boundary, per room',
+    built: true,
+  },
+  { id: 'people', name: 'People', blurb: 'Members, roles, kick and ban', built: true },
+  { id: 'roles', name: 'Roles', blurb: 'The permission editor', built: true },
+  { id: 'invites', name: 'Invites', blurb: 'Active links, uses, expiry', built: true },
+  { id: 'moderation', name: 'Moderation', blurb: 'Reports, bans, purge log', built: true },
+  { id: 'danger', name: 'Danger', blurb: 'Transfer ownership, delete', built: true },
+];
 
-  function onKey(e: KeyboardEvent) {
-    if (!open) return;
-    if (e.key === 'Escape') {
-      e.stopPropagation();
+const meta = $derived(TABS.find((t) => t.id === tab) ?? TABS[0]!);
+let panel = $state<HTMLElement>();
+
+function onKey(e: KeyboardEvent) {
+  if (!open) return;
+  if (e.key === 'Escape') {
+    e.stopPropagation();
+    open = false;
+  }
+}
+
+$effect(() => {
+  if (open) panel?.focus();
+});
+
+function del() {
+  const name = core.space.name;
+  wren.confirm({
+    title: `This deletes ${name} for everyone`,
+    body: `Every room in it goes, and so does the history — those messages were encrypted to this space and there is nowhere else they live. The other members lose it too, and I can’t get any of it back.`,
+    confirm: `Delete ${name}`,
+    onConfirm: () => {
+      core.deleteSpace(core.currentSpaceId);
       open = false;
-    }
-  }
-
-  $effect(() => {
-    if (open) panel?.focus();
+    },
   });
-
-  function del() {
-    const name = core.space.name;
-    wren.confirm({
-      title: `This deletes ${name} for everyone`,
-      body: `Every room in it goes, and so does the history — those messages were encrypted to this space and there is nowhere else they live. The other members lose it too, and I can’t get any of it back.`,
-      confirm: `Delete ${name}`,
-      onConfirm: () => {
-        core.deleteSpace(core.currentSpaceId);
-        open = false;
-      },
-    });
-  }
+}
 </script>
 
 <svelte:window onkeydown={onKey} />

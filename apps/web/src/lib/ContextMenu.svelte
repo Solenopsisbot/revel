@@ -1,53 +1,54 @@
 <script lang="ts">
-  /**
-   * Renders whatever `contextMenu` currently holds, at the pointer.
-   *
-   * Mounted once at the app root. Flips and clamps rather than hanging off the
-   * viewport: a menu opened near the bottom-right of the window is the common
-   * case, not the edge case, because that is where people's pointers live.
-   */
-  import Menu from './Menu.svelte';
-  import { contextMenu } from './contextmenu.svelte.js';
+/**
+ * Renders whatever `contextMenu` currently holds, at the pointer.
+ *
+ * Mounted once at the app root. Flips and clamps rather than hanging off the
+ * viewport: a menu opened near the bottom-right of the window is the common
+ * case, not the edge case, because that is where people's pointers live.
+ */
 
-  let panel = $state<HTMLElement>();
-  let pos = $state({ x: -9999, y: -9999 });
+import { contextMenu } from './contextmenu.svelte.js';
+import Menu from './Menu.svelte';
 
-  /** Measure after the menu exists, then place. Reading `current` here is what
+let panel = $state<HTMLElement>();
+let pos = $state({ x: -9999, y: -9999 });
+
+/** Measure after the menu exists, then place. Reading `current` here is what
       re-runs this when a second menu opens at a different point. */
-  $effect(() => {
-    const c = contextMenu.current;
-    if (!c || !panel) {
-      pos = { x: -9999, y: -9999 };
-      return;
-    }
-    const r = panel.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    // Prefer down-and-right of the cursor; flip to the other side only when
-    // that genuinely doesn't fit, so the menu stays where the hand expects.
-    const x = c.x + r.width > vw - 8 ? Math.max(8, c.x - r.width) : c.x;
-    const y = c.y + r.height > vh - 8 ? Math.max(8, c.y - r.height) : c.y;
-    pos = { x, y };
-  });
-
-  function pick(id: string) {
-    const c = contextMenu.current;
-    contextMenu.close();
-    c?.onpick(id);
+$effect(() => {
+  const c = contextMenu.current;
+  if (!c || !panel) {
+    pos = { x: -9999, y: -9999 };
+    return;
   }
+  const r = panel.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  // Prefer down-and-right of the cursor; flip to the other side only when
+  // that genuinely doesn't fit, so the menu stays where the hand expects.
+  const x = c.x + r.width > vw - 8 ? Math.max(8, c.x - r.width) : c.x;
+  const y = c.y + r.height > vh - 8 ? Math.max(8, c.y - r.height) : c.y;
+  pos = { x, y };
+});
 
-  function onKey(e: KeyboardEvent) {
-    if (contextMenu.current && e.key === 'Escape') {
-      e.stopPropagation();
-      contextMenu.close();
-    }
-  }
+function pick(id: string) {
+  const c = contextMenu.current;
+  contextMenu.close();
+  c?.onpick(id);
+}
 
-  function outside(e: MouseEvent) {
-    if (!contextMenu.current) return;
-    if (panel?.contains(e.target as Node)) return;
+function onKey(e: KeyboardEvent) {
+  if (contextMenu.current && e.key === 'Escape') {
+    e.stopPropagation();
     contextMenu.close();
   }
+}
+
+function outside(e: MouseEvent) {
+  if (!contextMenu.current) return;
+  if (panel?.contains(e.target as Node)) return;
+  contextMenu.close();
+}
 </script>
 
 <svelte:window onkeydown={onKey} onpointerdown={outside} onresize={() => contextMenu.close()} />

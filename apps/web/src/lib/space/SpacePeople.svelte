@@ -1,78 +1,81 @@
 <script lang="ts">
-  /**
-   * Space settings → People (`docs/18`: "members, their roles, search,
-   * kick/ban, pending invites").
-   *
-   * The row is an **account**, not a face. `docs/01` is the reason and it is
-   * load-bearing: permissions live on the account, authorship on the face. A
-   * plural member has one membership and one set of roles however many faces
-   * they speak as, so a member list keyed by face would show one person three
-   * times and let you ban a third of them.
-   *
-   * Kick and ban are hierarchy-checked and say why when they refuse, rather
-   * than greying out — same rule as the roles editor, for the same reason.
-   */
-  import Avatar from '$lib/Avatar.svelte';
-  import Icon from '$lib/Icon.svelte';
-  import { core } from '$lib/fake/core.svelte.js';
-  import { wren } from '$lib/wren/wren.svelte.js';
-  import { ago } from '$lib/format.js';
-  import { resolve, rankOf } from './perms.js';
-  import type { Member } from '$lib/fake/data.js';
+/**
+ * Space settings → People (`docs/18`: "members, their roles, search,
+ * kick/ban, pending invites").
+ *
+ * The row is an **account**, not a face. `docs/01` is the reason and it is
+ * load-bearing: permissions live on the account, authorship on the face. A
+ * plural member has one membership and one set of roles however many faces
+ * they speak as, so a member list keyed by face would show one person three
+ * times and let you ban a third of them.
+ *
+ * Kick and ban are hierarchy-checked and say why when they refuse, rather
+ * than greying out — same rule as the roles editor, for the same reason.
+ */
+import Avatar from '$lib/Avatar.svelte';
+import { core } from '$lib/fake/core.svelte.js';
+import type { Member } from '$lib/fake/data.js';
+import { ago } from '$lib/format.js';
+import Icon from '$lib/Icon.svelte';
+import { wren } from '$lib/wren/wren.svelte.js';
+import { rankOf, resolve } from './perms.js';
 
-  let query = $state('');
-  let editing = $state<string | null>(null);
+let query = $state('');
+let editing = $state<string | null>(null);
 
-  const space = $derived(core.space);
-  const mine = $derived(core.myMembership);
+const space = $derived(core.space);
+const mine = $derived(core.myMembership);
 
-  const me = $derived({
-    owner: !!mine?.owner,
-    perms: resolve(space, mine?.roles ?? []),
-    rank: mine?.owner ? Infinity : rankOf(space, mine?.roles ?? []),
+const me = $derived({
+  owner: !!mine?.owner,
+  perms: resolve(space, mine?.roles ?? []),
+  rank: mine?.owner ? Infinity : rankOf(space, mine?.roles ?? []),
+});
+
+const shown = $derived(
+  space.members.filter((m) => {
+    const f = core.faces[m.faceId];
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (f?.name.toLowerCase().includes(q) ?? false) ||
+      m.roles.some((r) => r.toLowerCase().includes(q))
+    );
+  }),
+);
+
+/** Why an action on this member is unavailable, or null if it is fine. */
+function refuse(m: Member, need: 'KICK' | 'BAN'): string | null {
+  if (m.owner) return 'The owner can’t be removed. Transfer the space first.';
+  if (m.accountId === mine?.accountId) return 'That’s you.';
+  if (!me.owner && !me.perms.has(need)) {
+    return `You can’t ${need === 'KICK' ? 'remove people' : 'ban people'} here.`;
+  }
+  if (!me.owner && rankOf(space, m.roles) >= me.rank) {
+    return `${core.faces[m.faceId]?.name} is at or above your own rank.`;
+  }
+  return null;
+}
+
+function kick(m: Member) {
+  const name = core.faces[m.faceId]?.name ?? 'They';
+  wren.confirm({
+    title: `Remove ${name} from ${space.name}?`,
+    body: `They lose access to everything sent from here on. What they already read, they already have — no app can take that back. A new invite lets them return.`,
+    confirm: 'Remove them',
+    onConfirm: () => core.kick(m.accountId),
   });
+}
 
-  const shown = $derived(
-    space.members.filter((m) => {
-      const f = core.faces[m.faceId];
-      const q = query.trim().toLowerCase();
-      if (!q) return true;
-      return (f?.name.toLowerCase().includes(q) ?? false) || m.roles.some((r) => r.toLowerCase().includes(q));
-    }),
-  );
-
-  /** Why an action on this member is unavailable, or null if it is fine. */
-  function refuse(m: Member, need: 'KICK' | 'BAN'): string | null {
-    if (m.owner) return 'The owner can’t be removed. Transfer the space first.';
-    if (m.accountId === mine?.accountId) return 'That’s you.';
-    if (!me.owner && !me.perms.has(need)) {
-      return `You can’t ${need === 'KICK' ? 'remove people' : 'ban people'} here.`;
-    }
-    if (!me.owner && rankOf(space, m.roles) >= me.rank) {
-      return `${core.faces[m.faceId]?.name} is at or above your own rank.`;
-    }
-    return null;
-  }
-
-  function kick(m: Member) {
-    const name = core.faces[m.faceId]?.name ?? 'They';
-    wren.confirm({
-      title: `Remove ${name} from ${space.name}?`,
-      body: `They lose access to everything sent from here on. What they already read, they already have — no app can take that back. A new invite lets them return.`,
-      confirm: 'Remove them',
-      onConfirm: () => core.kick(m.accountId),
-    });
-  }
-
-  function ban(m: Member) {
-    const name = core.faces[m.faceId]?.name ?? 'They';
-    wren.confirm({
-      title: `Ban ${name} from ${space.name}?`,
-      body: `Same as removing them, and the ban survives a new invite. You can lift it later from Moderation.`,
-      confirm: 'Ban them',
-      onConfirm: () => core.ban(m.accountId),
-    });
-  }
+function ban(m: Member) {
+  const name = core.faces[m.faceId]?.name ?? 'They';
+  wren.confirm({
+    title: `Ban ${name} from ${space.name}?`,
+    body: `Same as removing them, and the ban survives a new invite. You can lift it later from Moderation.`,
+    confirm: 'Ban them',
+    onConfirm: () => core.ban(m.accountId),
+  });
+}
 </script>
 
 <h2>People</h2>

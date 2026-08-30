@@ -1,104 +1,105 @@
 <script lang="ts">
-  /**
-   * The conversation.
-   *
-   * Two scroll rules, and they matter more than anything else in the file:
-   *
-   *  1. Pin to the bottom ONLY when already at the bottom. Yanking someone
-   *     away from what they are reading because a message arrived is the
-   *     single most hostile thing a chat client does.
-   *  2. Nothing that arrives may reflow what is above it. The list is
-   *     bottom-anchored and every media frame reserves its size in advance,
-   *     so growth happens downward into the space the composer sits above.
-   */
-  import MessageRow from './MessageRow.svelte';
-  import Icon from './Icon.svelte';
-  import { core } from './fake/core.svelte.js';
-  import { conversation } from './fake/conversation.svelte.js';
-  import { dayLabel, newDay } from './format.js';
+/**
+ * The conversation.
+ *
+ * Two scroll rules, and they matter more than anything else in the file:
+ *
+ *  1. Pin to the bottom ONLY when already at the bottom. Yanking someone
+ *     away from what they are reading because a message arrived is the
+ *     single most hostile thing a chat client does.
+ *  2. Nothing that arrives may reflow what is above it. The list is
+ *     bottom-anchored and every media frame reserves its size in advance,
+ *     so growth happens downward into the space the composer sits above.
+ */
 
-  let viewport = $state<HTMLElement>();
-  let atBottom = $state(true);
-  /** Only counts messages that arrived while you were scrolled away. */
-  let missed = $state(0);
+import { conversation } from './fake/conversation.svelte.js';
+import { core } from './fake/core.svelte.js';
+import { dayLabel, newDay } from './format.js';
+import Icon from './Icon.svelte';
+import MessageRow from './MessageRow.svelte';
 
-  // Through the seam (`fake/conversation.svelte.ts`), so these rows are the
-  // shape `packages/core` produces rather than the shape the fixtures store.
-  // Swapping the source later is a change to that file, not to this one.
-  const timeline = $derived(conversation.timeline(core.currentRoomId));
+let viewport = $state<HTMLElement>();
+let atBottom = $state(true);
+/** Only counts messages that arrived while you were scrolled away. */
+let missed = $state(0);
 
-  const rows = $derived(
-    timeline.map((m, i) => {
-      const prev = timeline[i - 1];
-      const dayBreak = !prev || newDay(prev.at, m.at);
-      const grouped =
-        !!prev &&
-        !dayBreak &&
-        // By the face that spoke, which is now a snapshot on the message
-        // rather than an id looked up in a map that may since have changed.
-        prev.face?.id === m.face?.id &&
-        m.at - prev.at < 5 * 60_000 &&
-        !m.replyTo &&
-        !prev.redacted &&
-        !m.redacted;
-      const unreadAbove = core.lastRead[core.currentRoomId] === prev?.id && !!prev;
-      return { m, grouped, dayBreak, unreadAbove };
-    }),
-  );
+// Through the seam (`fake/conversation.svelte.ts`), so these rows are the
+// shape `packages/core` produces rather than the shape the fixtures store.
+// Swapping the source later is a change to that file, not to this one.
+const timeline = $derived(conversation.timeline(core.currentRoomId));
 
-  function checkBottom() {
-    const el = viewport;
-    if (!el) return;
-    atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (atBottom) missed = 0;
+const rows = $derived(
+  timeline.map((m, i) => {
+    const prev = timeline[i - 1];
+    const dayBreak = !prev || newDay(prev.at, m.at);
+    const grouped =
+      !!prev &&
+      !dayBreak &&
+      // By the face that spoke, which is now a snapshot on the message
+      // rather than an id looked up in a map that may since have changed.
+      prev.face?.id === m.face?.id &&
+      m.at - prev.at < 5 * 60_000 &&
+      !m.replyTo &&
+      !prev.redacted &&
+      !m.redacted;
+    const unreadAbove = core.lastRead[core.currentRoomId] === prev?.id && !!prev;
+    return { m, grouped, dayBreak, unreadAbove };
+  }),
+);
+
+function checkBottom() {
+  const el = viewport;
+  if (!el) return;
+  atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  if (atBottom) missed = 0;
+}
+
+function toBottom(smooth = true) {
+  viewport?.scrollTo({ top: viewport.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+  missed = 0;
+}
+
+// Arrival: follow only if the reader is already at the bottom. Otherwise
+// count it and let the pill say so.
+let seen = $state(0);
+$effect(() => {
+  const n = core.timeline.length;
+  const el = viewport;
+  if (!el) return;
+  if (n > seen && seen > 0) {
+    if (atBottom) queueMicrotask(() => el.scrollTo({ top: el.scrollHeight }));
+    else missed += n - seen;
   }
+  seen = n;
+});
 
-  function toBottom(smooth = true) {
-    viewport?.scrollTo({ top: viewport.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
-    missed = 0;
-  }
-
-  // Arrival: follow only if the reader is already at the bottom. Otherwise
-  // count it and let the pill say so.
-  let seen = $state(0);
-  $effect(() => {
-    const n = core.timeline.length;
-    const el = viewport;
-    if (!el) return;
-    if (n > seen && seen > 0) {
-      if (atBottom) queueMicrotask(() => el.scrollTo({ top: el.scrollHeight }));
-      else missed += n - seen;
-    }
-    seen = n;
+// Switching rooms starts you at the bottom, without animating the whole way.
+$effect(() => {
+  void core.currentRoomId;
+  seen = 0;
+  missed = 0;
+  queueMicrotask(() => {
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+    atBottom = true;
   });
+});
 
-  // Switching rooms starts you at the bottom, without animating the whole way.
-  $effect(() => {
-    void core.currentRoomId;
-    seen = 0;
-    missed = 0;
-    queueMicrotask(() => {
-      if (viewport) viewport.scrollTop = viewport.scrollHeight;
-      atBottom = true;
-    });
-  });
+// A jump target scrolls into view and flashes once, then releases — leaving
+// it highlighted would make the room look permanently modified.
+$effect(() => {
+  const id = core.jumpTo;
+  if (!id) return;
+  const el = viewport?.querySelector<HTMLElement>(`#m-${CSS.escape(id)}`);
+  el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  const timer = setTimeout(() => (core.jumpTo = null), 1500);
+  return () => clearTimeout(timer);
+});
 
-  // A jump target scrolls into view and flashes once, then releases — leaving
-  // it highlighted would make the room look permanently modified.
-  $effect(() => {
-    const id = core.jumpTo;
-    if (!id) return;
-    const el = viewport?.querySelector<HTMLElement>(`#m-${CSS.escape(id)}`);
-    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    const timer = setTimeout(() => (core.jumpTo = null), 1500);
-    return () => clearTimeout(timer);
-  });
+const typingNames = $derived(core.typing.map((f) => core.faces[f]?.name ?? f));
 
-  const typingNames = $derived(core.typing.map((f) => core.faces[f]?.name ?? f));
-
-  /** Bubbles or rows (`docs/07`): the room's explicit choice if it has one,
+/** Bubbles or rows (`docs/07`): the room's explicit choice if it has one,
       otherwise its kind decides. */
-  const bubble = $derived(core.room.style === 'bubbles');
+const bubble = $derived(core.room.style === 'bubbles');
 </script>
 
 <div class="pane">

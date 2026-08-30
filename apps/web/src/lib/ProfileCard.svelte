@@ -1,50 +1,50 @@
 <script lang="ts">
-  /**
-   * The profile card.
-   *
-   * `core.profileFor` has been set by clicking an author name since the
-   * message list was built, and until now nothing rendered it — the click went
-   * nowhere.
-   *
-   * Three things this card has to get right, all of them from `docs/11`:
-   *
-   * - **An agent's card leads with what it can read**, not with its badge. The
-   *   badge is flavour its owner picked; "can read this room" is the security
-   *   statement and is never customisable.
-   * - **Faces on your own account** say so, but only to you. Whether your
-   *   faces are publicly linked is off by default, so this line is drawn from
-   *   your own account rather than from anything the other person can see.
-   * - **Nothing here is fetched.** Everything on the card is already on this
-   *   device, which is why it can appear instantly and why it works offline.
-   */
-  import Avatar from './Avatar.svelte';
-  import Icon from './Icon.svelte';
-  import Popover from './Popover.svelte';
-  import { core, MY_ACCOUNT } from './fake/core.svelte.js';
+/**
+ * The profile card.
+ *
+ * `core.profileFor` has been set by clicking an author name since the
+ * message list was built, and until now nothing rendered it — the click went
+ * nowhere.
+ *
+ * Three things this card has to get right, all of them from `docs/11`:
+ *
+ * - **An agent's card leads with what it can read**, not with its badge. The
+ *   badge is flavour its owner picked; "can read this room" is the security
+ *   statement and is never customisable.
+ * - **Faces on your own account** say so, but only to you. Whether your
+ *   faces are publicly linked is off by default, so this line is drawn from
+ *   your own account rather than from anything the other person can see.
+ * - **Nothing here is fetched.** Everything on the card is already on this
+ *   device, which is why it can appear instantly and why it works offline.
+ */
+import Avatar from './Avatar.svelte';
+import { core, MY_ACCOUNT } from './fake/core.svelte.js';
+import Icon from './Icon.svelte';
+import Popover from './Popover.svelte';
 
-  let {
-    faceId,
-    anchor,
-    onclose,
-    onedit,
-  }: {
-    faceId: string;
-    /** Hangs off the clicked name when there is one; centres when there isn't. */
-    anchor?: HTMLElement;
-    onclose: () => void;
-    onedit?: (faceId: string) => void;
-  } = $props();
+let {
+  faceId,
+  anchor,
+  onclose,
+  onedit,
+}: {
+  faceId: string;
+  /** Hangs off the clicked name when there is one; centres when there isn't. */
+  anchor?: HTMLElement;
+  onclose: () => void;
+  onedit?: (faceId: string) => void;
+} = $props();
 
-  const face = $derived(core.faces[faceId]!);
-  const mine = $derived(face?.accountId === MY_ACCOUNT);
-  const isMe = $derived(face?.id === core.speakingAs);
+const face = $derived(core.faces[faceId]!);
+const mine = $derived(face?.accountId === MY_ACCOUNT);
+const isMe = $derived(face?.id === core.speakingAs);
 
-  const STATUS: Record<string, string> = {
-    here: 'Here',
-    away: 'Away',
-    busy: 'Busy',
-    invisible: 'Invisible to everyone else',
-  };
+const STATUS: Record<string, string> = {
+  here: 'Here',
+  away: 'Away',
+  busy: 'Busy',
+  invisible: 'Invisible to everyone else',
+};
 </script>
 
 {#snippet card()}

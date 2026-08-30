@@ -1,43 +1,43 @@
 <script lang="ts">
-  /**
-   * Settings → Wren (`docs/19`): the three volumes, plus the silenced
-   * categories and a way back from them.
-   *
-   * The un-silence list is the part that matters. `docs/12` makes silencing a
-   * category permanent on purpose, and a permanent choice with no visible way
-   * to undo it is a trap rather than a promise — so every silenced category is
-   * listed here by name, whether or not it currently has anything to say.
-   */
-  import Icon from '$lib/Icon.svelte';
-  import { CATEGORIES, NOT_BUILT } from '$lib/wren/notices.js';
-  import { wren, type Volume } from '$lib/wren/wren.svelte.js';
+/**
+ * Settings → Wren (`docs/19`): the three volumes, plus the silenced
+ * categories and a way back from them.
+ *
+ * The un-silence list is the part that matters. `docs/12` makes silencing a
+ * category permanent on purpose, and a permanent choice with no visible way
+ * to undo it is a trap rather than a promise — so every silenced category is
+ * listed here by name, whether or not it currently has anything to say.
+ */
+import Icon from '$lib/Icon.svelte';
+import { CATEGORIES, NOT_BUILT } from '$lib/wren/notices.js';
+import { type Volume, wren } from '$lib/wren/wren.svelte.js';
 
-  const VOLUMES: { id: Volume; name: string; blurb: string }[] = [
-    {
-      id: 'quiet',
-      name: 'Quiet',
-      blurb:
-        'Panel only. She never interrupts and never renders a card in the app. The dot still appears, because an inbox with no indicator is just a hidden inbox.',
-    },
-    {
-      id: 'normal',
-      name: 'Normal',
-      blurb:
-        'The default. She can put a card in a natural gap, and can interrupt for the three things below — nothing else, ever.',
-    },
-    {
-      id: 'chatty',
-      name: 'Chatty',
-      blurb:
-        'Adds the housekeeping heuristics: unused translation models, leftover history from rooms you left, storage that is merely large rather than nearly full.',
-    },
-  ];
+const VOLUMES: { id: Volume; name: string; blurb: string }[] = [
+  {
+    id: 'quiet',
+    name: 'Quiet',
+    blurb:
+      'Panel only. She never interrupts and never renders a card in the app. The dot still appears, because an inbox with no indicator is just a hidden inbox.',
+  },
+  {
+    id: 'normal',
+    name: 'Normal',
+    blurb:
+      'The default. She can put a card in a natural gap, and can interrupt for the three things below — nothing else, ever.',
+  },
+  {
+    id: 'chatty',
+    name: 'Chatty',
+    blurb:
+      'Adds the housekeeping heuristics: unused translation models, leftover history from rooms you left, storage that is merely large rather than nearly full.',
+  },
+];
 
-  const counts = $derived(
-    Object.fromEntries(
-      CATEGORIES.map((c) => [c.id, wren.all.filter((n) => n.category === c.id).length]),
-    ),
-  );
+const counts = $derived(
+  Object.fromEntries(
+    CATEGORIES.map((c) => [c.id, wren.all.filter((n) => n.category === c.id).length]),
+  ),
+);
 </script>
 
 <h2>Wren</h2>

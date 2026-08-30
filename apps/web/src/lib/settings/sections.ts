@@ -14,14 +14,49 @@ export interface Section {
 }
 
 export const SECTIONS: Section[] = [
-  { id: 'account', name: 'Account', blurb: 'Handle, provider, password, passkeys, recovery code', built: true },
+  {
+    id: 'account',
+    name: 'Account',
+    blurb: 'Handle, provider, password, passkeys, recovery code',
+    built: true,
+  },
   { id: 'faces', name: 'Faces', blurb: 'The ways you appear, and who can link them', built: true },
   { id: 'devices', name: 'Devices', blurb: 'What is signed in, and signing it out', built: true },
-  { id: 'appearance', name: 'Appearance', blurb: 'Theme, density, personality, motion', built: true },
+  {
+    id: 'appearance',
+    name: 'Appearance',
+    blurb: 'Theme, density, personality, motion',
+    built: true,
+  },
   { id: 'about', name: 'About', blurb: 'Version, and what the server can see', built: true },
-  { id: 'notifications', name: 'Notifications', blurb: 'Per room and space, quiet hours, previews', built: true },
-  { id: 'language', name: 'Language', blurb: 'Interface language and on-device translation', built: true },
-  { id: 'wren', name: 'Wren', blurb: 'How much she speaks up, and what she has silenced', built: true },
-  { id: 'privacy', name: 'Privacy & safety', blurb: 'Who can reach you, blocking, receipts', built: true },
-  { id: 'storage', name: 'Storage & data', blurb: 'What is on this device, export, clearing it', built: true },
+  {
+    id: 'notifications',
+    name: 'Notifications',
+    blurb: 'Per room and space, quiet hours, previews',
+    built: true,
+  },
+  {
+    id: 'language',
+    name: 'Language',
+    blurb: 'Interface language and on-device translation',
+    built: true,
+  },
+  {
+    id: 'wren',
+    name: 'Wren',
+    blurb: 'How much she speaks up, and what she has silenced',
+    built: true,
+  },
+  {
+    id: 'privacy',
+    name: 'Privacy & safety',
+    blurb: 'Who can reach you, blocking, receipts',
+    built: true,
+  },
+  {
+    id: 'storage',
+    name: 'Storage & data',
+    blurb: 'What is on this device, export, clearing it',
+    built: true,
+  },
 ];

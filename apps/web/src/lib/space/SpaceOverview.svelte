@@ -1,25 +1,34 @@
 <script lang="ts">
-  /**
-   * Space → Overview (`docs/18`): name, icon, description, who-it's-for.
-   *
-   * The host line is the interesting part. `docs/18` says hosting gets
-   * mentioned exactly once, here, and that the one-way-door consequence is
-   * written into the flow rather than buried in a FAQ — because a space lives
-   * on one Host and cannot be moved, and someone choosing a self-hosted box
-   * for their community deserves to know that before they pick.
-   */
-  import Icon from '$lib/Icon.svelte';
-  import { core } from '$lib/fake/core.svelte.js';
+/**
+ * Space → Overview (`docs/18`): name, icon, description, who-it's-for.
+ *
+ * The host line is the interesting part. `docs/18` says hosting gets
+ * mentioned exactly once, here, and that the one-way-door consequence is
+ * written into the flow rather than buried in a FAQ — because a space lives
+ * on one Host and cannot be moved, and someone choosing a self-hosted box
+ * for their community deserves to know that before they pick.
+ */
 
-  const space = $derived(core.space);
+import { core } from '$lib/fake/core.svelte.js';
+import Icon from '$lib/Icon.svelte';
 
-  const VISIBILITY = [
-    { id: 'invite', label: 'Just the people I invite', hint: 'Nobody can find it. Invites only.' },
-    { id: 'link', label: 'Anyone with the link', hint: 'Still unlisted, but the link works for anyone.' },
-    { id: 'public', label: 'Listed publicly on revel.chat', hint: 'Appears in the directory — a plain searchable list, no ranking.' },
-  ] as const;
+const space = $derived(core.space);
 
-  let showHost = $state(false);
+const VISIBILITY = [
+  { id: 'invite', label: 'Just the people I invite', hint: 'Nobody can find it. Invites only.' },
+  {
+    id: 'link',
+    label: 'Anyone with the link',
+    hint: 'Still unlisted, but the link works for anyone.',
+  },
+  {
+    id: 'public',
+    label: 'Listed publicly on revel.chat',
+    hint: 'Appears in the directory — a plain searchable list, no ranking.',
+  },
+] as const;
+
+let showHost = $state(false);
 </script>
 
 <h2>Overview</h2>

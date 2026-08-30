@@ -77,7 +77,12 @@ class Back {
    */
   record(loc: Loc) {
     const last = this.here;
-    if (last && last.scope === loc.scope && last.spaceId === loc.spaceId && last.roomId === loc.roomId) {
+    if (
+      last &&
+      last.scope === loc.scope &&
+      last.spaceId === loc.spaceId &&
+      last.roomId === loc.roomId
+    ) {
       return;
     }
     this.trail = [...this.trail, loc].slice(-TRAIL_MAX);

@@ -1,64 +1,65 @@
 <script lang="ts">
-  /**
-   * One thread.
-   *
-   * `docs/05`: "streams within a room: open in a side panel on desktop, as a
-   * pushed view on mobile." Both, from one component — at `min(440px, 100vw)`
-   * a phone gets the whole screen, which *is* the pushed view, and the only
-   * thing the two need to differ on is the back arrow. `docs/24` asks for that
-   * arrow specifically, because a full-screen view with no visible way out is
-   * the thing that makes people close the app.
-   *
-   * The parent message sits at the top, permanently, rather than scrolling
-   * away with everything else. A thread whose first message you can lose track
-   * of is a thread you have to scroll up to understand, and the whole reason
-   * to branch is that the subject is worth keeping in view.
-   *
-   * What this deliberately is *not*: a room. `docs/16` — "a branch inside a
-   * room. Not a room." Same audience, same key, same members (`docs/03`), so
-   * there is no member list here, no audience of its own, and no notification
-   * settings. Every question about who can read this has already been answered
-   * by the room around it.
-   */
-  import Icon from '../Icon.svelte';
-  import Avatar from '../Avatar.svelte';
-  import MessageRow from '../MessageRow.svelte';
-  import Composer from '../Composer.svelte';
-  import { core } from '../fake/core.svelte.js';
-  import { conversation } from '../fake/conversation.svelte.js';
-  import { layout } from '../layout.svelte.js';
-  import { dayLabel, newDay } from '../format.js';
+/**
+ * One thread.
+ *
+ * `docs/05`: "streams within a room: open in a side panel on desktop, as a
+ * pushed view on mobile." Both, from one component — at `min(440px, 100vw)`
+ * a phone gets the whole screen, which *is* the pushed view, and the only
+ * thing the two need to differ on is the back arrow. `docs/24` asks for that
+ * arrow specifically, because a full-screen view with no visible way out is
+ * the thing that makes people close the app.
+ *
+ * The parent message sits at the top, permanently, rather than scrolling
+ * away with everything else. A thread whose first message you can lose track
+ * of is a thread you have to scroll up to understand, and the whole reason
+ * to branch is that the subject is worth keeping in view.
+ *
+ * What this deliberately is *not*: a room. `docs/16` — "a branch inside a
+ * room. Not a room." Same audience, same key, same members (`docs/03`), so
+ * there is no member list here, no audience of its own, and no notification
+ * settings. Every question about who can read this has already been answered
+ * by the room around it.
+ */
 
-  const parentId = $derived(core.openThreadId!);
-  // Through the seam, like the room timeline, so a thread and a room render
-  // the same shape and swapping the source touches one file.
-  const parent = $derived(conversation.find(parentId));
-  const replies = $derived(conversation.replies(parentId));
+import Avatar from '../Avatar.svelte';
+import Composer from '../Composer.svelte';
+import { conversation } from '../fake/conversation.svelte.js';
+import { core } from '../fake/core.svelte.js';
+import { dayLabel, newDay } from '../format.js';
+import Icon from '../Icon.svelte';
+import { layout } from '../layout.svelte.js';
+import MessageRow from '../MessageRow.svelte';
 
-  /** Day dividers, the same rule the room list uses. */
-  const rows = $derived(
-    replies.map((m, i) => {
-      const prev = replies[i - 1];
-      return {
-        m,
-        dayBreak: !prev || newDay(prev.at, m.at),
-        // Grouped under the same author within a few minutes, as in the room.
-        grouped: !!prev && prev.face?.id === m.face?.id && m.at - prev.at < 5 * 60_000,
-      };
-    }),
-  );
+const parentId = $derived(core.openThreadId!);
+// Through the seam, like the room timeline, so a thread and a room render
+// the same shape and swapping the source touches one file.
+const parent = $derived(conversation.find(parentId));
+const replies = $derived(conversation.replies(parentId));
 
-  let viewport = $state<HTMLElement>();
+/** Day dividers, the same rule the room list uses. */
+const rows = $derived(
+  replies.map((m, i) => {
+    const prev = replies[i - 1];
+    return {
+      m,
+      dayBreak: !prev || newDay(prev.at, m.at),
+      // Grouped under the same author within a few minutes, as in the room.
+      grouped: !!prev && prev.face?.id === m.face?.id && m.at - prev.at < 5 * 60_000,
+    };
+  }),
+);
 
-  // New replies land at the bottom, and this is short enough that following
-  // it unconditionally is right — there is no "am I reading history" case in
-  // a fifteen-message branch.
-  $effect(() => {
-    replies.length;
-    queueMicrotask(() => {
-      if (viewport) viewport.scrollTop = viewport.scrollHeight;
-    });
+let viewport = $state<HTMLElement>();
+
+// New replies land at the bottom, and this is short enough that following
+// it unconditionally is right — there is no "am I reading history" case in
+// a fifteen-message branch.
+$effect(() => {
+  replies.length;
+  queueMicrotask(() => {
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
   });
+});
 </script>
 
 <!-- `data-no-swipe`: on a phone this is the screen, so an edge drag on it must

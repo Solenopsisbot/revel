@@ -1,51 +1,51 @@
 <script lang="ts">
-  /**
-   * Space settings → Moderation (`docs/18` §Moderation).
-   *
-   * The doc's first line is the one the screen has to earn: "everything mods
-   * can do, they can do because they're members who can read the room. There
-   * is no god view, and the moderation tab says so once." So it says so once,
-   * at the top, and then never mentions it again.
-   *
-   * A queue that can show a reported message under E2EE looks impossible until
-   * you know about **franking** (`docs/03` §9): the reporter's client opens
-   * that one event with a commitment proving it is genuine. So a mod sees the
-   * message and can trust it was not fabricated, *without* gaining access to
-   * anything else — and without the server ever having been able to read it.
-   * That is a strange enough mechanism that the screen explains it rather than
-   * letting it look like a back door.
-   *
-   * `docs/18` also asks for one line about there being no automod. It is here
-   * for the honest reason: there is nothing to scan.
-   */
-  import Avatar from '$lib/Avatar.svelte';
-  import Icon from '$lib/Icon.svelte';
-  import { core } from '$lib/fake/core.svelte.js';
-  import { wren } from '$lib/wren/wren.svelte.js';
-  import { ago } from '$lib/format.js';
-  import { resolve } from './perms.js';
-  import type { Report } from '$lib/fake/data.js';
+/**
+ * Space settings → Moderation (`docs/18` §Moderation).
+ *
+ * The doc's first line is the one the screen has to earn: "everything mods
+ * can do, they can do because they're members who can read the room. There
+ * is no god view, and the moderation tab says so once." So it says so once,
+ * at the top, and then never mentions it again.
+ *
+ * A queue that can show a reported message under E2EE looks impossible until
+ * you know about **franking** (`docs/03` §9): the reporter's client opens
+ * that one event with a commitment proving it is genuine. So a mod sees the
+ * message and can trust it was not fabricated, *without* gaining access to
+ * anything else — and without the server ever having been able to read it.
+ * That is a strange enough mechanism that the screen explains it rather than
+ * letting it look like a back door.
+ *
+ * `docs/18` also asks for one line about there being no automod. It is here
+ * for the honest reason: there is nothing to scan.
+ */
+import Avatar from '$lib/Avatar.svelte';
+import { core } from '$lib/fake/core.svelte.js';
+import type { Report } from '$lib/fake/data.js';
+import { ago } from '$lib/format.js';
+import Icon from '$lib/Icon.svelte';
+import { wren } from '$lib/wren/wren.svelte.js';
+import { resolve } from './perms.js';
 
-  const space = $derived(core.space);
-  const mine = $derived(core.myMembership);
-  const perms = $derived(resolve(space, mine?.roles ?? []));
-  const owner = $derived(!!mine?.owner);
+const space = $derived(core.space);
+const mine = $derived(core.myMembership);
+const perms = $derived(resolve(space, mine?.roles ?? []));
+const owner = $derived(!!mine?.owner);
 
-  const mayRemove = $derived(owner || perms.has('MANAGE_EVENTS'));
-  const mayBan = $derived(owner || perms.has('BAN'));
+const mayRemove = $derived(owner || perms.has('MANAGE_EVENTS'));
+const mayBan = $derived(owner || perms.has('BAN'));
 
-  function roomName(id: string) {
-    return space.rooms.find((r) => r.id === id)?.name ?? id;
-  }
+function roomName(id: string) {
+  return space.rooms.find((r) => r.id === id)?.name ?? id;
+}
 
-  function remove(r: Report) {
-    wren.confirm({
-      title: 'Remove this message?',
-      body: `It disappears from everyone's app and the server is asked to forget the bytes. People who already read it may have kept it — that part no app can fix.`,
-      confirm: 'Remove it',
-      onConfirm: () => core.removeReported(r),
-    });
-  }
+function remove(r: Report) {
+  wren.confirm({
+    title: 'Remove this message?',
+    body: `It disappears from everyone's app and the server is asked to forget the bytes. People who already read it may have kept it — that part no app can fix.`,
+    confirm: 'Remove it',
+    onConfirm: () => core.removeReported(r),
+  });
+}
 </script>
 
 <h2>Moderation</h2>

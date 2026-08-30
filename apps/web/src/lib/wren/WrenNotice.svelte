@@ -1,32 +1,32 @@
 <script lang="ts">
-  /**
-   * One notice, rendered identically wherever it lands.
-   *
-   * The panel, an inline card and the popup all use this, which is deliberate:
-   * a notice that gets more dramatic as it escalates would be telling you
-   * something the rung already told you, and it would mean three places to
-   * keep the copy honest instead of one.
-   *
-   * The only thing rung changes here is `emphasis`, which affects the frame,
-   * not the words.
-   */
-  import Icon from '../Icon.svelte';
-  import type { Notice } from './wren.svelte.js';
+/**
+ * One notice, rendered identically wherever it lands.
+ *
+ * The panel, an inline card and the popup all use this, which is deliberate:
+ * a notice that gets more dramatic as it escalates would be telling you
+ * something the rung already told you, and it would mean three places to
+ * keep the copy honest instead of one.
+ *
+ * The only thing rung changes here is `emphasis`, which affects the frame,
+ * not the words.
+ */
+import Icon from '../Icon.svelte';
+import type { Notice } from './wren.svelte.js';
 
-  let {
-    notice,
-    emphasis = false,
-    onact,
-    onsilence,
-  }: {
-    notice: Notice;
-    /** Popups and cards get a heavier frame. The copy is unchanged. */
-    emphasis?: boolean;
-    onact: (actionId: string, dismissive: boolean) => void;
-    /** Absent in the popup: silencing a category mid-interruption is a
+let {
+  notice,
+  emphasis = false,
+  onact,
+  onsilence,
+}: {
+  notice: Notice;
+  /** Popups and cards get a heavier frame. The copy is unchanged. */
+  emphasis?: boolean;
+  onact: (actionId: string, dismissive: boolean) => void;
+  /** Absent in the popup: silencing a category mid-interruption is a
         decision made under pressure, and this one is worth a calmer moment. */
-    onsilence?: () => void;
-  } = $props();
+  onsilence?: () => void;
+} = $props();
 </script>
 
 <article class="notice sev-{notice.severity}" class:emphasis>

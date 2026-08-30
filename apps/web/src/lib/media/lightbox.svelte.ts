@@ -19,7 +19,10 @@ class Lightbox {
   show(items: Attachment[], index = 0) {
     // Only things worth filling a screen with. A file card has nothing to show.
     this.items = items.filter((a) => a.kind === 'image' || a.kind === 'gif' || a.kind === 'video');
-    this.index = Math.max(0, this.items.findIndex((a) => a.id === items[index]?.id));
+    this.index = Math.max(
+      0,
+      this.items.findIndex((a) => a.id === items[index]?.id),
+    );
     this.open = this.items.length > 0;
   }
 

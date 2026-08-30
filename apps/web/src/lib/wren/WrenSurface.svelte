@@ -1,40 +1,40 @@
 <script lang="ts">
-  /**
-   * Everything Wren puts on screen in the app shell: her button, the ambient
-   * dot, the panel, and the rare popup. One component so the shell mounts one
-   * thing and so the surfaces can see each other — she never opens two at
-   * once, which is one of the timing rules in `docs/12`.
-   */
-  import WrenPanel from './WrenPanel.svelte';
-  import WrenPopup from './WrenPopup.svelte';
-  import { wren, type Notice } from './wren.svelte.js';
+/**
+ * Everything Wren puts on screen in the app shell: her button, the ambient
+ * dot, the panel, and the rare popup. One component so the shell mounts one
+ * thing and so the surfaces can see each other — she never opens two at
+ * once, which is one of the timing rules in `docs/12`.
+ */
+import WrenPanel from './WrenPanel.svelte';
+import WrenPopup from './WrenPopup.svelte';
+import { type Notice, wren } from './wren.svelte.js';
 
-  let {
-    onroute,
-  }: {
-    onroute: (to: { settings?: string; members?: boolean }) => void;
-  } = $props();
+let {
+  onroute,
+}: {
+  onroute: (to: { settings?: string; members?: boolean }) => void;
+} = $props();
 
-  let button = $state<HTMLElement>();
+let button = $state<HTMLElement>();
 
-  /**
-   * Raise a popup when one has earned it. `rungFor` returns 4 only after the
-   * settle window, only when no other Wren surface is open, and only within
-   * the interruption budget — so this effect can be this blunt.
-   *
-   * It settles rather than loops: `interrupt` sets `wren.popup`, which makes
-   * every rung collapse to 1, which empties `pendingPopup`.
-   */
-  $effect(() => {
-    const next = wren.pendingPopup;
-    if (next && !wren.popup) wren.interrupt(next);
-  });
+/**
+ * Raise a popup when one has earned it. `rungFor` returns 4 only after the
+ * settle window, only when no other Wren surface is open, and only within
+ * the interruption budget — so this effect can be this blunt.
+ *
+ * It settles rather than loops: `interrupt` sets `wren.popup`, which makes
+ * every rung collapse to 1, which empties `pendingPopup`.
+ */
+$effect(() => {
+  const next = wren.pendingPopup;
+  if (next && !wren.popup) wren.interrupt(next);
+});
 
-  function act(n: Notice, actionId: string, dismissive: boolean) {
-    const to = wren.act(n, actionId);
-    if (dismissive) wren.dismiss(n.id);
-    if (to) onroute(to);
-  }
+function act(n: Notice, actionId: string, dismissive: boolean) {
+  const to = wren.act(n, actionId);
+  if (dismissive) wren.dismiss(n.id);
+  if (to) onroute(to);
+}
 </script>
 
 <button

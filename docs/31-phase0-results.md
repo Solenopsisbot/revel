@@ -1300,3 +1300,43 @@ DOM test environment installed. Type-correct is not the same as
 right-looking — a grouping rule or a reply banner can be wrong in a way only
 eyes catch. `docs/33`'s "the reference page is the visual check" is the step
 still owed here.
+
+---
+
+## 22. C3: the directory, and a modelling error the real shape exposed
+
+The DM list, the command surface and search now name a conversation through a
+directory seam that produces `RoomInfo`. Translating to the real shape found the
+same class of thing `messageShape.ts` did, and this one is worse.
+
+### The fixtures key a DM by *face*
+
+`Dm.withIds` is a list of face ids. `docs/11` is explicit that a face is a
+presentation of an account and the account is the identity — so a DM list keyed
+by face gives you **two conversations with the same person under two of their
+names**, which is precisely the failure that document warns about rather than a
+tidiness complaint.
+
+`RoomInfo.members` is accounts, so the mapping resolves through the face table
+and de-duplicates. A test asserts that two faces of one person in one
+conversation produce one member, and titling goes by account too: somebody who
+speaks as two faces is one person in the room, and a title listing both would be
+describing the presentation rather than who is there.
+
+This was invisible while the fixtures and the UI agreed with each other. It
+became obvious the moment either had to produce the shape the server uses, which
+is the argument for doing the translation at all.
+
+### Spaces are partly here, and say so
+
+`DirectoryCore` describes rooms a Host serves. `docs/06` puts spaces, roles and
+overrides in phase 3 and the server has none of them, so a space room maps to a
+`RoomInfo` with a `space` id and an **empty member list** rather than inventing
+one. What is real today is DMs and group DMs.
+
+### Still not verified: how it looks
+
+Unchanged from §21. `svelte-check` at 470 files / 0 / 0, the production build,
+and 21 tests across the two seams — but the preview automation in this
+environment cannot screenshot or evaluate the page, and no DOM test environment
+is installed. Type-correct is not right-looking, and that check is still owed.

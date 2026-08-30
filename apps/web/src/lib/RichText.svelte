@@ -1,18 +1,18 @@
 <script lang="ts">
-  /**
-   * Renders the tokens from `richtext.ts` as elements.
-   *
-   * No `{@html}` anywhere: a message body becomes text nodes and known
-   * elements, never markup. That is not a nicety — it is the difference
-   * between "the server can't read your messages" and "the server can't read
-   * your messages but anyone in the room can run script in your client".
-   */
-  import { parse, jumbo } from './richtext.js';
+/**
+ * Renders the tokens from `richtext.ts` as elements.
+ *
+ * No `{@html}` anywhere: a message body becomes text nodes and known
+ * elements, never markup. That is not a nicety — it is the difference
+ * between "the server can't read your messages" and "the server can't read
+ * your messages but anyone in the room can run script in your client".
+ */
+import { jumbo, parse } from './richtext.js';
 
-  let { body, onmention }: { body: string; onmention?: (name: string) => void } = $props();
+let { body, onmention }: { body: string; onmention?: (name: string) => void } = $props();
 
-  const blocks = $derived(parse(body));
-  const big = $derived(jumbo(body));
+const blocks = $derived(parse(body));
+const big = $derived(jumbo(body));
 </script>
 
 <div class="rt" class:big>

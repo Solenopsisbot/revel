@@ -1,173 +1,185 @@
 <script lang="ts">
-  /**
-   * The emoji picker.
-   *
-   * This is the one place in the product where emoji are allowed to appear
-   * (`docs/07`) — here and in the reactions people choose with it. Everything
-   * else uses drawn icons, including, deliberately, this component's own
-   * search and close affordances. The category tabs are the exception inside
-   * the exception: a drawn icon for "food" is a worse label than a picture of
-   * an apple, and they are unambiguously inside the selector.
-   *
-   * Navigation is a roving cursor over a (row, column) grid rather than over a
-   * flat list, because the flat index and the visual position diverge at every
-   * group boundary — pressing Down should land directly below the thing you
-   * were on, not nine items later.
-   */
-  import Icon from './Icon.svelte';
-  import { GROUPS, search, toned, type Emoji } from './emoji.js';
-  import { core } from './fake/core.svelte.js';
+/**
+ * The emoji picker.
+ *
+ * This is the one place in the product where emoji are allowed to appear
+ * (`docs/07`) — here and in the reactions people choose with it. Everything
+ * else uses drawn icons, including, deliberately, this component's own
+ * search and close affordances. The category tabs are the exception inside
+ * the exception: a drawn icon for "food" is a worse label than a picture of
+ * an apple, and they are unambiguously inside the selector.
+ *
+ * Navigation is a roving cursor over a (row, column) grid rather than over a
+ * flat list, because the flat index and the visual position diverge at every
+ * group boundary — pressing Down should land directly below the thing you
+ * were on, not nine items later.
+ */
 
-  let {
-    onpick,
-    onclose,
-    /** Reactions pool by key, so the picker can show what you already chose. */
-    chosen = [],
-  }: {
-    onpick: (c: string) => void;
-    onclose?: () => void;
-    chosen?: string[];
-  } = $props();
+import { type Emoji, GROUPS, search, toned } from './emoji.js';
+import { core } from './fake/core.svelte.js';
+import Icon from './Icon.svelte';
 
-  const COLS = 9;
+let {
+  onpick,
+  onclose,
+  /** Reactions pool by key, so the picker can show what you already chose. */
+  chosen = [],
+}: {
+  onpick: (c: string) => void;
+  onclose?: () => void;
+  chosen?: string[];
+} = $props();
 
-  /** Which emoji stands in for each group on the tab strip. */
-  const TAB_FOR: Record<string, string> = {
-    recent: '🕐',
-    people: '😀',
-    body: '👋',
-    nature: '🐶',
-    food: '🍎',
-    activity: '⚽️',
-    travel: '✈️',
-    objects: '💡',
-    symbols: '❤️',
-  };
+const COLS = 9;
 
-  let q = $state('');
-  let field = $state<HTMLInputElement>();
-  let scroller = $state<HTMLElement>();
-  let cursor = $state({ row: 0, col: 0 });
-  let hovered = $state<Emoji | null>(null);
+/** Which emoji stands in for each group on the tab strip. */
+const TAB_FOR: Record<string, string> = {
+  recent: '🕐',
+  people: '😀',
+  body: '👋',
+  nature: '🐶',
+  food: '🍎',
+  activity: '⚽️',
+  travel: '✈️',
+  objects: '💡',
+  symbols: '❤️',
+};
 
-  interface Section {
-    id: string;
-    label: string;
-    items: Emoji[];
+let q = $state('');
+let field = $state<HTMLInputElement>();
+let scroller = $state<HTMLElement>();
+let cursor = $state({ row: 0, col: 0 });
+let hovered = $state<Emoji | null>(null);
+
+interface Section {
+  id: string;
+  label: string;
+  items: Emoji[];
+}
+
+const sections = $derived.by<Section[]>(() => {
+  if (q.trim()) {
+    const hits = search(q);
+    return hits.length ? [{ id: 'results', label: `${hits.length} matches`, items: hits }] : [];
   }
+  const recent = core.recentEmoji.map((c) => ({ c, k: [] as string[] })).filter((e) => e.c);
+  return [
+    ...(recent.length ? [{ id: 'recent', label: 'Recent', items: recent }] : []),
+    ...GROUPS.map((g) => ({ id: g.id, label: g.label, items: g.items })),
+  ];
+});
 
-  const sections = $derived.by<Section[]>(() => {
-    if (q.trim()) {
-      const hits = search(q);
-      return hits.length ? [{ id: 'results', label: `${hits.length} matches`, items: hits }] : [];
-    }
-    const recent = core.recentEmoji
-      .map((c) => ({ c, k: [] as string[] }))
-      .filter((e) => e.c);
-    return [
-      ...(recent.length ? [{ id: 'recent', label: 'Recent', items: recent }] : []),
-      ...GROUPS.map((g) => ({ id: g.id, label: g.label, items: g.items })),
-    ];
-  });
-
-  /** The visual rows, in order, so Up/Down land where the eye expects. */
-  const rows = $derived.by(() => {
-    const out: { section: string; items: Emoji[] }[] = [];
-    for (const s of sections) {
-      for (let i = 0; i < s.items.length; i += COLS) {
-        out.push({ section: s.id, items: s.items.slice(i, i + COLS) });
-      }
-    }
-    return out;
-  });
-
-  const active = $derived(rows[cursor.row]?.items[Math.min(cursor.col, (rows[cursor.row]?.items.length ?? 1) - 1)]);
-  /** The bottom bar previews whatever you're pointing at, cursor or mouse. */
-  const preview = $derived(hovered ?? active);
-
-  // A new query means a new list; the cursor has to come home or it points at
-  // something that scrolled out of existence.
-  $effect(() => {
-    void q;
-    cursor = { row: 0, col: 0 };
-  });
-
-  function rowIndexOf(sectionId: string) {
-    return rows.findIndex((r) => r.section === sectionId);
-  }
-
-  function move(dRow: number, dCol: number) {
-    let { row, col } = cursor;
-    if (dCol) {
-      col += dCol;
-      if (col < 0) {
-        row -= 1;
-        col = COLS - 1;
-      } else if (col >= (rows[row]?.items.length ?? 0)) {
-        row += 1;
-        col = 0;
-      }
-    } else {
-      row += dRow;
-    }
-    row = Math.max(0, Math.min(rows.length - 1, row));
-    col = Math.max(0, Math.min((rows[row]?.items.length ?? 1) - 1, col));
-    cursor = { row, col };
-    scrollCursorIntoView();
-  }
-
-  function scrollCursorIntoView() {
-    queueMicrotask(() => {
-      scroller
-        ?.querySelector<HTMLElement>('.e.cursor')
-        ?.scrollIntoView({ block: 'nearest' });
-    });
-  }
-
-  function onKey(e: KeyboardEvent) {
-    switch (e.key) {
-      case 'ArrowRight': e.preventDefault(); move(0, 1); break;
-      case 'ArrowLeft': e.preventDefault(); move(0, -1); break;
-      case 'ArrowDown': e.preventDefault(); move(1, 0); break;
-      case 'ArrowUp': e.preventDefault(); move(-1, 0); break;
-      case 'Enter':
-        e.preventDefault();
-        if (active) pick(active.c);
-        break;
-      case 'Escape':
-        e.preventDefault();
-        e.stopPropagation();
-        onclose?.();
-        break;
+/** The visual rows, in order, so Up/Down land where the eye expects. */
+const rows = $derived.by(() => {
+  const out: { section: string; items: Emoji[] }[] = [];
+  for (const s of sections) {
+    for (let i = 0; i < s.items.length; i += COLS) {
+      out.push({ section: s.id, items: s.items.slice(i, i + COLS) });
     }
   }
+  return out;
+});
 
-  function pick(c: string) {
-    onpick(toned(c, core.emojiTone));
+const active = $derived(
+  rows[cursor.row]?.items[Math.min(cursor.col, (rows[cursor.row]?.items.length ?? 1) - 1)],
+);
+/** The bottom bar previews whatever you're pointing at, cursor or mouse. */
+const preview = $derived(hovered ?? active);
+
+// A new query means a new list; the cursor has to come home or it points at
+// something that scrolled out of existence.
+$effect(() => {
+  void q;
+  cursor = { row: 0, col: 0 };
+});
+
+function rowIndexOf(sectionId: string) {
+  return rows.findIndex((r) => r.section === sectionId);
+}
+
+function move(dRow: number, dCol: number) {
+  let { row, col } = cursor;
+  if (dCol) {
+    col += dCol;
+    if (col < 0) {
+      row -= 1;
+      col = COLS - 1;
+    } else if (col >= (rows[row]?.items.length ?? 0)) {
+      row += 1;
+      col = 0;
+    }
+  } else {
+    row += dRow;
   }
+  row = Math.max(0, Math.min(rows.length - 1, row));
+  col = Math.max(0, Math.min((rows[row]?.items.length ?? 1) - 1, col));
+  cursor = { row, col };
+  scrollCursorIntoView();
+}
 
-  function jump(sectionId: string) {
-    const i = rowIndexOf(sectionId);
-    if (i < 0) return;
-    scroller?.querySelector<HTMLElement>(`[data-sec="${sectionId}"]`)
-      ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    cursor = { row: i, col: 0 };
-  }
-
-  /** Which section the scroller is currently showing, for the tab underline. */
-  let visibleSection = $state('recent');
-  function onScroll() {
-    if (!scroller) return;
-    const top = scroller.scrollTop + 8;
-    const heads = [...scroller.querySelectorAll<HTMLElement>('[data-sec]')];
-    let cur = heads[0]?.dataset.sec ?? '';
-    for (const h of heads) if (h.offsetTop <= top) cur = h.dataset.sec!;
-    visibleSection = cur;
-  }
-
-  $effect(() => {
-    field?.focus();
+function scrollCursorIntoView() {
+  queueMicrotask(() => {
+    scroller?.querySelector<HTMLElement>('.e.cursor')?.scrollIntoView({ block: 'nearest' });
   });
+}
+
+function onKey(e: KeyboardEvent) {
+  switch (e.key) {
+    case 'ArrowRight':
+      e.preventDefault();
+      move(0, 1);
+      break;
+    case 'ArrowLeft':
+      e.preventDefault();
+      move(0, -1);
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      move(1, 0);
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      move(-1, 0);
+      break;
+    case 'Enter':
+      e.preventDefault();
+      if (active) pick(active.c);
+      break;
+    case 'Escape':
+      e.preventDefault();
+      e.stopPropagation();
+      onclose?.();
+      break;
+  }
+}
+
+function pick(c: string) {
+  onpick(toned(c, core.emojiTone));
+}
+
+function jump(sectionId: string) {
+  const i = rowIndexOf(sectionId);
+  if (i < 0) return;
+  scroller
+    ?.querySelector<HTMLElement>(`[data-sec="${sectionId}"]`)
+    ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  cursor = { row: i, col: 0 };
+}
+
+/** Which section the scroller is currently showing, for the tab underline. */
+let visibleSection = $state('recent');
+function onScroll() {
+  if (!scroller) return;
+  const top = scroller.scrollTop + 8;
+  const heads = [...scroller.querySelectorAll<HTMLElement>('[data-sec]')];
+  let cur = heads[0]?.dataset.sec ?? '';
+  for (const h of heads) if (h.offsetTop <= top) cur = h.dataset.sec!;
+  visibleSection = cur;
+}
+
+$effect(() => {
+  field?.focus();
+});
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

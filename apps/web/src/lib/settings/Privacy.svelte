@@ -1,32 +1,33 @@
 <script lang="ts">
-  /**
-   * Settings → Privacy & safety (`docs/19`).
-   *
-   * Read receipts and typing indicators live here rather than under Appearance
-   * on purpose: they are **disclosures about you**, not preferences about the
-   * app. Filing them next to theme and density would frame telling other
-   * people when you read their message as a matter of taste.
-   *
-   * The screen also has to be honest about the limit of every control on it.
-   * Turning off receipts stops your client sending them; it cannot stop anyone
-   * from noticing you replied. Blocking stops delivery to you; it does not
-   * reach into rooms you share and unsay anything. Both are said plainly
-   * rather than left for someone to discover.
-   */
-  import Icon from '$lib/Icon.svelte';
-  import { core } from '$lib/fake/core.svelte.js';
+/**
+ * Settings → Privacy & safety (`docs/19`).
+ *
+ * Read receipts and typing indicators live here rather than under Appearance
+ * on purpose: they are **disclosures about you**, not preferences about the
+ * app. Filing them next to theme and density would frame telling other
+ * people when you read their message as a matter of taste.
+ *
+ * The screen also has to be honest about the limit of every control on it.
+ * Turning off receipts stops your client sending them; it cannot stop anyone
+ * from noticing you replied. Blocking stops delivery to you; it does not
+ * reach into rooms you share and unsay anything. Both are said plainly
+ * rather than left for someone to discover.
+ */
 
-  const REACH = [
-    { id: 'anyone', label: 'Anyone' },
-    { id: 'shared-spaces', label: 'People in my spaces' },
-    { id: 'nobody', label: 'Nobody' },
-  ] as const;
+import { core } from '$lib/fake/core.svelte.js';
+import Icon from '$lib/Icon.svelte';
 
-  const p = $derived(core.privacy);
+const REACH = [
+  { id: 'anyone', label: 'Anyone' },
+  { id: 'shared-spaces', label: 'People in my spaces' },
+  { id: 'nobody', label: 'Nobody' },
+] as const;
 
-  function unblock(handle: string) {
-    p.blocked = p.blocked.filter((b) => b.handle !== handle);
-  }
+const p = $derived(core.privacy);
+
+function unblock(handle: string) {
+  p.blocked = p.blocked.filter((b) => b.handle !== handle);
+}
 </script>
 
 <h2>Privacy &amp; safety</h2>

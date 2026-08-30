@@ -1,43 +1,44 @@
 <script lang="ts">
-  /**
-   * Settings → Language (`docs/19`, `docs/10`).
-   *
-   * The rule the whole screen is built around: **a decrypted message never
-   * leaves the device to be translated.** There is no cloud fallback, not even
-   * a quiet one for languages the local models can't do — shipping plaintext
-   * to a translation API would undo the entire product, so a pair we can't
-   * handle locally is a pair we say we can't handle.
-   *
-   * The other thing this screen must not do is imply the translation is
-   * authoritative. Machine translation is machine translation; the original
-   * stays visible in the message list, and the copy here says so once rather
-   * than apologising in every string.
-   */
-  import Icon from '$lib/Icon.svelte';
-  import { core } from '$lib/fake/core.svelte.js';
-  import { INTERFACE_LANGUAGES, READABLE_LANGUAGES } from '$lib/fake/data.js';
+/**
+ * Settings → Language (`docs/19`, `docs/10`).
+ *
+ * The rule the whole screen is built around: **a decrypted message never
+ * leaves the device to be translated.** There is no cloud fallback, not even
+ * a quiet one for languages the local models can't do — shipping plaintext
+ * to a translation API would undo the entire product, so a pair we can't
+ * handle locally is a pair we say we can't handle.
+ *
+ * The other thing this screen must not do is imply the translation is
+ * authoritative. Machine translation is machine translation; the original
+ * stays visible in the message list, and the copy here says so once rather
+ * than apologising in every string.
+ */
 
-  const l = $derived(core.language);
-  const mb = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)} GB` : `${n} MB`);
+import { core } from '$lib/fake/core.svelte.js';
+import { INTERFACE_LANGUAGES, READABLE_LANGUAGES } from '$lib/fake/data.js';
+import Icon from '$lib/Icon.svelte';
 
-  /** Rooms written in something outside your reading list — the ones the
+const l = $derived(core.language);
+const mb = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)} GB` : `${n} MB`);
+
+/** Rooms written in something outside your reading list — the ones the
       global rule would actually act on. */
-  const foreign = $derived(
-    core.spaces.flatMap((s) =>
-      s.rooms
-        .filter((r) => r.language && !l.reads.includes(r.language))
-        .map((r) => ({ space: s, room: r })),
-    ),
-  );
+const foreign = $derived(
+  core.spaces.flatMap((s) =>
+    s.rooms
+      .filter((r) => r.language && !l.reads.includes(r.language))
+      .map((r) => ({ space: s, room: r })),
+  ),
+);
 
-  let adding = $state(false);
-  const addable = $derived(READABLE_LANGUAGES.filter((x) => !l.reads.includes(x)));
+let adding = $state(false);
+const addable = $derived(READABLE_LANGUAGES.filter((x) => !l.reads.includes(x)));
 
-  function drop(lang: string) {
-    // Removing the last language would mean translating everything into
-    // nothing, so the list keeps a floor of one.
-    if (l.reads.length > 1) l.reads = l.reads.filter((x) => x !== lang);
-  }
+function drop(lang: string) {
+  // Removing the last language would mean translating everything into
+  // nothing, so the list keeps a floor of one.
+  if (l.reads.length > 1) l.reads = l.reads.filter((x) => x !== lang);
+}
 </script>
 
 <h2>Language</h2>

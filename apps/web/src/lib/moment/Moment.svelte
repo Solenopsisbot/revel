@@ -1,30 +1,30 @@
 <script lang="ts">
-  /**
-   * The moment-screen shell (`docs/07`): gradient ground, ambient haze,
-   * asymmetric and left-aligned. Full personality, because these are the
-   * screens you see rarely and remember.
-   */
+/**
+ * The moment-screen shell (`docs/07`): gradient ground, ambient haze,
+ * asymmetric and left-aligned. Full personality, because these are the
+ * screens you see rarely and remember.
+ */
 
-  /**
-   * Which Wren the screen calls for.
-   *
-   * Two families, and they hang differently. The full-body poses read as her
-   * standing in the room with you; the expression portraits (`docs/09`) crop
-   * at the shoulders and come in close, which is what a screen wants when the
-   * thing being said is hard. Recovery codes get `serious`, not a friendly
-   * figure with her hands in her pockets — the face has to match the sentence.
-   */
-  type Pose = 'standing' | 'leaning' | 'seated' | 'warm' | 'serious' | 'alert';
+/**
+ * Which Wren the screen calls for.
+ *
+ * Two families, and they hang differently. The full-body poses read as her
+ * standing in the room with you; the expression portraits (`docs/09`) crop
+ * at the shoulders and come in close, which is what a screen wants when the
+ * thing being said is hard. Recovery codes get `serious`, not a friendly
+ * figure with her hands in her pockets — the face has to match the sentence.
+ */
+type Pose = 'standing' | 'leaning' | 'seated' | 'warm' | 'serious' | 'alert';
 
-  const PORTRAITS: Pose[] = ['warm', 'serious', 'alert'];
+const PORTRAITS: Pose[] = ['warm', 'serious', 'alert'];
 
-  let {
-    children,
-    wren = true,
-    pose = 'standing',
-  }: { children: import('svelte').Snippet; wren?: boolean; pose?: Pose } = $props();
+let {
+  children,
+  wren = true,
+  pose = 'standing',
+}: { children: import('svelte').Snippet; wren?: boolean; pose?: Pose } = $props();
 
-  const portrait = $derived(PORTRAITS.includes(pose));
+const portrait = $derived(PORTRAITS.includes(pose));
 </script>
 
 <div class="moment">

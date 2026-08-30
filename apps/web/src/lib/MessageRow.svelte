@@ -1,258 +1,268 @@
 <script lang="ts">
-  /**
-   * One message.
-   *
-   * Alignment is the fussy part and it is deliberate: the avatar, the author
-   * line and every badge on it share one 20px optical line, set by --line-h.
-   * Mixing `baseline` and `center` across those elements is what made the
-   * agent tags sit a pixel high before; everything here centres on the same
-   * axis instead.
-   */
-  import Avatar from './Avatar.svelte';
-  import Icon from './Icon.svelte';
-  import RichText from './RichText.svelte';
-  import Popover from './Popover.svelte';
-  import Menu from './Menu.svelte';
-  import type { Item } from './menu.js';
-  import EmojiPicker from './EmojiPicker.svelte';
-  import Attachments from './media/Attachments.svelte';
-  import { core, MY_ACCOUNT } from './fake/core.svelte.js';
-  import { contextMenu } from './contextmenu.svelte.js';
-  import { layout } from './layout.svelte.js';
-  import { longpress, tapActions, HOLD } from './touch.svelte.js';
-  import { linkToMessage } from './deeplink.js';
-  import { clock, names, ago } from './format.js';
-  // The real shape, from `packages/core`, plus the handful of fields the
-  // fixtures exercise that the protocol has not grown yet. The fixtures are
-  // translated into it at the seam (`fake/conversation.svelte.ts`), so this
-  // component does not change again when the source does.
-  import { conversation, type UiMessage as Message } from './fake/conversation.svelte.js';
-  import type { Face } from './fake/data.js';
+/**
+ * One message.
+ *
+ * Alignment is the fussy part and it is deliberate: the avatar, the author
+ * line and every badge on it share one 20px optical line, set by --line-h.
+ * Mixing `baseline` and `center` across those elements is what made the
+ * agent tags sit a pixel high before; everything here centres on the same
+ * axis instead.
+ */
+import Avatar from './Avatar.svelte';
+import { contextMenu } from './contextmenu.svelte.js';
+import { linkToMessage } from './deeplink.js';
+import EmojiPicker from './EmojiPicker.svelte';
+// The real shape, from `packages/core`, plus the handful of fields the
+// fixtures exercise that the protocol has not grown yet. The fixtures are
+// translated into it at the seam (`fake/conversation.svelte.ts`), so this
+// component does not change again when the source does.
+import { conversation, type UiMessage as Message } from './fake/conversation.svelte.js';
+import { core, MY_ACCOUNT } from './fake/core.svelte.js';
+import type { Face } from './fake/data.js';
+import { ago, clock, names } from './format.js';
+import Icon from './Icon.svelte';
+import { layout } from './layout.svelte.js';
+import Menu from './Menu.svelte';
+import Attachments from './media/Attachments.svelte';
+import type { Item } from './menu.js';
+import Popover from './Popover.svelte';
+import RichText from './RichText.svelte';
+import { HOLD, longpress, tapActions } from './touch.svelte.js';
 
-  let {
-    m,
-    grouped,
-    unreadAbove = false,
-    bubble = false,
-  }: {
-    m: Message;
-    grouped: boolean;
-    unreadAbove?: boolean;
-    /**
-     * Bubble style (`docs/07` §"Two message styles"). DMs get it by default;
-     * a space room can be switched to it and a busy DM can be switched off it.
-     * Everything inside the row is unchanged — the same avatar, author line,
-     * rich text, reactions and menus. Only the frame differs.
-     */
-    bubble?: boolean;
-  } = $props();
-
+let {
+  m,
+  grouped,
+  unreadAbove = false,
+  bubble = false,
+}: {
+  m: Message;
+  grouped: boolean;
+  unreadAbove?: boolean;
   /**
-   * Two different things, deliberately kept apart.
-   *
-   * `snapshot` is the face as it was **when the message was sent** — it
-   * travelled inside the ciphertext (`docs/04` §2), which is why renaming a
-   * face does not rewrite everything it ever said.
-   *
-   * `current` is that face as it is *now*, and only the things that are facts
-   * about the person rather than about the message come from it: the agent
-   * badge (`docs/11`: always rendered, from the roster) and nothing else.
+   * Bubble style (`docs/07` §"Two message styles"). DMs get it by default;
+   * a space room can be switched to it and a busy DM can be switched off it.
+   * Everything inside the row is unchanged — the same avatar, author line,
+   * rich text, reactions and menus. Only the frame differs.
    */
-  const snapshot = $derived(m.face);
-  const current = $derived(snapshot ? core.faces[snapshot.id] : undefined);
-  const face = $derived(snapshot ?? { id: '', name: 'someone', colour: 'grey' });
-  /**
-   * What `Avatar` needs, which is a bit more than a snapshot carries.
-   *
-   * Prefers the current face when there is one — an avatar image is a fact
-   * about the person now, not about the message — and falls back to the
-   * snapshot for somebody who has since left and is no longer in the roster.
-   */
-  const avatarFace = $derived(
-    current ?? ({ ...face, colour: (face.colour ?? 'grey') as Face['colour'], accountId: m.account } as Face),
-  );
-  const mine = $derived(m.account === MY_ACCOUNT);
-  const editing = $derived(core.editing === m.id);
-  const confirming = $derived(core.confirmingDelete === m.id);
+  bubble?: boolean;
+} = $props();
 
-  /** The element the picker hangs off. Set from whichever control opened it —
+/**
+ * Two different things, deliberately kept apart.
+ *
+ * `snapshot` is the face as it was **when the message was sent** — it
+ * travelled inside the ciphertext (`docs/04` §2), which is why renaming a
+ * face does not rewrite everything it ever said.
+ *
+ * `current` is that face as it is *now*, and only the things that are facts
+ * about the person rather than about the message come from it: the agent
+ * badge (`docs/11`: always rendered, from the roster) and nothing else.
+ */
+const snapshot = $derived(m.face);
+const current = $derived(snapshot ? core.faces[snapshot.id] : undefined);
+const face = $derived(snapshot ?? { id: '', name: 'someone', colour: 'grey' });
+/**
+ * What `Avatar` needs, which is a bit more than a snapshot carries.
+ *
+ * Prefers the current face when there is one — an avatar image is a fact
+ * about the person now, not about the message — and falls back to the
+ * snapshot for somebody who has since left and is no longer in the roster.
+ */
+const avatarFace = $derived(
+  current ??
+    ({ ...face, colour: (face.colour ?? 'grey') as Face['colour'], accountId: m.account } as Face),
+);
+const mine = $derived(m.account === MY_ACCOUNT);
+const editing = $derived(core.editing === m.id);
+const confirming = $derived(core.confirmingDelete === m.id);
+
+/** The element the picker hangs off. Set from whichever control opened it —
       the hover bar and the inline "+" are two triggers for one panel, and
       binding both to one variable made them overwrite each other. */
-  let pickerAnchor = $state<HTMLElement>();
-  let moreBtn = $state<HTMLElement>();
-  let pickerOpen = $state(false);
-  let menuOpen = $state(false);
-  let draft = $state('');
-  let editor = $state<HTMLTextAreaElement>();
+let pickerAnchor = $state<HTMLElement>();
+let moreBtn = $state<HTMLElement>();
+let pickerOpen = $state(false);
+let menuOpen = $state(false);
+let draft = $state('');
+let editor = $state<HTMLTextAreaElement>();
 
-  const target = $derived(m.replyTo ? conversation.find(m.replyTo) : undefined);
+const target = $derived(m.replyTo ? conversation.find(m.replyTo) : undefined);
 
-  /** Replies branching off this message, or null if nobody has started one. */
-  const summary = $derived(core.threadSummary(m.id));
+/** Replies branching off this message, or null if nobody has started one. */
+const summary = $derived(core.threadSummary(m.id));
 
-  const menuItems = $derived<Item[]>([
-    { id: 'react', label: 'Add reaction', icon: 'react' },
-    { id: 'reply', label: 'Reply', icon: 'reply', key: 'R' },
-    // Two different things with deliberately different words: a reply quotes
-    // and stays in the room, a thread moves the conversation off to one side.
-    // A row that already has a thread says "open" rather than "start", so the
-    // menu never offers to make a second one.
-    ...(m.thread
-      ? []
-      : [{ id: 'thread', label: summary ? 'Open thread' : 'Reply in thread', icon: 'forward' } satisfies Item]),
-    { id: 'copy', label: 'Copy text', icon: 'copy' },
-    // Location lives in the URL now, so a link to one message is a real thing
-    // that can exist (`docs/19`). Deliberately an action rather than something
-    // the address bar carries around: `?m=` in the URL at all times would put
-    // a stale message id on every link anyone copied out of the bar.
-    { id: 'link', label: 'Copy link to message', icon: 'link' },
-    { id: 'pin', label: m.pinned ? 'Unpin' : 'Pin to room', icon: 'pin' },
-    ...(mine ? [{ id: 'edit', label: 'Edit', icon: 'pencil', key: 'E' } satisfies Item] : []),
-    ...(mine ? [{ id: 'delete', label: 'Delete', icon: 'trash', danger: true } satisfies Item] : []),
-  ]);
+const menuItems = $derived<Item[]>([
+  { id: 'react', label: 'Add reaction', icon: 'react' },
+  { id: 'reply', label: 'Reply', icon: 'reply', key: 'R' },
+  // Two different things with deliberately different words: a reply quotes
+  // and stays in the room, a thread moves the conversation off to one side.
+  // A row that already has a thread says "open" rather than "start", so the
+  // menu never offers to make a second one.
+  ...(m.thread
+    ? []
+    : [
+        {
+          id: 'thread',
+          label: summary ? 'Open thread' : 'Reply in thread',
+          icon: 'forward',
+        } satisfies Item,
+      ]),
+  { id: 'copy', label: 'Copy text', icon: 'copy' },
+  // Location lives in the URL now, so a link to one message is a real thing
+  // that can exist (`docs/19`). Deliberately an action rather than something
+  // the address bar carries around: `?m=` in the URL at all times would put
+  // a stale message id on every link anyone copied out of the bar.
+  { id: 'link', label: 'Copy link to message', icon: 'link' },
+  { id: 'pin', label: m.pinned ? 'Unpin' : 'Pin to room', icon: 'pin' },
+  ...(mine ? [{ id: 'edit', label: 'Edit', icon: 'pencil', key: 'E' } satisfies Item] : []),
+  ...(mine ? [{ id: 'delete', label: 'Delete', icon: 'trash', danger: true } satisfies Item] : []),
+]);
 
-  function startEdit() {
-    draft = m.text;
-    core.editing = m.id;
-    // The textarea only exists after the branch renders, hence the microtask.
-    queueMicrotask(() => {
-      editor?.focus();
-      editor?.setSelectionRange(draft.length, draft.length);
-      if (editor) grow(editor);
-    });
-  }
+function startEdit() {
+  draft = m.text;
+  core.editing = m.id;
+  // The textarea only exists after the branch renders, hence the microtask.
+  queueMicrotask(() => {
+    editor?.focus();
+    editor?.setSelectionRange(draft.length, draft.length);
+    if (editor) grow(editor);
+  });
+}
 
-  function grow(el: HTMLTextAreaElement) {
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
-  }
+function grow(el: HTMLTextAreaElement) {
+  el.style.height = 'auto';
+  el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+}
 
-  function onEditKey(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      core.saveEdit(m.id, draft);
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      core.editing = null;
-    }
-  }
-
-  function pickMenu(id: string) {
-    menuOpen = false;
-    if (id === 'react') { pickerAnchor = moreBtn; pickerOpen = true; }
-    if (id === 'reply') core.replyTo = m.id;
-    if (id === 'thread') core.openThread(m.id);
-    if (id === 'copy') void navigator.clipboard?.writeText(m.text);
-    if (id === 'link') void navigator.clipboard?.writeText(linkToMessage(core.currentRoomId, m.id));
-    if (id === 'pin') core.pin(m.id);
-    if (id === 'edit') startEdit();
-    if (id === 'delete') core.confirmingDelete = m.id;
-  }
-
-  /**
-   * Right-click opens the same items the ⋯ button does. Deliberately the same
-   * list rather than a second one: two menus for one object drift, and then
-   * people learn that one of them is the "real" one.
-   *
-   * Stands aside wherever the browser's own menu is the better one: a text
-   * selection (copy that phrase), a link (open in a new tab, copy the
-   * address), an image or a clip (save it). None of those are things worth
-   * reimplementing worse, and taking them away is how an app starts feeling
-   * like it is fighting the machine it runs on.
-   */
-  function onContext(e: MouseEvent) {
-    if (!window.getSelection()?.isCollapsed) return;
-    const el = e.target instanceof Element ? e.target : null;
-    if (el?.closest('a[href], img, video, audio')) return;
-    contextMenu.open(e, menuItems, pickMenu, face.name);
-  }
-
-  // ── touch ────────────────────────────────────────────────────────────────
-
-  /**
-   * Swipe right to reply (`docs/24`), committing past ~56px.
-   *
-   * It reads as one gesture but it is really two decisions. The first is the
-   * axis lock, which has to go to the scroll on a tie — a list you are reading
-   * must never feel like it is trying to reply for you. The second is the
-   * commit point, which is *visible*: past it the row stops keeping up with
-   * your thumb and the icon goes solid, so you can feel that it has taken
-   * before you let go.
-   */
-  const REPLY_AT = 56;
-
-  let dx = $state(0);
-  let swiping = $state(false);
-  let g: { x: number; y: number; t: number; axis: null | 'x' | 'y' } | null = null;
-
-  const armed = $derived(dx >= REPLY_AT);
-
-  function swipeDown(e: PointerEvent) {
-    if (!layout.coarse || e.pointerType === 'mouse') return;
-    if (m.redacted || editing) return;
-    g = { x: e.clientX, y: e.clientY, t: performance.now(), axis: null };
-  }
-
-  function swipeMove(e: PointerEvent) {
-    if (!g) return;
-    const ddx = e.clientX - g.x;
-    const ddy = e.clientY - g.y;
-    if (g.axis === null) {
-      if (Math.hypot(ddx, ddy) < 10) return;
-      g.axis = Math.abs(ddx) > Math.abs(ddy) ? 'x' : 'y';
-      // Vertical, or leftward: not ours. Leftward is left alone deliberately —
-      // it is where a delete-on-swipe would go, and this product doesn't have
-      // one, so the row should not budge and imply otherwise.
-      if (g.axis === 'y' || ddx <= 0) {
-        g = null;
-        return;
-      }
-      swiping = true;
-      try {
-        (e.target as Element).setPointerCapture?.(e.pointerId);
-      } catch {
-        /* pointer already gone */
-      }
-    }
-    const raw = Math.max(0, ddx);
-    dx = raw <= REPLY_AT ? raw : REPLY_AT + (raw - REPLY_AT) * 0.3;
+function onEditKey(e: KeyboardEvent) {
+  if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
+    core.saveEdit(m.id, draft);
   }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    core.editing = null;
+  }
+}
 
-  function swipeEnd(e: PointerEvent) {
-    const was = g;
-    g = null;
-    swiping = false;
-    if (!was) return;
+function pickMenu(id: string) {
+  menuOpen = false;
+  if (id === 'react') {
+    pickerAnchor = moreBtn;
+    pickerOpen = true;
+  }
+  if (id === 'reply') core.replyTo = m.id;
+  if (id === 'thread') core.openThread(m.id);
+  if (id === 'copy') void navigator.clipboard?.writeText(m.text);
+  if (id === 'link') void navigator.clipboard?.writeText(linkToMessage(core.currentRoomId, m.id));
+  if (id === 'pin') core.pin(m.id);
+  if (id === 'edit') startEdit();
+  if (id === 'delete') core.confirmingDelete = m.id;
+}
 
-    if (was.axis === 'x') {
-      if (dx >= REPLY_AT) {
-        core.replyTo = m.id;
-        navigator.vibrate?.(8);
-      }
-      dx = 0;
+/**
+ * Right-click opens the same items the ⋯ button does. Deliberately the same
+ * list rather than a second one: two menus for one object drift, and then
+ * people learn that one of them is the "real" one.
+ *
+ * Stands aside wherever the browser's own menu is the better one: a text
+ * selection (copy that phrase), a link (open in a new tab, copy the
+ * address), an image or a clip (save it). None of those are things worth
+ * reimplementing worse, and taking them away is how an app starts feeling
+ * like it is fighting the machine it runs on.
+ */
+function onContext(e: MouseEvent) {
+  if (!window.getSelection()?.isCollapsed) return;
+  const el = e.target instanceof Element ? e.target : null;
+  if (el?.closest('a[href], img, video, audio')) return;
+  contextMenu.open(e, menuItems, pickMenu, face.name);
+}
+
+// ── touch ────────────────────────────────────────────────────────────────
+
+/**
+ * Swipe right to reply (`docs/24`), committing past ~56px.
+ *
+ * It reads as one gesture but it is really two decisions. The first is the
+ * axis lock, which has to go to the scroll on a tie — a list you are reading
+ * must never feel like it is trying to reply for you. The second is the
+ * commit point, which is *visible*: past it the row stops keeping up with
+ * your thumb and the icon goes solid, so you can feel that it has taken
+ * before you let go.
+ */
+const REPLY_AT = 56;
+
+let dx = $state(0);
+let swiping = $state(false);
+let g: { x: number; y: number; t: number; axis: null | 'x' | 'y' } | null = null;
+
+const armed = $derived(dx >= REPLY_AT);
+
+function swipeDown(e: PointerEvent) {
+  if (!layout.coarse || e.pointerType === 'mouse') return;
+  if (m.redacted || editing) return;
+  g = { x: e.clientX, y: e.clientY, t: performance.now(), axis: null };
+}
+
+function swipeMove(e: PointerEvent) {
+  if (!g) return;
+  const ddx = e.clientX - g.x;
+  const ddy = e.clientY - g.y;
+  if (g.axis === null) {
+    if (Math.hypot(ddx, ddy) < 10) return;
+    g.axis = Math.abs(ddx) > Math.abs(ddy) ? 'x' : 'y';
+    // Vertical, or leftward: not ours. Leftward is left alone deliberately —
+    // it is where a delete-on-swipe would go, and this product doesn't have
+    // one, so the row should not budge and imply otherwise.
+    if (g.axis === 'y' || ddx <= 0) {
+      g = null;
       return;
     }
+    swiping = true;
+    try {
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+    } catch {
+      /* pointer already gone */
+    }
+  }
+  const raw = Math.max(0, ddx);
+  dx = raw <= REPLY_AT ? raw : REPLY_AT + (raw - REPLY_AT) * 0.3;
+  e.preventDefault();
+}
 
-    // Never moved and never held: that is a tap, and a finger has no hover, so
-    // `docs/24` gives the action bar to the tap. Read out of the same pointer
-    // sequence rather than a `click` handler — the article is not an
-    // interactive element and should not pretend to be one, and this also
-    // sidesteps the long-press's own trailing click.
-    if (was.axis !== null) return;
-    if (performance.now() - was.t >= HOLD) return;
-    const el = e.target instanceof HTMLElement ? e.target : null;
-    if (el?.closest('button, a, textarea, input, [role="button"]')) return;
-    if (!window.getSelection()?.isCollapsed) return;
-    tapActions.toggle(m.id);
+function swipeEnd(e: PointerEvent) {
+  const was = g;
+  g = null;
+  swiping = false;
+  if (!was) return;
+
+  if (was.axis === 'x') {
+    if (dx >= REPLY_AT) {
+      core.replyTo = m.id;
+      navigator.vibrate?.(8);
+    }
+    dx = 0;
+    return;
   }
 
-  /** "Rae, June and 2 others reacted with 🔥" — the tooltip does the work. */
-  function who(by: string[], key: string) {
-    return `${names(by.map((f) => core.faces[f]?.name ?? f))} reacted with ${key}`;
-  }
+  // Never moved and never held: that is a tap, and a finger has no hover, so
+  // `docs/24` gives the action bar to the tap. Read out of the same pointer
+  // sequence rather than a `click` handler — the article is not an
+  // interactive element and should not pretend to be one, and this also
+  // sidesteps the long-press's own trailing click.
+  if (was.axis !== null) return;
+  if (performance.now() - was.t >= HOLD) return;
+  const el = e.target instanceof HTMLElement ? e.target : null;
+  if (el?.closest('button, a, textarea, input, [role="button"]')) return;
+  if (!window.getSelection()?.isCollapsed) return;
+  tapActions.toggle(m.id);
+}
+
+/** "Rae, June and 2 others reacted with 🔥" — the tooltip does the work. */
+function who(by: string[], key: string) {
+  return `${names(by.map((f) => core.faces[f]?.name ?? f))} reacted with ${key}`;
+}
 </script>
 
 {#if unreadAbove}

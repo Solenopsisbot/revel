@@ -1,41 +1,44 @@
 <script lang="ts">
-  /**
-   * Space settings → Roles (`docs/18` §"Roles and permissions").
-   *
-   * "The editor is a list of permissions with toggles, grouped, with a plain
-   * sentence under each rather than a bare flag name. Hierarchy is enforced
-   * and *explained* at the point of failure."
-   *
-   * Both halves of that sentence are the design. The sentences live in
-   * `perms.ts` and are the reason the screen is worth having — `MANAGE_AGENTS`
-   * tells an admin nothing, and an admin guessing about who holds keys is the
-   * failure this product cannot afford. The explanations live on the refusal
-   * itself: every disabled control here can say why, because "greying out
-   * mysteriously" is what the doc names as the thing not to do.
-   *
-   * `VIEW` is absent on purpose. See `perms.ts`.
-   */
-  import Icon from '$lib/Icon.svelte';
-  import { core } from '$lib/fake/core.svelte.js';
-  import { PERM_GROUPS, resolve, rankOf, canEditRole, canGrant } from './perms.js';
+/**
+ * Space settings → Roles (`docs/18` §"Roles and permissions").
+ *
+ * "The editor is a list of permissions with toggles, grouped, with a plain
+ * sentence under each rather than a bare flag name. Hierarchy is enforced
+ * and *explained* at the point of failure."
+ *
+ * Both halves of that sentence are the design. The sentences live in
+ * `perms.ts` and are the reason the screen is worth having — `MANAGE_AGENTS`
+ * tells an admin nothing, and an admin guessing about who holds keys is the
+ * failure this product cannot afford. The explanations live on the refusal
+ * itself: every disabled control here can say why, because "greying out
+ * mysteriously" is what the doc names as the thing not to do.
+ *
+ * `VIEW` is absent on purpose. See `perms.ts`.
+ */
 
-  const space = $derived(core.space);
-  const mine = $derived(core.myMembership);
+import { core } from '$lib/fake/core.svelte.js';
+import Icon from '$lib/Icon.svelte';
+import { canEditRole, canGrant, PERM_GROUPS, rankOf, resolve } from './perms.js';
 
-  const me = $derived({
-    owner: !!mine?.owner,
-    perms: resolve(space, mine?.roles ?? []),
-    rank: mine?.owner ? Infinity : rankOf(space, mine?.roles ?? []),
-  });
+const space = $derived(core.space);
+const mine = $derived(core.myMembership);
 
-  let selected = $state<string | null>(null);
-  const role = $derived(space.roles.find((r) => r.id === selected) ?? space.roles[0]);
-  const gate = $derived(role ? canEditRole(space, role, me) : { ok: false as const, why: 'No roles yet.' });
+const me = $derived({
+  owner: !!mine?.owner,
+  perms: resolve(space, mine?.roles ?? []),
+  rank: mine?.owner ? Infinity : rankOf(space, mine?.roles ?? []),
+});
 
-  /** Everyone carrying this role, for the "who does this affect" line. */
-  const holders = $derived(role ? space.members.filter((m) => m.roles.includes(role.name)) : []);
+let selected = $state<string | null>(null);
+const role = $derived(space.roles.find((r) => r.id === selected) ?? space.roles[0]);
+const gate = $derived(
+  role ? canEditRole(space, role, me) : { ok: false as const, why: 'No roles yet.' },
+);
 
-  const isAdmin = $derived(!!role?.perms.includes('ADMINISTRATOR'));
+/** Everyone carrying this role, for the "who does this affect" line. */
+const holders = $derived(role ? space.members.filter((m) => m.roles.includes(role.name)) : []);
+
+const isAdmin = $derived(!!role?.perms.includes('ADMINISTRATOR'));
 </script>
 
 <h2>Roles</h2>

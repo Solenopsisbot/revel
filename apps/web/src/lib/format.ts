@@ -51,7 +51,11 @@ export function dayLabel(ms: number): string {
 export function newDay(a: number, b: number): boolean {
   const x = new Date(a);
   const y = new Date(b);
-  return x.getDate() !== y.getDate() || x.getMonth() !== y.getMonth() || x.getFullYear() !== y.getFullYear();
+  return (
+    x.getDate() !== y.getDate() ||
+    x.getMonth() !== y.getMonth() ||
+    x.getFullYear() !== y.getFullYear()
+  );
 }
 
 /** "3 minutes ago". Used where an exact clock time would be noise. */

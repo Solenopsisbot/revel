@@ -423,7 +423,13 @@ class Wren {
    * It is also not silenceable. A confirmation you can permanently turn off is
    * a confirmation that stops existing, which is a different feature.
    */
-  confirm(req: { title: string; body: string; confirm: string; cancel?: string; onConfirm: () => void }) {
+  confirm(req: {
+    title: string;
+    body: string;
+    confirm: string;
+    cancel?: string;
+    onConfirm: () => void;
+  }) {
     this.pendingConfirm = req.onConfirm;
     this.popup = {
       id: 'confirm',

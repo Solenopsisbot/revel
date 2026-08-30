@@ -1,45 +1,46 @@
 <script lang="ts">
-  /**
-   * Space → Who can see what.
-   *
-   * `docs/18` gives this its own tab, and it earns one: the per-room picker
-   * shows you a single decision, but the question people actually have is
-   * "which of my rooms are narrower than the space, and do they match what I
-   * think?" That is a whole-space question and needs a whole-space view.
-   *
-   * Rooms are grouped by *audience* rather than listed in room order, because
-   * two rooms sharing an audience share a key group — and seeing that grouping
-   * is the point. It also makes an accidental one-room group obvious, which is
-   * the mistake this screen exists to catch.
-   */
-  import Icon from '$lib/Icon.svelte';
-  import { core } from '$lib/fake/core.svelte.js';
-  import type { Audience, Room } from '$lib/fake/data.js';
+/**
+ * Space → Who can see what.
+ *
+ * `docs/18` gives this its own tab, and it earns one: the per-room picker
+ * shows you a single decision, but the question people actually have is
+ * "which of my rooms are narrower than the space, and do they match what I
+ * think?" That is a whole-space question and needs a whole-space view.
+ *
+ * Rooms are grouped by *audience* rather than listed in room order, because
+ * two rooms sharing an audience share a key group — and seeing that grouping
+ * is the point. It also makes an accidental one-room group obvious, which is
+ * the mistake this screen exists to catch.
+ */
 
-  const space = $derived(core.space);
+import { core } from '$lib/fake/core.svelte.js';
+import type { Audience, Room } from '$lib/fake/data.js';
+import Icon from '$lib/Icon.svelte';
 
-  function key(a: Audience) {
-    if (a.kind === 'everyone') return 'everyone';
-    if (a.kind === 'roles') return `roles:${[...a.roles].sort().join(',')}`;
-    return `picked:${[...a.faceIds].sort().join(',')}`;
+const space = $derived(core.space);
+
+function key(a: Audience) {
+  if (a.kind === 'everyone') return 'everyone';
+  if (a.kind === 'roles') return `roles:${[...a.roles].sort().join(',')}`;
+  return `picked:${[...a.faceIds].sort().join(',')}`;
+}
+
+function describe(a: Audience) {
+  if (a.kind === 'everyone') return 'Everyone in this space';
+  if (a.kind === 'roles') return `People with ${a.roles.join(' or ')}`;
+  return `${a.faceIds.length} people, picked individually`;
+}
+
+const groups = $derived.by(() => {
+  const map = new Map<string, { audience: Audience; rooms: Room[] }>();
+  for (const r of space.rooms) {
+    const k = key(r.audience);
+    const g = map.get(k);
+    if (g) g.rooms.push(r);
+    else map.set(k, { audience: r.audience, rooms: [r] });
   }
-
-  function describe(a: Audience) {
-    if (a.kind === 'everyone') return 'Everyone in this space';
-    if (a.kind === 'roles') return `People with ${a.roles.join(' or ')}`;
-    return `${a.faceIds.length} people, picked individually`;
-  }
-
-  const groups = $derived.by(() => {
-    const map = new Map<string, { audience: Audience; rooms: Room[] }>();
-    for (const r of space.rooms) {
-      const k = key(r.audience);
-      const g = map.get(k);
-      if (g) g.rooms.push(r);
-      else map.set(k, { audience: r.audience, rooms: [r] });
-    }
-    return [...map.values()];
-  });
+  return [...map.values()];
+});
 </script>
 
 <h2>Who can see what</h2>

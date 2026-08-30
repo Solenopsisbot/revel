@@ -1,50 +1,53 @@
 <script lang="ts">
-  /**
-   * Everything hanging off a message that isn't text.
-   *
-   * The one rule that shapes all of it: the frame is the right size BEFORE the
-   * bytes arrive. Sizes come from the encrypted manifest, so a picture that is
-   * still decrypting occupies exactly the space it will occupy when it lands,
-   * and the conversation never jumps under someone's cursor (`docs/32`).
-   *
-   * Visual media (image, gif, video) shares a grid; audio and files stack
-   * under it, because a waveform next to a photo reads as two unrelated things
-   * fighting for the same row.
-   */
-  import Icon from '$lib/Icon.svelte';
-  import { bytes, duration } from '$lib/format.js';
-  import type { Attachment } from '$lib/fake/data.js';
-  import AudioPlayer from './AudioPlayer.svelte';
-  import { lightbox } from './lightbox.svelte.js';
+/**
+ * Everything hanging off a message that isn't text.
+ *
+ * The one rule that shapes all of it: the frame is the right size BEFORE the
+ * bytes arrive. Sizes come from the encrypted manifest, so a picture that is
+ * still decrypting occupies exactly the space it will occupy when it lands,
+ * and the conversation never jumps under someone's cursor (`docs/32`).
+ *
+ * Visual media (image, gif, video) shares a grid; audio and files stack
+ * under it, because a waveform next to a photo reads as two unrelated things
+ * fighting for the same row.
+ */
 
-  let { list }: { list: Attachment[] } = $props();
+import type { Attachment } from '$lib/fake/data.js';
+import { bytes, duration } from '$lib/format.js';
+import Icon from '$lib/Icon.svelte';
+import AudioPlayer from './AudioPlayer.svelte';
+import { lightbox } from './lightbox.svelte.js';
 
-  const visual = $derived(list.filter((a) => a.kind === 'image' || a.kind === 'gif' || a.kind === 'video'));
-  const rest = $derived(list.filter((a) => a.kind === 'audio' || a.kind === 'file'));
+let { list }: { list: Attachment[] } = $props();
 
-  /** Spoilers are per-attachment and reset when the message changes. */
-  let revealed = $state<Record<string, boolean>>({});
-  let altFor = $state<string | null>(null);
+const visual = $derived(
+  list.filter((a) => a.kind === 'image' || a.kind === 'gif' || a.kind === 'video'),
+);
+const rest = $derived(list.filter((a) => a.kind === 'audio' || a.kind === 'file'));
 
-  /**
-   * The one open description, or null. At most one is open at a time, which
-   * is why it can be rendered once below the whole group rather than once per
-   * frame — and it *has* to be, because a frame is sized from the manifest
-   * and holds that size exactly. Anything added inside it has no room and
-   * spills onto the message underneath.
-   */
-  const altShown = $derived(visual.find((a) => a.id === altFor) ?? null);
+/** Spoilers are per-attachment and reset when the message changes. */
+let revealed = $state<Record<string, boolean>>({});
+let altFor = $state<string | null>(null);
 
-  const MAX_W = 400;
-  const MAX_H = 320;
+/**
+ * The one open description, or null. At most one is open at a time, which
+ * is why it can be rendered once below the whole group rather than once per
+ * frame — and it *has* to be, because a frame is sized from the manifest
+ * and holds that size exactly. Anything added inside it has no room and
+ * spills onto the message underneath.
+ */
+const altShown = $derived(visual.find((a) => a.id === altFor) ?? null);
 
-  /** Exact display pixels, so the reserved box matches the final one. */
-  function fit(a: Attachment) {
-    const w = a.w ?? 400;
-    const h = a.h ?? 300;
-    const scale = Math.min(MAX_W / w, MAX_H / h, 1);
-    return { w: Math.round(w * scale), h: Math.round(h * scale) };
-  }
+const MAX_W = 400;
+const MAX_H = 320;
+
+/** Exact display pixels, so the reserved box matches the final one. */
+function fit(a: Attachment) {
+  const w = a.w ?? 400;
+  const h = a.h ?? 300;
+  const scale = Math.min(MAX_W / w, MAX_H / h, 1);
+  return { w: Math.round(w * scale), h: Math.round(h * scale) };
+}
 </script>
 
 {#if visual.length}

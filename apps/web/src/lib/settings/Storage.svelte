@@ -1,76 +1,76 @@
 <script lang="ts">
-  /**
-   * Settings → Storage & data (`docs/19` §"a real screen, not a stub").
-   *
-   * Local-first means the client holds a real database, so a person can and
-   * will ask where their disk went. Nobody does this screen well and it is
-   * cheap to do properly, so it is done properly: a real breakdown, a real
-   * per-space split, and two clearing actions that are honest about the
-   * difference between them.
-   *
-   * - **Clear cached media** is safe and reversible. It re-downloads on
-   *   demand. Said so, right on the button's row.
-   * - **Clear local data** is not. It drops decrypted history this device
-   *   holds, and history the room won't re-serve is gone from here. That gets
-   *   a rung-4 confirmation in Wren's voice, naming the consequence.
-   */
-  import Icon from '$lib/Icon.svelte';
-  import { core } from '$lib/fake/core.svelte.js';
-  import { layout } from '$lib/layout.svelte.js';
-  import { wren } from '$lib/wren/wren.svelte.js';
+/**
+ * Settings → Storage & data (`docs/19` §"a real screen, not a stub").
+ *
+ * Local-first means the client holds a real database, so a person can and
+ * will ask where their disk went. Nobody does this screen well and it is
+ * cheap to do properly, so it is done properly: a real breakdown, a real
+ * per-space split, and two clearing actions that are honest about the
+ * difference between them.
+ *
+ * - **Clear cached media** is safe and reversible. It re-downloads on
+ *   demand. Said so, right on the button's row.
+ * - **Clear local data** is not. It drops decrypted history this device
+ *   holds, and history the room won't re-serve is gone from here. That gets
+ *   a rung-4 confirmation in Wren's voice, naming the consequence.
+ */
 
-  const s = $derived(core.storage);
-  const mb = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)} GB` : `${n} MB`);
+import { core } from '$lib/fake/core.svelte.js';
+import Icon from '$lib/Icon.svelte';
+import { layout } from '$lib/layout.svelte.js';
+import { wren } from '$lib/wren/wren.svelte.js';
 
-  /**
-   * `docs/24`: the media cache is "capped by default on metered/small devices,
-   * with the cap visible and adjustable". Visible was already true; adjustable
-   * was not, which made it a fact about the app rather than a decision the
-   * person carrying it gets to make.
-   */
-  const CAPS = [
-    { mb: 1000, label: '1 GB' },
-    { mb: 4000, label: '4 GB' },
-    { mb: 12000, label: '12 GB' },
-  ];
+const s = $derived(core.storage);
+const mb = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)} GB` : `${n} MB`);
 
-  const total = $derived(s.messages + s.media + s.index + s.models);
-  const pct = $derived(Math.round((total / s.limit) * 100));
+/**
+ * `docs/24`: the media cache is "capped by default on metered/small devices,
+ * with the cap visible and adjustable". Visible was already true; adjustable
+ * was not, which made it a fact about the app rather than a decision the
+ * person carrying it gets to make.
+ */
+const CAPS = [
+  { mb: 1000, label: '1 GB' },
+  { mb: 4000, label: '4 GB' },
+  { mb: 12000, label: '12 GB' },
+];
 
-  const rows = $derived([
-    { name: 'Messages and history', mb: s.messages, colour: 'aqua' },
-    { name: 'Media and files', mb: s.media, colour: 'violet' },
-    { name: 'Search index', mb: s.index, colour: 'sky' },
-    { name: 'Translation models', mb: s.models, colour: 'mint' },
-  ]);
+const total = $derived(s.messages + s.media + s.index + s.models);
+const pct = $derived(Math.round((total / s.limit) * 100));
 
-  const leftTotal = $derived(s.leftRooms.reduce((n, r) => n + r.mb, 0));
+const rows = $derived([
+  { name: 'Messages and history', mb: s.messages, colour: 'aqua' },
+  { name: 'Media and files', mb: s.media, colour: 'violet' },
+  { name: 'Search index', mb: s.index, colour: 'sky' },
+  { name: 'Translation models', mb: s.models, colour: 'mint' },
+]);
 
-  let exported = $state(false);
+const leftTotal = $derived(s.leftRooms.reduce((n, r) => n + r.mb, 0));
 
-  function clearEverything() {
-    wren.confirm({
-      title: 'This deletes the copy on this device',
-      body:
-        'Your account and your rooms are fine — this is only what this device has downloaded. But anything a room no longer serves is gone from here, and I can’t get it back.',
-      confirm: 'Clear local data',
-      onConfirm: () => {
-        core.clearCachedMedia();
-        core.clearLeftRoomHistory();
-        core.storage.messages = 0;
-        core.storage.index = 0;
-      },
-    });
-  }
+let exported = $state(false);
 
-  function clearLeft() {
-    wren.confirm({
-      title: 'This is permanent',
-      body: `You left these ${s.leftRooms.length} rooms, so nobody will send the history back. Clearing it frees ${mb(leftTotal)} and ends your copy of those conversations.`,
-      confirm: 'Clear history',
-      onConfirm: () => core.clearLeftRoomHistory(),
-    });
-  }
+function clearEverything() {
+  wren.confirm({
+    title: 'This deletes the copy on this device',
+    body: 'Your account and your rooms are fine — this is only what this device has downloaded. But anything a room no longer serves is gone from here, and I can’t get it back.',
+    confirm: 'Clear local data',
+    onConfirm: () => {
+      core.clearCachedMedia();
+      core.clearLeftRoomHistory();
+      core.storage.messages = 0;
+      core.storage.index = 0;
+    },
+  });
+}
+
+function clearLeft() {
+  wren.confirm({
+    title: 'This is permanent',
+    body: `You left these ${s.leftRooms.length} rooms, so nobody will send the history back. Clearing it frees ${mb(leftTotal)} and ends your copy of those conversations.`,
+    confirm: 'Clear history',
+    onConfirm: () => core.clearLeftRoomHistory(),
+  });
+}
 </script>
 
 <h2>Storage &amp; data</h2>
