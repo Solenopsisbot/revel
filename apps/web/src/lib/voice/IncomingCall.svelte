@@ -19,10 +19,7 @@ import { voice } from './voice.svelte.js';
 
 const from = $derived(core.faces[voice.incoming!.fromFaceId]!);
 const dm = $derived(core.dms.find((d) => d.id === voice.incoming!.dmId));
-const dmTitle = $derived.by(() => {
-  const info = directory.dms().find((r) => r.id === voice.incoming?.dmId);
-  return info ? directory.title(info) : '';
-});
+const dmTitle = $derived(voice.incoming ? directory.title(voice.incoming.dmId) : '');
 </script>
 
 <div class="ring" role="alertdialog" aria-label="Incoming call from {from.name}">

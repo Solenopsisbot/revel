@@ -220,12 +220,9 @@ class Search {
       const r = core.spaces.find((s) => s.id === spaceId)?.rooms.find((x) => x.id === roomId);
       return `#${r?.name ?? roomId}`;
     }
-    const named = core.dms.find((d) => d.id === roomId)?.name;
-    if (named) return named;
-    // Through the seam, so a conversation is named by who is in it rather than
-    // by which of their faces happened to be listed (`docs/11`).
-    const info = directory.dms().find((r) => r.id === roomId);
-    return info ? directory.title(info) : roomId;
+    // Named by the faces in it, never collapsed by account: `docs/11`'s
+    // linking control is off by default and each face is its own person.
+    return core.dms.some((d) => d.id === roomId) ? directory.title(roomId) : roomId;
   }
 
   /**

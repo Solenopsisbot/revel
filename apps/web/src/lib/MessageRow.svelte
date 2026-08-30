@@ -60,7 +60,16 @@ let {
  */
 const snapshot = $derived(m.face);
 const current = $derived(snapshot ? core.faces[snapshot.id] : undefined);
-const face = $derived(snapshot ?? { id: '', name: 'someone', colour: 'grey' });
+/**
+ * A message whose face we cannot resolve is **Unknown**, out loud.
+ *
+ * It happens for real: a message from a newer client using a field this build
+ * does not read, or one whose face never reached a `room.faces` event. The
+ * two tempting answers — invent a name, or fall back to whoever spoke last —
+ * both attribute words to somebody who did not say them. "Unknown" is the
+ * only honest option, and it is deliberately not quiet.
+ */
+const face = $derived(snapshot ?? { id: '', name: 'Unknown', colour: 'grey' });
 /**
  * What `Avatar` needs, which is a bit more than a snapshot carries.
  *
@@ -144,6 +153,29 @@ function onEditKey(e: KeyboardEvent) {
     e.stopPropagation();
     core.editing = null;
   }
+}
+
+/**
+ * A `#room` or `@name` in a message body, clicked.
+ *
+ * The token carries what the sender **typed**, which is a name — so it has to
+ * be resolved here, against the space this room is in. Two spaces can both have
+ * a `#design`, and a room can be renamed after the message was sent.
+ *
+ * That is the honest limit of the current shape and worth naming: the body
+ * should carry the room *id* inside the ciphertext with the name only as a
+ * fallback label, the way an `@` should carry an account. Until it does, a
+ * mention resolves by name and can miss — which is why an unresolved one does
+ * nothing rather than guessing at the nearest match.
+ */
+function mention(name: string) {
+  const room = core.space?.rooms.find((r) => r.name === name);
+  if (room) {
+    core.openRoom(core.currentSpaceId, room.id);
+    return;
+  }
+  const face = Object.values(core.faces).find((f) => f.name === name);
+  if (face) core.profileFor = face.id;
 }
 
 function pickMenu(id: string) {
@@ -316,7 +348,7 @@ function who(by: string[], key: string) {
         onclick={() => (core.jumpTo = target.id)}
       >
         <Icon name="reply" size={13} />
-        <span class="who">{target.face?.name ?? 'someone'}</span>
+        <span class="who">{target.face?.name ?? 'Unknown'}</span>
         <span class="snip">{target.redacted ? 'message deleted' : target.text || 'attachment'}</span>
       </button>
     {/if}
@@ -359,7 +391,7 @@ function who(by: string[], key: string) {
     {:else}
       {#if m.text}
         <div class="text">
-          <RichText body={m.text} />
+          <RichText body={m.text} onmention={mention} />
           {#if m.editedAt}
             <span class="edited" title="Edited at {clock(m.editedAt)}">(edited)</span>
           {/if}
@@ -377,6 +409,14 @@ function who(by: string[], key: string) {
           <span class="card-site">{m.link.site}</span>
           <span class="card-title">{m.link.title}</span>
           {#if m.link.blurb}<span class="card-blurb">{m.link.blurb}</span>{/if}
+          <!-- The address, verbatim.
+
+               A preview is written by the *sender's* client (`docs/22`), which
+               means the title and site are whatever they chose to put there.
+               Showing only those would let a link say one thing and go
+               somewhere else — a phishing card with a friendly title. The URL
+               is the one part nobody can dress up, so it is always visible. -->
+          <span class="card-url">{m.link.url}</span>
         </a>
       {/if}
 
@@ -686,6 +726,10 @@ function who(by: string[], key: string) {
   .card:hover { background: var(--ground-3); }
   .card-site { font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-mute); }
   .card-title { font-weight: 700; font-size: var(--text-sm); color: var(--face-sky); }
+  .card-url {
+    font-size: var(--text-xs); color: var(--text-mute);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .card-blurb { font-size: var(--text-sm); color: var(--text-dim); }
 
   .annot {

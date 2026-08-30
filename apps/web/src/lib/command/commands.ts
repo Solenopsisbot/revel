@@ -16,11 +16,8 @@
 import { core, MY_ACCOUNT } from '../fake/core.svelte.js';
 import { directory } from '../fake/directory.svelte.js';
 
-/** Named by who is in it, through the directory seam (`docs/11`: by account). */
-const titleOf = (roomId: string) => {
-  const info = directory.dms().find((r) => r.id === roomId);
-  return info ? directory.title(info) : roomId;
-};
+/** Named by the faces in it, never collapsed by account (`docs/11`). */
+const titleOf = (roomId: string) => directory.title(roomId);
 
 import { search } from '../search/search.svelte.js';
 import { SECTIONS } from '../settings/sections.js';

@@ -155,3 +155,26 @@ describe('the timeline it hands the UI', () => {
     expect(missing).toEqual([]);
   });
 });
+
+describe('a message whose face cannot be resolved', () => {
+  it('comes out with no face rather than a guessed one', () => {
+    // The mapping must not invent. What it hands over is the absence, and the
+    // renderer is what decides to say "Unknown" — one decision, one place.
+    const m = sample();
+    const mapped = asCoreMessage({ ...m, faceId: 'nobody-has-this-face' }, faces);
+    expect(mapped.face).toBeUndefined();
+  });
+
+  it('does not let two unknown senders look like one', () => {
+    // The grouping rule compares `prev.face.id === m.face.id`, and without an
+    // explicit presence check `undefined === undefined` is true — two different
+    // strangers under one avatar and one name. This asserts the shape that rule
+    // depends on: an unresolved face is absent, not a shared empty object.
+    const m = sample();
+    const a = asCoreMessage({ ...m, id: 'a', faceId: 'ghost-one' }, faces);
+    const b = asCoreMessage({ ...m, id: 'b', faceId: 'ghost-two' }, faces);
+    expect(a.face).toBeUndefined();
+    expect(b.face).toBeUndefined();
+    expect(a.account).not.toBe(b.account);
+  });
+});

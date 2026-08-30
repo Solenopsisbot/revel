@@ -11,14 +11,8 @@
  * it. What is real today is DMs and group DMs.
  */
 import type { RoomInfo } from '@revel/protocol';
-import { core, MY_ACCOUNT } from './core.svelte.js';
-import { dmAsRoomInfo, dmTitleOf, roomAsRoomInfo } from './directoryShape.js';
-
-/** The display name for an account, via whichever face is its primary one. */
-function nameOfAccount(account: string): string {
-  const face = Object.values(core.faces).find((f) => f.accountId === account);
-  return face?.name ?? account;
-}
+import { core } from './core.svelte.js';
+import { dmAsRoomInfo, dmFaces, dmTitleOf, roomAsRoomInfo } from './directoryShape.js';
 
 export const directory = {
   /** Every DM and group DM, as the directory sees them. */
@@ -42,8 +36,20 @@ export const directory = {
     return core.spaces.flatMap((s) => this.spaceRooms(s.id));
   },
 
-  /** What to call a conversation nobody named. By account, never by face. */
-  title(info: RoomInfo): string {
-    return dmTitleOf(info, nameOfAccount, MY_ACCOUNT);
+  /**
+   * Who is in a conversation, as faces. Never collapsed by account.
+   *
+   * `docs/11`: with linking off — the default — each face is an independent
+   * person and nothing in the UI connects them.
+   */
+  people(roomId: string) {
+    const dm = core.dms.find((d) => d.id === roomId);
+    return dm ? dmFaces(dm, core.faces, core.speakingAs) : [];
+  },
+
+  /** What to call a conversation nobody named. By face, for the same reason. */
+  title(roomId: string): string {
+    const dm = core.dms.find((d) => d.id === roomId);
+    return dm?.name ?? dmTitleOf(dm ? dmFaces(dm, core.faces, core.speakingAs) : []);
   },
 };

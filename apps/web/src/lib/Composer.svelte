@@ -135,7 +135,7 @@ function grow(el: HTMLTextAreaElement) {
     {#if target}
       <div class="reply-banner">
         <Icon name="reply" size={14} />
-        <span>Replying to <b style="color: var(--face-{target.face?.colour ?? 'grey'})">{target.face?.name ?? 'someone'}</b></span>
+        <span>Replying to <b style="color: var(--face-{target.face?.colour ?? 'grey'})">{target.face?.name ?? 'Unknown'}</b></span>
         <span class="snip">{target.body}</span>
         <button class="x" onclick={() => (core.replyTo = null)} aria-label="Cancel reply">×</button>
       </div>
