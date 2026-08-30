@@ -376,7 +376,13 @@ describe('membership, as the server tracks it for delivery', () => {
 
   it('rejects a commit that claims to add a revoked device', async () => {
     const { h, group } = await trio();
-    h.store.devices.set('dev-x', { pub: 'dev-x', accountId: 'carol', revokedAt: Date.now() });
+    h.store.devices.set('dev-x', {
+      pub: 'dev-x',
+      accountId: 'carol',
+      label: 'test-device',
+      registeredAt: 0,
+      revokedAt: Date.now(),
+    });
     expect((await h.handshake('dev-a', group, commit(1, { added: ['dev-x'] }))).status).toBe(400);
   });
 

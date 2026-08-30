@@ -130,6 +130,14 @@ export class WorkerCryptoEngine implements CryptoEngine {
     return this.#call('keyPackage');
   }
 
+  identity(): Promise<Identity> {
+    return this.#call('identity');
+  }
+
+  signAuth(payload: Uint8Array): Promise<Uint8Array> {
+    return this.#call('signAuth', payload);
+  }
+
   createGroup(groupId: string): Promise<GroupState> {
     return this.#call('createGroup', groupId);
   }

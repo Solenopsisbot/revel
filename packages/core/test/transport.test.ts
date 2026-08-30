@@ -154,13 +154,25 @@ function host() {
     bits: serialize(DEFAULT_EVERYONE),
     position: 0,
   });
-  store.devices.set(DEVICE, { pub: DEVICE, accountId: 'account-alice', revokedAt: null });
+  store.devices.set(DEVICE, {
+    pub: DEVICE,
+    accountId: 'account-alice',
+    label: 'test-device',
+    registeredAt: 0,
+    revokedAt: null,
+  });
   store.memberships.set('room1:account-alice', {
     roomId: 'room1',
     accountId: 'account-alice',
     roleIds: ['role-everyone'],
   });
-  store.devices.set(STRANGER, { pub: STRANGER, accountId: 'account-nobody', revokedAt: null });
+  store.devices.set(STRANGER, {
+    pub: STRANGER,
+    accountId: 'account-nobody',
+    label: 'test-device',
+    registeredAt: 0,
+    revokedAt: null,
+  });
 
   const app = createApp({
     store,
@@ -195,8 +207,20 @@ describe('the directory, against the real server', () => {
 
   function pair() {
     const h = host();
-    h.store.devices.set('dev-1', { pub: 'dev-1', accountId: A, revokedAt: null });
-    h.store.devices.set('dev-2', { pub: 'dev-2', accountId: B, revokedAt: null });
+    h.store.devices.set('dev-1', {
+      pub: 'dev-1',
+      accountId: A,
+      label: 'test-device',
+      registeredAt: 0,
+      revokedAt: null,
+    });
+    h.store.devices.set('dev-2', {
+      pub: 'dev-2',
+      accountId: B,
+      label: 'test-device',
+      registeredAt: 0,
+      revokedAt: null,
+    });
     return { ...h, one: h.transportAs('dev-1'), two: h.transportAs('dev-2') };
   }
 
@@ -221,6 +245,8 @@ describe('the directory, against the real server', () => {
     h.store.devices.set('dev-3', {
       pub: 'dev-3',
       accountId: 'Zx1Cv3Bn5Mq7Wr9Ty0Ui2Op4As6Df8Gh1Jk3Ll5Zzz',
+      label: 'test-device',
+      registeredAt: 0,
       revokedAt: null,
     });
     const after = await h.one.addMembers(room.id, ['Zx1Cv3Bn5Mq7Wr9Ty0Ui2Op4As6Df8Gh1Jk3Ll5Zzz']);
@@ -388,7 +414,13 @@ describe('HttpTransport against the real server', () => {
 
   it('is refused when the sending device has been revoked', async () => {
     const { store, transportAs } = host();
-    store.devices.set(DEVICE, { pub: DEVICE, accountId: 'account-alice', revokedAt: Date.now() });
+    store.devices.set(DEVICE, {
+      pub: DEVICE,
+      accountId: 'account-alice',
+      label: 'test-device',
+      registeredAt: 0,
+      revokedAt: Date.now(),
+    });
 
     await expect(transportAs(DEVICE).fetchEvents('room1')).rejects.toMatchObject({ status: 401 });
   });

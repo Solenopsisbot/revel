@@ -55,6 +55,7 @@ export class Session {
     return {
       accountPublicKey: this.#account.publicKey,
       certificate: this.#device.certificate,
+      devicePublicKey: this.#device.publicKey,
     };
   }
 
@@ -227,6 +228,11 @@ export class Session {
     const group = this.#device.loadGroup(ENC.encode(groupId));
     this.#groups.set(groupId, group);
     return stateOf(groupId, group);
+  }
+
+  signAuth(payload: Uint8Array): Uint8Array {
+    this.#alive();
+    return this.#device.signAuth(payload);
   }
 
   close(): void {

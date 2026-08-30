@@ -574,14 +574,33 @@ export class GroupSync {
    * which is exactly what the log's own sequence exists for.
    */
   async receiveHandshake(record: HandshakeRecord): Promise<void> {
+    if (!(await this.#holds(record.group))) return;
     const cursor = await this.#cursor(record.group);
     if (record.seq <= cursor) return;
     if (record.seq > cursor + 1) return void (await this.catchUp(record.group));
     await this.#apply(record);
   }
 
+  /**
+   * Whether this device is actually in a group, as MLS sees it.
+   *
+   * The commit that adds somebody is fanned out to every member of the group it
+   * just created — including the person it added, who has not opened their
+   * Welcome yet and cannot process a commit for a group they are not in. Their
+   * way in is the Welcome, not this. Ignoring is right; throwing would turn
+   * every invitation into a stack trace on the invitee's console.
+   *
+   * It is also what happens to a device that has been removed and to one whose
+   * state has been discarded, both of which keep receiving fan-out until the
+   * server's delivery list catches up.
+   */
+  async #holds(groupId: string): Promise<boolean> {
+    return (await this.#crypto.state(groupId).catch(() => null)) !== null;
+  }
+
   /** Fetch and apply everything since the cursor. */
   async catchUp(groupId: string): Promise<number> {
+    if (!(await this.#holds(groupId))) return 0;
     let applied = 0;
     for (;;) {
       const since = await this.#cursor(groupId);
@@ -605,7 +624,11 @@ export class GroupSync {
     // the second time round. The epoch comparison catches both, and is the
     // load-bearing one: `sender` alone would not survive a reload.
     const current = await this.#crypto.state(groupId).catch(() => null);
-    const stale = record.kind === 'commit' && current !== null && record.epoch < current.epoch;
+    // Gone between the guard and here — a concurrent `leave`, say. Nothing to
+    // apply it to, and the cursor is meaningless without state to go with it.
+    if (!current) return;
+
+    const stale = record.kind === 'commit' && record.epoch < current.epoch;
     const mine = record.sender === this.#device;
 
     if (!stale && !mine) {
@@ -620,7 +643,7 @@ export class GroupSync {
         // standing still after a commit is the signal, and without checking for
         // it a removed client shows a room that has mysteriously stopped
         // working rather than a room it has been removed from.
-        if (current && after.epoch === current.epoch) {
+        if (after.epoch === current.epoch) {
           await this.#setCursor(groupId, record.seq);
           return void (await this.leave(groupId));
         }

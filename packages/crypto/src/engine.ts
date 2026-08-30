@@ -85,6 +85,14 @@ export interface Identity {
   accountPublicKey: Uint8Array;
   /** This device's certificate, as MLS carries it. */
   certificate: Uint8Array;
+  /**
+   * This device's MLS signature public key.
+   *
+   * The same bytes a Host knows it by. `docs/31` §8 recorded the gap this
+   * closes — the group and the Host used to know a device by two unrelated
+   * names, so neither could tell the other which device it meant.
+   */
+  devicePublicKey: Uint8Array;
 }
 
 export interface OpenOptions {
@@ -133,6 +141,16 @@ export interface CryptoEngine {
   open(options: OpenOptions): Promise<Identity>;
 
   /**
+   * Who this device is, after `open`.
+   *
+   * The same value `open` returned. It is here because asking your own name
+   * should not mean holding on to the answer from start-up and passing it
+   * through six constructors — which is what every caller was otherwise going
+   * to do.
+   */
+  identity(): Promise<Identity>;
+
+  /**
    * The account secret, for the caller to store.
    *
    * Separate from `open` and awkwardly named on purpose: it is the one value
@@ -149,6 +167,17 @@ export interface CryptoEngine {
    * appearing.
    */
   exportDeviceSecret(): Promise<Uint8Array>;
+
+  /**
+   * Sign a Host's authentication challenge (`docs/03` §2).
+   *
+   * The payload is built by `authPayload` in `@revel/protocol` — one definition
+   * for the side that signs and the side that checks. The domain separation is
+   * applied inside the crypto core, so there is no way to ask this key to sign
+   * something that could be replayed as an MLS handshake: a caller chooses the
+   * payload, never the context.
+   */
+  signAuth(payload: Uint8Array): Promise<Uint8Array>;
 
   /**
    * A key package: what someone else needs to add this device to a group.

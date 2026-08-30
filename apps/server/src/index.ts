@@ -1,6 +1,7 @@
 /** Bun entrypoint. Wires the app to Bun's HTTP and WebSocket server. */
 import { SnowflakeFactory } from '@revel/protocol';
 import { createApp } from './app.js';
+import { sessionAuthenticator } from './auth.js';
 import { Hub } from './hub.js';
 import { type Actor, SocketSession } from './socket.js';
 import { MemoryStore } from './store/memory.js';
@@ -8,16 +9,19 @@ import { MemoryStore } from './store/memory.js';
 const store = new MemoryStore();
 const hub = new Hub();
 
-/** Placeholder until device challenge-response lands (`docs/17` §2). */
-async function authenticate(req: Request): Promise<Actor | null> {
-  const device = req.headers.get('x-revel-device') ?? new URL(req.url).searchParams.get('device');
-  if (!device) return null;
-  const record = await store.getDevice(device);
-  if (!record || record.revokedAt) return null;
-  return { accountId: record.accountId, devicePub: record.pub };
-}
+/**
+ * The Host's name, as it appears in the challenge a device signs.
+ *
+ * It is inside the signature, so a signature collected here cannot be presented
+ * at another Host. Getting it wrong means every sign-in fails, which is the
+ * right way for a misconfiguration this consequential to behave.
+ */
+const host = process.env.REVEL_HOST ?? `localhost:${process.env.PORT ?? 8080}`;
 
-const app = createApp({ store, hub, ids: new SnowflakeFactory(0), authenticate });
+/** `docs/03` §2's device-key challenge-response. No passwords at Hosts, ever. */
+const authenticate = sessionAuthenticator({ store, host });
+
+const app = createApp({ store, hub, ids: new SnowflakeFactory(0), authenticate, host });
 
 const port = Number(process.env.PORT ?? 8080);
 console.log(`revel server on :${port}`);
@@ -35,7 +39,15 @@ export default {
   port,
   async fetch(req: Request, server: { upgrade(req: Request, opts?: unknown): boolean }) {
     if (new URL(req.url).pathname === '/socket') {
-      const actor = await authenticate(req);
+      // The socket carries its token as a query parameter: browsers cannot set
+      // headers on a WebSocket handshake, and a subprotocol would be worse —
+      // it ends up in the same places a query string does and is harder to
+      // rotate. Short-lived and single-Host, so a leaked URL is a leaked day.
+      const url = new URL(req.url);
+      const token = url.searchParams.get('token');
+      const actor = await authenticate(
+        token ? new Request(req.url, { headers: { authorization: `Bearer ${token}` } }) : req,
+      );
       if (!actor) return new Response('unauthenticated', { status: 401 });
       // The actor is resolved *before* the upgrade, so an unauthenticated
       // socket is never opened at all rather than opened and then policed.

@@ -9,11 +9,13 @@
  * So the package's export is this, and the entrypoint stays a script.
  */
 export { type AppDeps, createApp } from './app.js';
+export { type AuthDeps, mountAuth, sessionAuthenticator } from './auth.js';
 export { type Connection, Hub } from './hub.js';
-export { type Actor, type SocketDeps, SocketSession } from './socket.js';
 export { mountRooms, type RoomDeps } from './rooms.js';
+export { type Actor, type SocketDeps, SocketSession } from './socket.js';
 export { MemoryStore } from './store/memory.js';
 export type {
+  Challenge,
   Device,
   Group,
   GroupMember,
@@ -21,5 +23,6 @@ export type {
   Override,
   Role,
   Room,
+  Session,
   Store,
 } from './store/types.js';

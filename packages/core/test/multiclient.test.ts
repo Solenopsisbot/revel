@@ -194,6 +194,32 @@ scenarios('starting from nothing', () => {
     await world.close();
   });
 
+  it('survives the commit that adds you arriving before your Welcome', async () => {
+    // The server fans a commit out to every member of the group it just
+    // created — including the person it added, who has not opened their Welcome
+    // yet and cannot process a commit for a group they are not in. Their way in
+    // is the Welcome. Throwing here would make every invitation a stack trace
+    // on the invitee's console, which is how this was found.
+    const world = await World.create();
+    const alice = await world.join('alice');
+    const bob = await world.join('bob');
+    await bob.replenish();
+
+    const room = await world.dm(alice, bob);
+    const group = await alice.open(room);
+
+    await alice.invite(group, [bob.account]);
+    await world.settle();
+
+    await bob.discover();
+    await bob.sync();
+    await alice.say(room, 'no stack traces, please');
+    await world.settle();
+
+    expect(bob.texts(room)).toEqual(['no stack traces, please']);
+    await world.close();
+  });
+
   it('adds somebody to a group DM without giving them the keys', async () => {
     // The architecture in one scenario. The server can hand out membership; it
     // cannot hand out keys. Carol can see the room and read nothing until a
@@ -453,7 +479,7 @@ scenarios('removal', () => {
     const { world, room, guests } = await conversation(['alice', 'bob']);
     const bob = guests[0] as Client;
 
-    world.revoke(bob);
+    await world.revoke(bob);
     await expect(bob.say(room, 'still here')).rejects.toThrow();
     await world.close();
   });

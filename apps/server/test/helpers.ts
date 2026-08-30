@@ -47,14 +47,26 @@ export function harness(opts: { streamPaging?: boolean; notifyHints?: boolean } 
 
   /** Enrol a device for an account and put that account in the room. */
   function join(accountId: string, devicePub: string, roleIds: string[] = [EVERYONE]) {
-    store.devices.set(devicePub, { pub: devicePub, accountId, revokedAt: null });
+    store.devices.set(devicePub, {
+      pub: devicePub,
+      accountId,
+      label: 'test-device',
+      registeredAt: 0,
+      revokedAt: null,
+    });
     store.memberships.set(`room1:${accountId}`, { roomId: 'room1', accountId, roleIds });
     return devicePub;
   }
 
   /** A device that exists but is in no room. */
   function stranger(accountId: string, devicePub: string) {
-    store.devices.set(devicePub, { pub: devicePub, accountId, revokedAt: null });
+    store.devices.set(devicePub, {
+      pub: devicePub,
+      accountId,
+      label: 'test-device',
+      registeredAt: 0,
+      revokedAt: null,
+    });
     return devicePub;
   }
 

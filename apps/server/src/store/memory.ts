@@ -2,6 +2,7 @@
 import type { Event, HandshakeRecord, KeyPackageSupply, KeyPackageUpload } from '@revel/protocol';
 import { compareIds } from '@revel/protocol';
 import type {
+  Challenge,
   ClaimedPackage,
   Device,
   Group,
@@ -13,6 +14,7 @@ import type {
   Override,
   Role,
   Room,
+  Session,
   Store,
   StoredWelcome,
 } from './types.js';
@@ -98,6 +100,64 @@ export class MemoryStore implements Store {
     return this.devices.get(pub) ?? null;
   }
 
+  challenges = new Map<string, Challenge>();
+  sessions = new Map<string, Session>();
+
+  async registerDevice(device: Device) {
+    const existing = this.devices.get(device.pub);
+    // Re-registering a revoked device must not un-revoke it. Otherwise "sign
+    // out this device" lasts exactly as long as it takes to press the button
+    // again on the device you were signing out.
+    if (existing) return { device: existing, created: false };
+    this.devices.set(device.pub, device);
+    return { device, created: true };
+  }
+
+  async revokeDevice(pub: string, at: number) {
+    const device = this.devices.get(pub);
+    if (!device || device.revokedAt) return false;
+    device.revokedAt = at;
+    await this.deleteDeviceSessions(pub);
+    return true;
+  }
+
+  async putChallenge(nonceHash: string, challenge: Challenge) {
+    this.challenges.set(nonceHash, challenge);
+  }
+
+  async takeChallenge(nonceHash: string) {
+    const challenge = this.challenges.get(nonceHash);
+    // Deleted as it is read, in one call, because two round trips is how the
+    // same nonce gets spent twice.
+    this.challenges.delete(nonceHash);
+    if (!challenge) return null;
+    return challenge.expiresAt < Date.now() ? null : challenge;
+  }
+
+  async putSession(tokenHash: string, session: Session) {
+    this.sessions.set(tokenHash, session);
+  }
+
+  async getSession(tokenHash: string) {
+    const session = this.sessions.get(tokenHash);
+    if (!session) return null;
+    if (session.expiresAt < Date.now()) {
+      this.sessions.delete(tokenHash);
+      return null;
+    }
+    return session;
+  }
+
+  async deleteSession(tokenHash: string) {
+    this.sessions.delete(tokenHash);
+  }
+
+  async deleteDeviceSessions(devicePub: string) {
+    for (const [hash, session] of this.sessions) {
+      if (session.devicePub === devicePub) this.sessions.delete(hash);
+    }
+  }
+
   async appendEvent(e: Event) {
     // Idempotency is scoped per device: two devices may legitimately pick the
     // same nonce, and one must not shadow the other.
@@ -141,8 +201,10 @@ export class MemoryStore implements Store {
   shelves = new Map<string, Shelf>();
   claims = new Map<string, OutstandingClaim>();
 
-  async listAccountDevices(accountId: string) {
-    return [...this.devices.values()].filter((d) => d.accountId === accountId && !d.revokedAt);
+  async listAccountDevices(accountId: string, opts: { includeRevoked?: boolean } = {}) {
+    return [...this.devices.values()].filter(
+      (d) => d.accountId === accountId && (opts.includeRevoked || !d.revokedAt),
+    );
   }
 
   async publishKeyPackages(devicePub: string, upload: KeyPackageUpload) {

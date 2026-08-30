@@ -62,9 +62,33 @@ export interface Override {
 }
 
 export interface Device {
+  /** The device's MLS signature public key, base64url. One identifier, not two. */
   pub: string;
   accountId: string;
+  /** From the certificate, so it is covered by the account key's signature. */
+  label: string;
+  registeredAt: number;
+  /** Set the moment it is signed out. Its sessions die with it (`docs/03` §3). */
   revokedAt: number | null;
+}
+
+/**
+ * A challenge handed to a device, waiting to be signed.
+ *
+ * Single-use and short-lived. A nonce that can be spent twice is a signature
+ * that can be replayed, and one that outlives its connection is a window for a
+ * signature collected somewhere else.
+ */
+export interface Challenge {
+  devicePub: string;
+  expiresAt: number;
+}
+
+/** A live session. Bound to a device, never to an account (`docs/03` §2). */
+export interface Session {
+  devicePub: string;
+  accountId: string;
+  expiresAt: number;
 }
 
 export interface Store {
@@ -103,6 +127,31 @@ export interface Store {
   getDevice(pub: string): Promise<Device | null>;
 
   /**
+   * Register a device, or return the one already there.
+   *
+   * Idempotent: a client that retries after a dropped response must not be
+   * told its own device belongs to somebody else. Re-registering a *revoked*
+   * device does not un-revoke it — signing out has to stay signed out, or
+   * revocation is a suggestion.
+   */
+  registerDevice(device: Device): Promise<{ device: Device; created: boolean }>;
+  revokeDevice(pub: string, at: number): Promise<boolean>;
+
+  /**
+   * Hand out a challenge. Keyed by the hash of the nonce, not the nonce:
+   * a database that leaks should not hand out anything spendable.
+   */
+  putChallenge(nonceHash: string, challenge: Challenge): Promise<void>;
+  /** Spend it. Single-use — this deletes as it reads (Kith's `DELETE … RETURNING`). */
+  takeChallenge(nonceHash: string): Promise<Challenge | null>;
+
+  putSession(tokenHash: string, session: Session): Promise<void>;
+  getSession(tokenHash: string): Promise<Session | null>;
+  deleteSession(tokenHash: string): Promise<void>;
+  /** Every session of one device, at once. What revocation means immediately. */
+  deleteDeviceSessions(devicePub: string): Promise<void>;
+
+  /**
    * Append an event. Returns the stored event, or the existing one when
    * `clientNonce` has already been used by this device — so a retry after a
    * dropped response cannot duplicate (`docs/04` §2).
@@ -116,8 +165,15 @@ export interface Store {
   // The handshake surface (`docs/04` §1, Host role)
   // -------------------------------------------------------------------------
 
-  /** Every device enrolled to an account, so a claim can cover all their leaves. */
-  listAccountDevices(accountId: string): Promise<Device[]>;
+  /**
+   * Every device enrolled to an account, so a claim can cover all their leaves.
+   *
+   * Live devices by default. The safe direction: a caller that forgets to
+   * filter gives a revoked device a leaf in a group, which is the exact thing
+   * revocation exists to prevent. The devices *screen* opts in to the full
+   * list, because showing what you have signed out is most of its job.
+   */
+  listAccountDevices(accountId: string, opts?: { includeRevoked?: boolean }): Promise<Device[]>;
 
   /** Replace this device's shelf. Returns what it now holds. */
   publishKeyPackages(devicePub: string, upload: KeyPackageUpload): Promise<KeyPackageSupply>;

@@ -58,6 +58,7 @@ export {
   isEpochConflict,
   KEY_PACKAGE_FLOOR,
 } from './sync/groups.js';
+export { HostSession, type HostSessionOptions } from './sync/session.js';
 export {
   type SocketLike,
   WebSocketStream,

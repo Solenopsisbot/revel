@@ -54,9 +54,11 @@ import {
   Hub,
   MemoryStore as ServerStore,
   SocketSession,
+  sessionAuthenticator,
 } from '@revel/server';
 import {
   GroupSync,
+  HostSession,
   HttpGroupTransport,
   HttpTransport,
   MemoryStore,
@@ -78,6 +80,7 @@ export function startWasm(): Promise<unknown> {
   return started;
 }
 
+const HOST = 'harness.test';
 const SPACE = 'space1';
 const EVERYONE = 'role-everyone';
 
@@ -105,21 +108,16 @@ export class World {
       position: 0,
     });
 
+    // Real auth, not a header. Every scenario below therefore runs against
+    // `docs/03` §2's challenge-response — the clients register a certificate,
+    // sign a nonce and carry a bearer token, exactly as they will in a browser.
+    // A harness that shortcut this would be testing a server nobody deploys.
     this.app = createApp({
       store: this.store,
       hub: this.hub,
       ids: this.ids,
-      // The device-key challenge-response is `docs/17` §2 and does not exist
-      // yet. What matters for these scenarios is that a request is attributable
-      // to a device and that a revoked device stops working — both of which are
-      // true here.
-      authenticate: async (req) => {
-        const pub = req.headers.get('x-revel-device');
-        if (!pub) return null;
-        const device = await this.store.getDevice(pub);
-        if (!device || device.revokedAt) return null;
-        return { accountId: device.accountId, devicePub: device.pub };
-      },
+      host: HOST,
+      authenticate: sessionAuthenticator({ store: this.store, host: HOST }),
     });
   }
 
@@ -230,23 +228,18 @@ export class World {
    */
   offline = false;
 
-  /** In-process fetch. No port, no listener, the real routing. */
-  fetchAs(devicePub: string): typeof globalThis.fetch {
-    return ((input: RequestInfo | URL, init?: RequestInit) => {
-      if (this.offline) return Promise.reject(new TypeError('fetch failed'));
-      const request = new Request(String(input), init);
-      request.headers.set('x-revel-device', devicePub);
-      return this.app.fetch(request);
-    }) as typeof globalThis.fetch;
-  }
+  /**
+   * In-process fetch. No port, no listener, the real routing — and no
+   * credentials, because the client supplies its own bearer token now.
+   */
+  fetch: typeof globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    if (this.offline) return Promise.reject(new TypeError('fetch failed'));
+    return this.app.fetch(new Request(String(input), init));
+  }) as typeof globalThis.fetch;
 
-  /** Sign a device out. It stops working now, not at the next epoch. */
-  revoke(client: Client): void {
-    this.store.devices.set(client.device, {
-      pub: client.device,
-      accountId: client.account,
-      revokedAt: Date.now(),
-    });
+  /** Sign a device out. Its sessions die with it, immediately (`docs/03` §3). */
+  async revoke(client: Client): Promise<void> {
+    await this.store.revokeDevice(client.device, Date.now());
   }
 
   /**
@@ -285,16 +278,15 @@ export class Client {
   /**
    * This device's identifier at the server.
    *
-   * Not derived from the MLS device signature key, because there is no device
-   * registration flow yet (`docs/06` phase 1). It does not need to be for these
-   * scenarios: the client attributes messages from the MLS leaf inside the
-   * ciphertext, never from `Event.sender`, so this is purely who the server
-   * thinks is talking to it.
+   * The device's MLS signature public key, base64url — the same bytes the
+   * certificate binds to the account and the same bytes a leaf carries. One
+   * identifier, which is exactly the gap `docs/31` §8 recorded.
    */
   device!: string;
 
   rooms!: RoomSync;
   groups!: GroupSync;
+  session!: HostSession;
   transport!: HttpTransport;
   groupTransport!: HttpGroupTransport;
   ws!: WebSocketStream;
@@ -316,25 +308,33 @@ export class Client {
   static async create(
     world: World,
     label: string,
-    over: { accountSecret?: Uint8Array; device?: string; store?: MemoryStore } = {},
+    over: {
+      accountSecret?: Uint8Array;
+      deviceSecret?: Uint8Array;
+      store?: MemoryStore;
+    } = {},
   ): Promise<Client> {
     const client = new Client(world, label, over.store);
     const identity = await client.crypto.open({
       deviceLabel: label,
       ...(over.accountSecret ? { accountSecret: over.accountSecret } : {}),
+      // Without this it is not a reload, it is a new device: a fresh signature
+      // key, a fresh name at the Host, and a fresh leaf in every group with the
+      // old one still sitting there.
+      ...(over.deviceSecret ? { deviceSecret: over.deviceSecret } : {}),
     });
     client.account = toAccountId(identity.accountPublicKey);
-    client.device = over.device ?? `dev-${label}-${world.clients.length}`;
+    // The device's MLS signature key *is* its name at the Host. One identifier,
+    // which is what `docs/31` §8 said phase 1 should make true.
+    client.device = toAccountId(identity.devicePublicKey);
 
-    world.store.devices.set(client.device, {
-      pub: client.device,
-      accountId: client.account,
-      revokedAt: null,
-    });
+    const fetch = world.fetch;
+    client.session = new HostSession({ crypto: client.crypto, baseUrl: 'http://host', fetch });
+    await client.session.register();
 
-    const fetch = world.fetchAs(client.device);
-    const transport = new HttpTransport({ baseUrl: 'http://host', fetch });
-    const groupTransport = new HttpGroupTransport({ baseUrl: 'http://host', fetch });
+    const headers = client.session.headers;
+    const transport = new HttpTransport({ baseUrl: 'http://host', fetch, headers });
+    const groupTransport = new HttpGroupTransport({ baseUrl: 'http://host', fetch, headers });
     client.transport = transport;
     client.groupTransport = groupTransport;
 
@@ -675,12 +675,13 @@ export class Client {
    */
   async reload(): Promise<Client> {
     await this.disconnect();
-    const secret = await this.crypto.exportAccountSecret();
+    const accountSecret = await this.crypto.exportAccountSecret();
+    const deviceSecret = await this.crypto.exportDeviceSecret();
     await this.crypto.close();
 
     const next = await Client.create(this.world, this.label, {
-      accountSecret: secret,
-      device: this.device,
+      accountSecret,
+      deviceSecret,
       store: this.store,
     });
     this.world.clients[this.world.clients.indexOf(this)] = next;

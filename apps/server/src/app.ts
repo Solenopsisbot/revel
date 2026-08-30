@@ -8,6 +8,7 @@
 import { type Event, EventInput, type SnowflakeFactory } from '@revel/protocol';
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { mountAuth } from './auth.js';
 import { mountGroups, nudgeCommitter } from './groups.js';
 import type { Hub } from './hub.js';
 import { canPurge, canRead, canSend } from './policy.js';
@@ -19,10 +20,16 @@ export interface AppDeps {
   hub: Hub;
   ids: SnowflakeFactory;
   /**
-   * Resolve a request to the device that sent it. Real deployments use a
-   * device-key challenge-response (`docs/17` §2); this is the seam.
+   * Resolve a request to the device that sent it.
+   *
+   * Production passes `sessionAuthenticator` from `auth.ts` — `docs/03` §2's
+   * device-key challenge-response. It stays a dependency so the policy tests
+   * can hand over a device id directly: a hundred tests about permissions
+   * should test permissions, not perform a signature each.
    */
   authenticate(req: Request): Promise<{ accountId: string; devicePub: string } | null>;
+  /** This Host's name, as it appears in the challenge a device signs. */
+  host?: string;
 }
 
 const denialStatus: Record<string, ContentfulStatusCode> = {
@@ -126,6 +133,7 @@ export function createApp(deps: AppDeps) {
     return c.body(null, 204);
   });
 
+  mountAuth(app, { store: deps.store, host: deps.host ?? 'localhost' });
   mountRooms(app, { store: deps.store, ids: deps.ids, authenticate: deps.authenticate });
 
   mountGroups(app, {

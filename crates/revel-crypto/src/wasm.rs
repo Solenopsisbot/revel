@@ -252,6 +252,54 @@ impl Device {
         self.cert.clone()
     }
 
+    /// The device's MLS signature public key.
+    ///
+    /// The same bytes the certificate binds to the account, and the same bytes
+    /// a Host knows this device by (`docs/31` §8: the two identifiers are one).
+    #[wasm_bindgen(getter, js_name = publicKey)]
+    pub fn public_key(&self) -> Vec<u8> {
+        // Read back out of the certificate rather than kept separately: one
+        // source of truth, and it is the copy everyone else verifies against.
+        DeviceCert::decode(&self.cert)
+            .map(|c| c.device_pub)
+            .unwrap_or_default()
+    }
+
+    /// Sign a Host's authentication challenge.
+    ///
+    /// `docs/03` §2's device-key challenge-response. The payload's *shape* is
+    /// protocol and is built in `@revel/protocol`; the domain separation is
+    /// applied here, so this key can never be asked to sign something that
+    /// could be replayed as an MLS handshake.
+    #[wasm_bindgen(js_name = signAuth)]
+    pub fn sign_auth(&self, payload: &[u8]) -> Result<Vec<u8>, JsError> {
+        // mls-rs hands back the expanded form — 32-byte seed followed by the
+        // 32-byte public key, RFC 8032's "secret || public" layout. Taking the
+        // seed is right; taking all 64 would be signing with nonsense.
+        let seed: [u8; 32] = self
+            .secret
+            .get(..32)
+            .and_then(|s| s.try_into().ok())
+            .ok_or_else(|| JsError::new("device signature key is too short for ed25519"))?;
+        let key = SigningKey::from_bytes(&seed);
+
+        // Checked against the certificate rather than assumed. If the layout
+        // ever changes, this fails here — loudly, at the first signature —
+        // instead of producing a signature nobody can verify and a sign-in that
+        // fails for no visible reason.
+        let derived = key.verifying_key().to_bytes();
+        let expected = DeviceCert::decode(&self.cert)
+            .map(|c| c.device_pub)
+            .unwrap_or_default();
+        if derived.as_slice() != expected.as_slice() {
+            return Err(JsError::new(
+                "device signature key does not match the certificate; key layout changed?",
+            ));
+        }
+
+        Ok(crate::device::sign_auth(&key, payload).to_vec())
+    }
+
     /// The device's signature secret, for the caller to store durably.
     ///
     /// This is the key that makes this device *this* device. Losing it does not

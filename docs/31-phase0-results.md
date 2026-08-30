@@ -736,3 +736,70 @@ to find one from a handle, because there is no `accounts` table yet —
 registration is phase 1. "Does this account exist" currently means "has a device
 ever been enrolled for it", which is enough to refuse a typo and not enough to
 be a directory.
+
+---
+
+## 11. Real authentication, and the identifier that stopped being two
+
+Until this, `authenticate` read a device id out of an HTTP header and believed
+it. Every policy check in the codebase was correct and **none of them meant
+anything**, because anybody could claim to be anybody. `docs/03` §2's
+challenge-response now exists: register a certificate, ask for a nonce, sign
+`{nonce, host, device_pub}`, carry a short-lived bearer token. No passwords at
+Hosts, ever.
+
+### Registration needs no credential
+
+A device certificate is **self-certifying** — the account public key is inside
+it and signs the rest — so a Host that has never heard of an account can check
+that a device belongs to it. That is what makes `docs/17`'s "your account works
+at a Host you have never met" true rather than aspirational, and it is why there
+is no registration secret anywhere to leak.
+
+What a certificate does *not* prove is that an account is who you think it is.
+Nothing here does; that is the transparency log, still unbuilt.
+
+### `devices.pub` is now the MLS signature key
+
+The gap recorded in §8 above, closed. The Host used to know a device by one name
+and the group by another with nothing relating them, so a removal could never
+tell the server which delivery row it had just invalidated. The certificate
+binds account key → device key, the Host registers the device key as
+`devices.pub`, and there is one identifier.
+
+### Two implementations of one format, and the test that keeps them honest
+
+The certificate is issued in Rust and read in TypeScript, because the server has
+to read one and the server is TypeScript. Two implementations drift, and a
+comment saying "keep these in sync" has never once kept anything in sync.
+`packages/core/test/auth.test.ts` signs with the real Rust binding and verifies
+with the TypeScript decoder — thirteen tests, including tampering with the label
+and swapping the device key.
+
+That test immediately earned itself: **mls-rs hands back the expanded Ed25519
+secret**, 64 bytes of seed-then-public-key, not the 32-byte seed
+`SigningKey::from_bytes` wants. Signing with the wrong half produces a signature
+that verifies nowhere, and the failure would have looked like "sign-in is
+broken" rather than "the key layout is not what we assumed". `sign_auth` now
+derives the public key from the seed and checks it against the certificate, so
+if the layout ever changes it fails at the first signature with a sentence
+saying so.
+
+Also added, per `docs/29` §1 rule 4: **the certificate carries a version byte.**
+The context string was inside the signed payload, which protects the signature
+and does nothing for a decoder handed bytes from a future version — it would
+read them as v1 and produce nonsense.
+
+### What the multi-client harness found by using it
+
+Switching the 34 scenarios from the header shortcut to real sign-in changed the
+timing enough to surface a genuine bug: **the commit that adds somebody is fanned
+out to every member of the group it just created, including the person it
+added** — who has not opened their Welcome yet and cannot process a commit for a
+group they are not in. It threw. Their way in is the Welcome, so ignoring is
+correct, and `GroupSync` now checks it holds a group before applying anything
+addressed to it. Throwing would have made every invitation a stack trace on the
+invitee's console.
+
+The harness runs on real auth now, which is the point: a harness that shortcut
+sign-in would be testing a server nobody deploys.

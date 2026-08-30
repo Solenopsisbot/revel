@@ -93,7 +93,13 @@ describe('claiming', () => {
     h.join('alice', 'dev-a');
     h.join('bob', devices[0] as string);
     for (const d of devices.slice(1))
-      h.store.devices.set(d, { pub: d, accountId: 'bob', revokedAt: null });
+      h.store.devices.set(d, {
+        pub: d,
+        accountId: 'bob',
+        label: 'test-device',
+        registeredAt: 0,
+        revokedAt: null,
+      });
     for (const d of devices) await h.publish(d, [`${d}-kp1`, `${d}-kp2`, `${d}-kp3`]);
     return { h, group: await h.openGroup('dev-a') };
   }
@@ -233,7 +239,13 @@ describe('claiming', () => {
     const h = harness();
     h.join('alice', 'dev-a');
     h.join('bob', 'dev-b');
-    h.store.devices.set('dev-b2', { pub: 'dev-b2', accountId: 'bob', revokedAt: Date.now() });
+    h.store.devices.set('dev-b2', {
+      pub: 'dev-b2',
+      accountId: 'bob',
+      label: 'test-device',
+      registeredAt: 0,
+      revokedAt: Date.now(),
+    });
     await h.publish('dev-b', ['kp1']);
     await h.publish('dev-b2', ['kp1']);
     const group = await h.openGroup('dev-a');

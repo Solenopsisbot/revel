@@ -22,7 +22,9 @@ const TABLE: {
 } = {
   exportAccountSecret: (s) => s.exportAccountSecret(),
   exportDeviceSecret: (s) => s.exportDeviceSecret(),
+  identity: (s) => s.identity(),
   keyPackage: (s) => s.keyPackage(),
+  signAuth: (s, payload) => s.signAuth(payload),
   createGroup: (s, groupId) => s.createGroup(groupId),
   joinGroup: (s, welcome, tree) => s.joinGroup(welcome, tree),
   groups: (s) => s.groups(),

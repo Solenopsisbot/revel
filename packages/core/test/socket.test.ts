@@ -311,7 +311,13 @@ function pairedToServer() {
     bits: serialize(DEFAULT_EVERYONE),
     position: 0,
   });
-  store.devices.set(DEVICE, { pub: DEVICE, accountId: 'alice', revokedAt: null });
+  store.devices.set(DEVICE, {
+    pub: DEVICE,
+    accountId: 'alice',
+    label: 'test-device',
+    registeredAt: 0,
+    revokedAt: null,
+  });
   for (const id of [ROOM1, ROOM2]) {
     store.memberships.set(`${id}:alice`, {
       roomId: id,

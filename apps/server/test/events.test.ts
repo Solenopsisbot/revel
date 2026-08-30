@@ -35,7 +35,13 @@ describe('sending an event', () => {
     // the next epoch (`docs/17`).
     const h = harness();
     h.join('alice', 'dev-a');
-    h.store.devices.set('dev-a', { pub: 'dev-a', accountId: 'alice', revokedAt: Date.now() });
+    h.store.devices.set('dev-a', {
+      pub: 'dev-a',
+      accountId: 'alice',
+      label: 'test-device',
+      registeredAt: 0,
+      revokedAt: Date.now(),
+    });
     expect((await h.send('dev-a', body())).status).toBe(401);
   });
 

@@ -17,6 +17,24 @@ use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 /// never be replayed as a signature over anything else this key signs.
 const CERT_CONTEXT: &[u8] = b"revel/device-cert/v1";
 
+/// The wire format's version byte.
+///
+/// `docs/29` §1 rule 4: every sealed format carries one. The context string
+/// above is inside the *signed payload*, which protects the signature and does
+/// nothing for a decoder handed bytes from a future version — it would read
+/// them as v1 and produce nonsense. One byte now against an unversioned-format
+/// archaeology project later.
+const CERT_VERSION: u8 = 1;
+
+/// Domain separation for the device key's one non-MLS use: proving to a Host
+/// that this device is awake and holds its own key (`docs/03` §2).
+///
+/// The device key signs MLS handshakes and this, and nothing else. Prepending
+/// the context here rather than letting the caller supply it means there is no
+/// way to ask this key to sign something that could be replayed as a
+/// handshake — the caller chooses the payload, never the domain.
+const AUTH_CONTEXT: &[u8] = b"revel/device-auth/v1";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceCert {
     /// The account this device speaks for — the stable, public identity.
@@ -78,6 +96,7 @@ impl DeviceCert {
     /// Wire form carried as the MLS credential payload.
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::new();
+        out.push(CERT_VERSION);
         out.extend_from_slice(&self.account_pub);
         out.extend_from_slice(&self.signature);
         out.extend_from_slice(&(self.device_pub.len() as u32).to_be_bytes());
@@ -87,6 +106,14 @@ impl DeviceCert {
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, CertError> {
+        // A version this build does not know is malformed *to it*, which is the
+        // honest answer: it cannot check a signature over a payload whose shape
+        // it does not know, and guessing would be worse than refusing.
+        if bytes.first() != Some(&CERT_VERSION) {
+            return Err(CertError::Malformed);
+        }
+        let bytes = &bytes[1..];
+
         if bytes.len() < 32 + 64 + 4 {
             return Err(CertError::Malformed);
         }
@@ -101,6 +128,20 @@ impl DeviceCert {
         let label = String::from_utf8(bytes[100 + dlen..].to_vec()).map_err(|_| CertError::Malformed)?;
         Ok(Self { account_pub, device_pub, label, signature })
     }
+}
+
+/// Sign a Host's authentication challenge with a device key.
+///
+/// `docs/03` §2: "the Host sends a nonce, the device signs `{nonce, host,
+/// device_pub}`". The *shape* of that payload is protocol and lives in
+/// `@revel/protocol`, so client and server build identical bytes from one
+/// definition; what lives here is the domain separation, because that is the
+/// part the key holder must not delegate.
+pub fn sign_auth(device_key: &SigningKey, payload: &[u8]) -> [u8; 64] {
+    let mut signed = Vec::with_capacity(AUTH_CONTEXT.len() + payload.len());
+    signed.extend_from_slice(AUTH_CONTEXT);
+    signed.extend_from_slice(payload);
+    device_key.sign(&signed).to_bytes()
 }
 
 #[cfg(test)]

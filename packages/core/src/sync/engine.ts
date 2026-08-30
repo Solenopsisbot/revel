@@ -24,7 +24,13 @@
  * from a state that was never written down costs everything.
  */
 import type { CryptoEngine } from '@revel/crypto';
-import { type Event, encodePayload, parseEncrypted, payloadBytes } from '@revel/protocol';
+import {
+  type Event,
+  encodePayload,
+  parseEncrypted,
+  payloadBytes,
+  toAccountId,
+} from '@revel/protocol';
 import { addPending, markFailed, markPurged, reduceAll } from '../rooms/reduce.js';
 import { emptyRoom, type LocalEvent, type Message, type RoomState } from '../rooms/state.js';
 import type { LocalStore } from '../store/types.js';
@@ -503,11 +509,9 @@ function compare(a: string, b: string): number {
 /**
  * An account's bytes as the string the reducer keys by.
  *
- * Base64url without padding: it survives being a map key, a URL fragment and a
- * log line, none of which is true of raw bytes.
+ * Re-exported rather than defined here. It used to live in this file and the
+ * server grew its own copy the moment it had to read a device certificate —
+ * two spellings of an account id is the kind of thing that works until one of
+ * them meets a `+` and stops.
  */
-export function toAccountId(bytes: Uint8Array): string {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
-}
+export { toAccountId } from '@revel/protocol';
