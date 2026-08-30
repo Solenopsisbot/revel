@@ -1002,3 +1002,76 @@ every group it has ever served.
 wrong for anything real and is commented as such. There is nowhere in this
 codebase that durably holds a server secret; that arrives with `revel init`
 (`docs/29` §7).
+
+---
+
+## 15. Rate limiting, and keeping it from becoming a log
+
+`docs/29` §3 draws a line worth quoting exactly, because it is the whole
+constraint on this component: "no per-user request logs **beyond what rate
+limiting needs**". A limiter is the one part of a privacy-first server that is
+allowed to remember who did something recently, which makes "what does it
+remember, and for how long" a design question rather than an implementation
+detail.
+
+Three properties, all tested:
+
+- **A bucket holds a count and a timestamp.** No path, no method, no body, no
+  history. There is nothing in it to subpoena.
+- **A full bucket is deleted.** Once refilled it says exactly what an absent
+  bucket says, so keeping it would be storing information for no reason.
+  Forgetting is free, which is why it is not optional.
+- **A refusal is not recorded.** Being rate-limited leaves the same trace as
+  being allowed — one bucket — because storing rejections is precisely how a
+  limiter becomes an attack log.
+
+### Token buckets, not fixed windows
+
+A fixed window lets somebody spend a full window's quota in the last second of
+one and the first second of the next: twice the intended rate, at the worst
+possible moment. A token bucket has a burst size and a sustained rate, which is
+also what real use looks like — you paste four messages at once and then say
+nothing for a minute.
+
+### The numbers are chosen, not specified
+
+No doc gives any, and the real ones depend on what a Host runs on and who uses
+it (`docs/27` §2, unresolved). They are grouped by *what a request costs the
+server*, which is the only thing a limit can defend: `auth` is unauthenticated
+and does public-key work, which is the cheapest thing to send and among the most
+expensive to serve; `lookup` is unauthenticated and is also the enumeration
+surface; `upload` is bytes; `write` allows a real burst because pasting four
+messages is what people do.
+
+### Two deployment notes
+
+**`x-forwarded-for` is not trusted by default.** Trusting it without a proxy in
+front means every caller sets their own rate-limit key and the limiter stops
+existing. `REVEL_TRUST_PROXY=1` is a statement that something upstream
+overwrites the header.
+
+**Without it, the limits are global rather than per-caller.** There is no
+portable way to see a socket address from inside the handler, so the default
+subject is one shared bucket. That still bounds what one process will do, and it
+is honest about what it is rather than pretending to be per-caller.
+
+## 16. `security.txt`, and what a disclosure policy costs
+
+`/.well-known/security.txt` (RFC 9116) is built, and **an unconfigured Host
+serves nothing rather than a placeholder**. A `security.txt` pointing at an
+address nobody reads is worse than none: it is the difference between a
+researcher looking for another way to reach you and a researcher believing they
+already found one. `Expires` is computed from now for the same reason — a stale
+one is a document stating in machine-readable form that it is unmaintained.
+
+The written policy is drafted in [`34-security-disclosure.md`](34-security-disclosure.md)
+with **five decisions left explicitly open**: the contact address, the response
+times, the disclosure window, where credit is published, and whether to publish
+a PGP key. Those are commitments, and writing commitments on somebody's behalf
+is how a policy ends up being one nobody intends to keep.
+
+Two items from `docs/29` §6 remain unbuilt and are named there: the signed
+**authorisation letters** (Kith's `authz.md` ports directly, and the point of it
+is that the researcher holds something that does not depend on us still
+existing), and publishing the **threat model** — already written as `docs/03`
+§10, and needing a page rather than code.

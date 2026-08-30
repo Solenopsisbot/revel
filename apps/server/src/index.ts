@@ -3,6 +3,7 @@ import { SnowflakeFactory } from '@revel/protocol';
 import { createApp } from './app.js';
 import { createHostIdentity, sessionAuthenticator } from './auth.js';
 import { Hub } from './hub.js';
+import { RateLimiter } from './ratelimit.js';
 import { type Actor, SocketSession } from './socket.js';
 import { MemoryStore } from './store/memory.js';
 
@@ -35,6 +36,26 @@ const idp = process.env.REVEL_IDP ?? host;
  */
 const hostIdentity = await createHostIdentity(host);
 
+/**
+ * The address a request came from, for the limiter.
+ *
+ * `REVEL_TRUST_PROXY` is off by default and has to be, because trusting
+ * `x-forwarded-for` without a proxy in front means every caller sets their own
+ * rate-limit key and the limiter stops existing. Turning it on is a statement
+ * that something upstream overwrites the header.
+ */
+const trustProxy = process.env.REVEL_TRUST_PROXY === '1';
+const address = (req: Request): string => {
+  if (trustProxy) {
+    const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+    if (forwarded) return forwarded;
+  }
+  // No proxy and no portable way to see a socket from here: one shared bucket.
+  // That makes the limits global rather than per-caller, which still bounds
+  // what one process will do and is honest about what it is.
+  return 'shared';
+};
+
 const app = createApp({
   store,
   hub,
@@ -43,6 +64,19 @@ const app = createApp({
   host,
   idp,
   externalSender: hostIdentity.certificate,
+  rateLimit: { limiter: new RateLimiter(), address },
+  // `docs/29` §6. Unset means `/.well-known/security.txt` is not served, which
+  // is deliberate: a contact nobody reads is worse than no contact at all.
+  ...(process.env.REVEL_SECURITY_CONTACT
+    ? {
+        security: {
+          contact: [process.env.REVEL_SECURITY_CONTACT],
+          ...(process.env.REVEL_SECURITY_POLICY
+            ? { policy: process.env.REVEL_SECURITY_POLICY }
+            : {}),
+        },
+      }
+    : {}),
 });
 
 const port = Number(process.env.PORT ?? 8080);

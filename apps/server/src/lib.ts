@@ -18,6 +18,16 @@ export {
 } from './auth.js';
 export { type BlobDeps, mountBlobs } from './blobs.js';
 export { type Connection, Hub } from './hub.js';
+export {
+  type Bucket,
+  classify,
+  LIMITS,
+  type LimitClass,
+  type RateLimitDeps,
+  RateLimiter,
+  rateLimit,
+  type Verdict,
+} from './ratelimit.js';
 export { mountRooms, type RoomDeps } from './rooms.js';
 export { type Actor, type SocketDeps, SocketSession } from './socket.js';
 export { MemoryStore } from './store/memory.js';
@@ -35,3 +45,4 @@ export type {
   Session,
   Store,
 } from './store/types.js';
+export { mountWellKnown, type SecurityContact, type WellKnownDeps } from './wellknown.js';

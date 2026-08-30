@@ -14,8 +14,11 @@ import { mountBlobs } from './blobs.js';
 import { mountGroups, nudgeCommitter } from './groups.js';
 import type { Hub } from './hub.js';
 import { canPurge, canRead, canSend } from './policy.js';
+import { rateLimit } from './ratelimit.js';
 import { mountRooms } from './rooms.js';
 import type { Store } from './store/types.js';
+import type { SecurityContact } from './wellknown.js';
+import { mountWellKnown } from './wellknown.js';
 
 export interface AppDeps {
   store: Store;
@@ -48,6 +51,18 @@ export interface AppDeps {
    * opened against it will refuse external proposals.
    */
   externalSender?: string | null;
+  /**
+   * Rate limiting. Absent means none, which is right for a test and wrong for
+   * anything reachable — `docs/29` §6.
+   */
+  rateLimit?: Parameters<typeof rateLimit>[0];
+  /**
+   * Security contact, for `/.well-known/security.txt`.
+   *
+   * Absent means the file is not served at all. A `security.txt` pointing at an
+   * address nobody reads is worse than none.
+   */
+  security?: SecurityContact;
 }
 
 const denialStatus: Record<string, ContentfulStatusCode> = {
@@ -61,6 +76,10 @@ const denialStatus: Record<string, ContentfulStatusCode> = {
 
 export function createApp(deps: AppDeps) {
   const app = new Hono();
+
+  // First, before anything reads a body or touches the store. A limiter that
+  // runs after the work it is limiting is decoration.
+  if (deps.rateLimit) app.use('*', rateLimit(deps.rateLimit));
 
   app.get('/health', (c) => c.json({ ok: true }));
 
@@ -152,6 +171,7 @@ export function createApp(deps: AppDeps) {
   });
 
   const idp = deps.idp ?? deps.host ?? 'localhost';
+  mountWellKnown(app, { ...(deps.security ? { security: deps.security } : {}) });
   mountAuth(app, { store: deps.store, host: deps.host ?? 'localhost' });
   mountAccounts(app, {
     store: deps.store,
