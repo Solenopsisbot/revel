@@ -29,6 +29,16 @@ export {
   type Reaction,
   type RoomState,
 } from './rooms/state.js';
+export {
+  type Hit,
+  isEmptyQuery,
+  parseQuery,
+  type Query,
+  type SearchOptions,
+  search,
+  textOf,
+  type Window,
+} from './search/search.js';
 export { IndexedDbStore, type IndexedDbStoreOptions } from './store/indexeddb.js';
 export { MemoryStore } from './store/memory.js';
 export type {

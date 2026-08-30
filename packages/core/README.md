@@ -78,8 +78,26 @@ const stream = new WebSocketStream({
 });
 ```
 
+## Search
+
+`docs/03` names the constraint: **the server is the search adversary**. It holds
+ciphertext and cannot index it, so either the client searches its own store or
+nobody searches anything. Nothing about a query leaves the device — not the
+words, not the result count, not the fact that somebody searched.
+
+```ts
+search(rooms, parseQuery('from:kiko in:thread radii'), { window: 'week' });
+```
+
+`from:`, `has:file|image|link`, `in:thread`, and a time window. A token that
+looks like a filter but is not one stays a search term: somebody typing into a
+search box is not writing a program.
+
+A redacted or purged message is never a result. Finding a deletion by the words
+it used to contain would defeat the deletion, and it would happen quietly.
+
 ## What is not here yet
 
-- **Search**, and the notification rules.
+- **The notification rules.**
 - **Spaces, rooms and membership** as anything other than ids. The engine syncs
   a room it has been told about; nothing yet tells it.
