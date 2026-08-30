@@ -35,6 +35,7 @@ import type {
   HandshakeAccepted,
   HandshakeInput,
   HandshakeRecord,
+  HostInfo,
   KeyPackageSupply,
   KeyPackageUpload,
   PendingWelcome,
@@ -97,6 +98,14 @@ export interface GroupTransport {
   putTree(groupId: string, tree: RatchetTree): Promise<void>;
   getTree(groupId: string): Promise<RatchetTree | null>;
 
+  /**
+   * What this Host is, before you have talked to it.
+   *
+   * Needed *before* the first group is opened: the external sender goes into
+   * the group context at creation and cannot be added for free afterwards.
+   */
+  hostInfo(): Promise<HostInfo>;
+
   welcomes(): Promise<PendingWelcome[]>;
   ackWelcome(groupId: string): Promise<void>;
 
@@ -136,6 +145,10 @@ export class HttpGroupTransport implements GroupTransport {
 
   createGroup(roomId: string): Promise<GroupInfo> {
     return this.#json('/groups', { method: 'POST', body: JSON.stringify({ roomId }) });
+  }
+
+  hostInfo(): Promise<HostInfo> {
+    return this.#json('/.well-known/revel/host', { method: 'GET' });
   }
 
   groupInfo(groupId: string): Promise<GroupInfo> {
@@ -345,13 +358,33 @@ export class GroupSync {
     return (await this.#transport.groupInfo(groupId)).rooms;
   }
 
-  /** Open a group for a room that has none. Returns its id. */
+  /**
+   * Open a group for a room that has none. Returns its id.
+   *
+   * Names the Host as an MLS external sender, which is why this asks what the
+   * Host is first. `docs/03` §5 wants it in *every* group, and the extension is
+   * fixed at creation — a group opened without one costs a commit to fix, so
+   * the extra round trip here buys back a migration later.
+   */
   async create(roomId: string): Promise<string> {
+    const externalSender = await this.#externalSender();
     const info = await this.#transport.createGroup(roomId);
-    await this.#crypto.createGroup(info.id);
+    await this.#crypto.createGroup(info.id, externalSender);
     await this.#persist();
     await this.#setCursor(info.id, -1);
     return info.id;
+  }
+
+  /** Cached: it is one value per Host and it does not change under us. */
+  #hostExternalSender: Uint8Array | undefined | null = null;
+
+  async #externalSender(): Promise<Uint8Array | undefined> {
+    if (this.#hostExternalSender !== null) return this.#hostExternalSender;
+    // A Host that publishes none is a Host whose groups refuse external
+    // proposals. That is a coherent deployment, not an error.
+    const info = await this.#transport.hostInfo().catch(() => null);
+    this.#hostExternalSender = info?.externalSender ? fromBase64(info.externalSender) : undefined;
+    return this.#hostExternalSender;
   }
 
   /**

@@ -142,7 +142,7 @@ fn the_binding_carries_a_full_exchange() {
     let laptop = Device::new(&account, "laptop").ok().unwrap();
     let phone = Device::new(&account, "phone").ok().unwrap();
 
-    let mut group = laptop.create_group(b"room-general").ok().unwrap();
+    let mut group = laptop.create_group(b"room-general", None).ok().unwrap();
     assert_eq!(group.id(), b"room-general", "the group id is the caller's");
     assert_eq!(group.size(), 1);
 
@@ -179,7 +179,7 @@ fn committing_without_applying_leaves_the_group_where_it_was() {
     let laptop = Device::new(&account, "laptop").ok().unwrap();
     let phone = Device::new(&account, "phone").ok().unwrap();
 
-    let mut group = laptop.create_group(b"room-design").ok().unwrap();
+    let mut group = laptop.create_group(b"room-design", None).ok().unwrap();
     group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
     let _ = group.commit().ok().unwrap();
 
@@ -195,7 +195,7 @@ fn a_refused_batch_leaves_the_staged_changes_alone() {
     let laptop = Device::new(&account, "laptop").ok().unwrap();
     let phone = Device::new(&account, "phone").ok().unwrap();
 
-    let mut group = laptop.create_group(b"room-voice").ok().unwrap();
+    let mut group = laptop.create_group(b"room-voice", None).ok().unwrap();
     group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
     // Leaf 9 does not exist in a one-member group, so the batch cannot build.
     group.stage_remove(9);
@@ -216,7 +216,7 @@ fn members_come_back_with_their_account_and_label() {
     let laptop = Device::new(&account, "laptop").ok().unwrap();
     let phone = Device::new(&account, "phone").ok().unwrap();
 
-    let mut group = laptop.create_group(b"room-lab").ok().unwrap();
+    let mut group = laptop.create_group(b"room-lab", None).ok().unwrap();
     group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
     group.commit().ok().unwrap();
     group.apply_pending().ok().unwrap();
@@ -276,7 +276,7 @@ fn a_group_survives_a_reload() {
     let laptop = Device::new(&account, "laptop").ok().unwrap();
     let phone = Device::new(&account, "phone").ok().unwrap();
 
-    let mut group = laptop.create_group(b"g-general").ok().unwrap();
+    let mut group = laptop.create_group(b"g-general", None).ok().unwrap();
     group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
     let out = group.commit().ok().unwrap();
     group.apply_pending().ok().unwrap();
@@ -328,7 +328,7 @@ fn a_group_survives_a_reload() {
 fn another_account_cannot_open_a_sealed_group() {
     let account = Account::new();
     let laptop = Device::new(&account, "laptop").ok().unwrap();
-    laptop.create_group(b"g-secret").ok().unwrap();
+    laptop.create_group(b"g-secret", None).ok().unwrap();
     let sealed = laptop.export_group(b"g-secret", &account).ok().unwrap();
 
     let stranger = Account::new();
@@ -348,7 +348,7 @@ fn the_store_tracks_what_still_needs_writing() {
     let phone = Device::new(&account, "phone").ok().unwrap();
 
     // Creating a group is itself a change worth persisting.
-    let mut group = laptop.create_group(b"g-dirty").ok().unwrap();
+    let mut group = laptop.create_group(b"g-dirty", None).ok().unwrap();
     assert_eq!(laptop.dirty_groups().ok().unwrap().length(), 1);
 
     laptop.export_group(b"g-dirty", &account).ok().unwrap();
@@ -403,7 +403,7 @@ fn restoring_behind_the_last_send_is_refused_by_the_far_side() {
     let laptop = Device::new(&account, "laptop").ok().unwrap();
     let phone = Device::new(&account, "phone").ok().unwrap();
 
-    let mut group = laptop.create_group(b"g-rewind").ok().unwrap();
+    let mut group = laptop.create_group(b"g-rewind", None).ok().unwrap();
     group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
     let out = group.commit().ok().unwrap();
     group.apply_pending().ok().unwrap();
@@ -448,7 +448,7 @@ fn restoring_behind_the_last_send_is_refused_by_the_far_side() {
 fn a_pending_invite_survives_a_reload() {
     let host_account = Account::new();
     let host = Device::new(&host_account, "host").ok().unwrap();
-    let mut group = host.create_group(b"g-invited").ok().unwrap();
+    let mut group = host.create_group(b"g-invited", None).ok().unwrap();
 
     // Our device publishes a key package, then everything is written down.
     let account = Account::new();
@@ -499,7 +499,7 @@ fn a_pending_invite_survives_a_reload() {
 fn a_reload_without_key_packages_cannot_open_the_welcome() {
     let host_account = Account::new();
     let host = Device::new(&host_account, "host").ok().unwrap();
-    let mut group = host.create_group(b"g-lost").ok().unwrap();
+    let mut group = host.create_group(b"g-lost", None).ok().unwrap();
 
     let account = Account::new();
     let laptop = Device::new(&account, "laptop").ok().unwrap();
@@ -534,7 +534,7 @@ fn the_welcome_does_not_carry_the_tree() {
     let account = Account::new();
     let laptop = Device::new(&account, "laptop").ok().unwrap();
 
-    let mut group = laptop.create_group(b"g-wide").ok().unwrap();
+    let mut group = laptop.create_group(b"g-wide", None).ok().unwrap();
     let mut phones = Vec::new();
     for i in 0..8 {
         let d = Device::new(&account, &format!("phone-{i}")).ok().unwrap();
@@ -583,7 +583,7 @@ fn a_tree_from_the_wrong_epoch_is_refused() {
     let phone = Device::new(&account, "phone").ok().unwrap();
     let tablet = Device::new(&account, "tablet").ok().unwrap();
 
-    let mut group = laptop.create_group(b"g-epochs").ok().unwrap();
+    let mut group = laptop.create_group(b"g-epochs", None).ok().unwrap();
     group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
     let first = group.commit().ok().unwrap();
     group.apply_pending().ok().unwrap();

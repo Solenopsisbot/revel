@@ -1,7 +1,7 @@
 /** Bun entrypoint. Wires the app to Bun's HTTP and WebSocket server. */
 import { SnowflakeFactory } from '@revel/protocol';
 import { createApp } from './app.js';
-import { sessionAuthenticator } from './auth.js';
+import { createHostIdentity, sessionAuthenticator } from './auth.js';
 import { Hub } from './hub.js';
 import { type Actor, SocketSession } from './socket.js';
 import { MemoryStore } from './store/memory.js';
@@ -24,7 +24,26 @@ const authenticate = sessionAuthenticator({ store, host });
 /** The IdP this box serves handles for. Both roles in one process by default. */
 const idp = process.env.REVEL_IDP ?? host;
 
-const app = createApp({ store, hub, ids: new SnowflakeFactory(0), authenticate, host, idp });
+/**
+ * This Host's identity as an MLS external sender (`docs/03` §5).
+ *
+ * Generated per process, which is **wrong for a real deployment**: the key ends
+ * up in the group context of every group opened while it was published, and a
+ * restart with a new key means the Host can never propose into any of them.
+ * There is nowhere in this codebase that durably holds a server secret yet —
+ * that lands with `revel init` (`docs/29` §7).
+ */
+const hostIdentity = await createHostIdentity(host);
+
+const app = createApp({
+  store,
+  hub,
+  ids: new SnowflakeFactory(0),
+  authenticate,
+  host,
+  idp,
+  externalSender: hostIdentity.certificate,
+});
 
 const port = Number(process.env.PORT ?? 8080);
 console.log(`revel server on :${port}`);

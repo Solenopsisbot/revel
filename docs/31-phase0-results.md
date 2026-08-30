@@ -929,3 +929,76 @@ image with no explanation.
 storage costs and what a self-hoster is willing to pay; `docs/27` §2 is the
 discussion and it is unresolved. Configurable per Host, so the placeholder is
 not load-bearing.
+
+---
+
+## 14. The Host as an external sender — the half that had to be done now
+
+`docs/03` §5: "The Host is configured in **every** group as an MLS external
+sender... It can propose; it cannot Commit or forge a roster."
+
+This is done in two halves, and only one of them is here. The reason is in
+`docs/29` §1's framing — nearly free now, expensive to retrofit — and it applies
+to exactly one part.
+
+### Done: the extension, because it cannot be added for free later
+
+`external_senders` is a **group context extension, fixed at creation**. A group
+opened without one can only gain it through a `GroupContextExtensions` commit —
+one commit per group, forever, for every group ever opened. So:
+
+- Every group the client opens now names the Host as an external sender.
+- The Host holds its own account key and signs itself a device certificate,
+  which is not a workaround: `DeviceCertIdentityProvider::validate_external_sender`
+  already expected one. Members check the Host's right to propose with the same
+  machinery they check each other's right to hold a leaf, and can see who
+  vouched for it.
+- `GET /.well-known/revel/host` publishes it, unauthenticated, because two of
+  the three things it carries are needed *before* you can authenticate: the
+  Host's name goes into the challenge you sign, and this goes into a group at
+  creation.
+- `CryptoEngine.externalSenders(groupId)` reads back what the **group** believes,
+  which is the only thing that matters — a Host that later rotates or loses its
+  key cannot change a group context.
+
+Four native tests in `crates/revel-crypto/tests/external_sender.rs` prove the
+mechanism end to end: a Host proposal is accepted and committed by a member; a
+Host that was never named is refused; a group with no extension refuses every
+external sender; and a Remove works the same way as an Add.
+
+### Not done: the Host actually proposing, and why
+
+Making the Host *issue* proposals means it holds an `ExternalGroup` — mls-rs
+needs the full group context (epoch, tree hash, **confirmed transcript hash**)
+to sign one, and the transcript hash only exists if you have processed every
+commit. So the Host would have to parse the handshake stream and keep MLS state
+per group.
+
+That collides with `docs/29` §1 rule 5: *"The server never parses payloads, so
+server-side compatibility is free. This is a real structural advantage of the
+opaque-log design and it should be protected."* Holding an `ExternalGroup` means
+an MLS version change becomes a server change.
+
+It is also premature. `docs/03` §5 has the Host proposing "on any audience
+change... computed from the space's roles and the room's overrides" — and
+spaces, roles and overrides are phase 3. Building the machine before the thing
+it reads exists means guessing at the interface between them.
+
+**What is lost by waiting: nothing that is not already covered.** The Host
+cannot commit either way, so it always needs a member's client; external
+proposals only mean the proposals are queued before a client arrives. That is a
+latency optimisation over `COMMIT_REQUESTED`, which exists and works. The
+capability that *cannot* be added later — the extension — is the one that is
+here.
+
+### One thing a deployment must get right
+
+The Host's external-sender key is baked into the group context of every group
+opened while it was published, and cannot be changed there without a commit. A
+Host that regenerates it on restart silently loses the ability to propose into
+every group it has ever served.
+
+`apps/server/src/index.ts` currently generates it **per process**, which is
+wrong for anything real and is commented as such. There is nowhere in this
+codebase that durably holds a server secret; that arrives with `revel init`
+(`docs/29` §7).

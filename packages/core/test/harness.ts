@@ -52,6 +52,7 @@ import {
 import {
   type Actor,
   createApp,
+  createHostIdentity,
   Hub,
   MemoryStore as ServerStore,
   SocketSession,
@@ -102,7 +103,11 @@ export class World {
 
   #rooms = 9000;
 
-  private constructor() {
+  /** The Host's device certificate, as clients see it published. */
+  readonly externalSender: string | null;
+
+  private constructor(externalSender: string | null) {
+    this.externalSender = externalSender;
     this.store.roles.set(EVERYONE, {
       id: EVERYONE,
       spaceId: SPACE,
@@ -119,13 +124,19 @@ export class World {
       hub: this.hub,
       ids: this.ids,
       host: HOST,
+      externalSender,
       authenticate: sessionAuthenticator({ store: this.store, host: HOST }),
     });
   }
 
-  static async create(): Promise<World> {
+  static async create(over: { externalSender?: string | null } = {}): Promise<World> {
     await startWasm();
-    return new World();
+    // The Host's own external-sender identity, generated per world. Real
+    // deployments must persist it — see `createHostIdentity`.
+    const identity = await createHostIdentity(HOST);
+    return new World(
+      over.externalSender === undefined ? identity.certificate : over.externalSender,
+    );
   }
 
   /**
@@ -673,6 +684,17 @@ export class Client {
   /** Somebody else's queue, read through the server rather than their client. */
   async pendingWelcomesFor(other: Client) {
     return this.world.store.listWelcomes(other.device);
+  }
+
+  /**
+   * The certificates the group's context authorises to propose.
+   *
+   * Read out of this device's own MLS state, not out of the server's answer —
+   * the question is what the *group* believes, and a Host that changed its mind
+   * after the group was created cannot change that.
+   */
+  async externalSendersOf(groupId: string): Promise<string[]> {
+    return (await this.crypto.externalSenders(groupId)).map(toBase64);
   }
 
   /** The public tree at the group's current epoch. */

@@ -42,6 +42,12 @@ export interface AppDeps {
   idp?: string;
   /** Largest attachment ciphertext this Host will hold. See `blobs.ts`. */
   maxBlobBytes?: number;
+  /**
+   * This Host's device certificate, base64 — its identity as an MLS external
+   * sender (`docs/03` §5). Absent means it does not act as one, and groups
+   * opened against it will refuse external proposals.
+   */
+  externalSender?: string | null;
 }
 
 const denialStatus: Record<string, ContentfulStatusCode> = {
@@ -147,7 +153,13 @@ export function createApp(deps: AppDeps) {
 
   const idp = deps.idp ?? deps.host ?? 'localhost';
   mountAuth(app, { store: deps.store, host: deps.host ?? 'localhost' });
-  mountAccounts(app, { store: deps.store, idp, authenticate: deps.authenticate });
+  mountAccounts(app, {
+    store: deps.store,
+    idp,
+    host: deps.host ?? 'localhost',
+    externalSender: deps.externalSender ?? null,
+    authenticate: deps.authenticate,
+  });
   mountBlobs(app, {
     store: deps.store,
     newId: () => deps.ids.next(),

@@ -119,6 +119,49 @@ function certPayload(cert: DeviceCert): Uint8Array {
   return out;
 }
 
+/**
+ * Issue a certificate: an account key signing a device key into an account.
+ *
+ * **Only for a party that legitimately holds an account key.** On a client that
+ * is the crypto core's job and this function has no business being called —
+ * `crates/revel-crypto` issues the real ones and the account key never reaches
+ * TypeScript. It is here for the one party that is not a client: a **Host**,
+ * which holds its own account key and signs itself a certificate so it can be
+ * named as an MLS external sender (`docs/03` §5). It presents that certificate
+ * like anybody else, which is exactly what the identity provider already
+ * expects.
+ */
+export async function issueDeviceCert(
+  accountKey: CryptoKey,
+  accountPub: Uint8Array,
+  devicePub: Uint8Array,
+  label: string,
+): Promise<Uint8Array> {
+  const cert: DeviceCert = { accountPub, devicePub, label, signature: new Uint8Array(64) };
+  const signature = new Uint8Array(
+    await crypto.subtle.sign({ name: 'Ed25519' }, accountKey, new Uint8Array(certPayload(cert))),
+  );
+  return encodeDeviceCert({ ...cert, signature });
+}
+
+/** The wire form, as `crates/revel-crypto/src/device.rs` writes it. */
+export function encodeDeviceCert(cert: DeviceCert): Uint8Array {
+  const label = ENC.encode(cert.label);
+  const out = new Uint8Array(1 + 32 + 64 + 4 + cert.devicePub.length + label.length);
+  let at = 0;
+  out[at++] = DEVICE_CERT_VERSION;
+  out.set(cert.accountPub, at);
+  at += 32;
+  out.set(cert.signature, at);
+  at += 64;
+  new DataView(out.buffer).setUint32(at, cert.devicePub.length, false);
+  at += 4;
+  out.set(cert.devicePub, at);
+  at += cert.devicePub.length;
+  out.set(label, at);
+  return out;
+}
+
 /** Whether this device really was signed into this account. */
 export async function verifyDeviceCert(cert: DeviceCert): Promise<boolean> {
   return verifyEd25519(cert.accountPub, cert.signature, certPayload(cert));

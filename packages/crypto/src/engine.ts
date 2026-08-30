@@ -186,8 +186,18 @@ export interface CryptoEngine {
    */
   keyPackage(): Promise<Uint8Array>;
 
-  /** Open a new group. The id is whatever the server assigned. */
-  createGroup(groupId: string): Promise<GroupState>;
+  /**
+   * Open a new group. The id is whatever the server assigned.
+   *
+   * `externalSender` is the Host's device certificate, which goes into the
+   * `external_senders` group context extension — `docs/03` §5's "the Host is
+   * configured in **every** group as an MLS external sender". It has to be set
+   * here or never: the extension is fixed at creation, so a group opened
+   * without one needs a commit to gain it later. Omitting it produces a group
+   * no external sender may propose to, which is the right answer for a Host
+   * that has not published one.
+   */
+  createGroup(groupId: string, externalSender?: Uint8Array): Promise<GroupState>;
 
   /**
    * Join from a Welcome and the matching ratchet tree.
@@ -208,6 +218,16 @@ export interface CryptoEngine {
 
   /** Everyone in the group. */
   members(groupId: string): Promise<Member[]>;
+
+  /**
+   * The certificates this group authorises to send proposals — the Host, if it
+   * published one when the group was opened (`docs/03` §5).
+   *
+   * What the *group* believes, not what the Host currently says: the extension
+   * was fixed at creation, so a Host that has since rotated or lost its key
+   * cannot change this.
+   */
+  externalSenders(groupId: string): Promise<Uint8Array[]>;
 
   /**
    * Stage one key package, or many, for the next commit. Returns how many

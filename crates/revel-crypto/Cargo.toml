@@ -50,6 +50,11 @@ proptest = "1"
 uniffi = { version = "0.32", features = ["bindgen-tests"] }
 
 [dev-dependencies]
+# `external_client` is how a Host observes a group it is not in, which is what
+# `docs/03` §5's external-sender proposals need. A dev-dependency feature, so
+# the shipped wasm never carries the module — the binding has no use for it and
+# the server is TypeScript.
+mls-rs = { version = "0.56", features = ["external_client"] }
 assert_matches = "1.5"
 
 [features]

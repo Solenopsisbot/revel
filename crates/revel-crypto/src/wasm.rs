@@ -41,9 +41,10 @@ use mls_rs::{
         BaseConfig, WithCryptoProvider, WithGroupStateStorage, WithIdentityProvider,
         WithKeyPackageRepo, WithMlsRules,
     },
-    crypto::SignatureSecretKey,
+    crypto::{SignaturePublicKey, SignatureSecretKey},
+    extension::built_in::ExternalSendersExt,
     group::{ExportedTree, ReceivedMessage},
-    identity::{basic::BasicCredential, SigningIdentity},
+    identity::{basic::BasicCredential, Credential, SigningIdentity},
     mls_rules::{CommitOptions, DefaultMlsRules},
     CipherSuite, CipherSuiteProvider, Client as MlsClient, CryptoProvider, ExtensionList,
     MlsMessage,
@@ -325,16 +326,37 @@ impl Device {
     /// Start a new group with a caller-chosen id. In Revel the id is the room's
     /// id, so that the audience and the room it serves are the same thing to
     /// look up.
+    ///
+    /// `external_sender` is the Host's device certificate. `docs/03` §5: "The
+    /// Host is configured in every group as an **MLS external sender**. On any
+    /// audience change it appends external Add/Remove proposals... It can
+    /// propose; it cannot Commit or forge a roster."
+    ///
+    /// **It has to be set here or never.** `external_senders` is a group
+    /// context extension, fixed at creation unless somebody commits a
+    /// `GroupContextExtensions` proposal to change it — so a group opened
+    /// without one needs a commit per group to gain it later. `docs/29` §1's
+    /// whole framing: nearly free now, expensive to retrofit.
+    ///
+    /// Passing nothing produces a group no external sender may propose to,
+    /// which is the right answer for a Host that has not published one rather
+    /// than a reason to refuse.
     #[wasm_bindgen(js_name = createGroup)]
-    pub fn create_group(&self, group_id: &[u8]) -> Result<Group, JsError> {
+    pub fn create_group(
+        &self,
+        group_id: &[u8],
+        external_sender: Option<Vec<u8>>,
+    ) -> Result<Group, JsError> {
+        let mut extensions = ExtensionList::default();
+        if let Some(cert) = external_sender {
+            extensions
+                .set_from(external_senders(&cert)?)
+                .map_err(js)?;
+        }
+
         let mut inner = self
             .client
-            .create_group_with_id(
-                group_id.to_vec(),
-                ExtensionList::default(),
-                Default::default(),
-                None,
-            )
+            .create_group_with_id(group_id.to_vec(), extensions, Default::default(), None)
             .map_err(js)?;
         // Persisted immediately: a group that exists only in memory between
         // creation and its first commit is a group that can be lost before it
@@ -789,6 +811,29 @@ impl Group {
     /// Built as a `js_sys::Array` by hand rather than serialised: it is one
     /// allocation per member either way, and this keeps `serde` out of the
     /// bundle for a payload this small.
+    /// The certificates this group's context authorises to send proposals.
+    ///
+    /// What the *group* believes, which is the only thing that matters: the
+    /// `external_senders` extension was fixed when the group was created, so a
+    /// Host that has since changed or lost its key cannot change this, and a
+    /// Host that never published one produces an empty list.
+    ///
+    /// Useful beyond a test — a "who can propose in this room" line is exactly
+    /// the sort of thing `docs/22` wants to be able to show without lying.
+    #[wasm_bindgen(js_name = externalSenders)]
+    pub fn external_senders(&self) -> js_sys::Array {
+        let out = js_sys::Array::new();
+        let Ok(Some(ext)) = self.inner.context().extensions().get_as::<ExternalSendersExt>() else {
+            return out;
+        };
+        for identity in &ext.allowed_senders {
+            if let Credential::Basic(basic) = &identity.credential {
+                out.push(&js_sys::Uint8Array::from(basic.identifier.as_slice()).into());
+            }
+        }
+        out
+    }
+
     pub fn members(&self) -> js_sys::Array {
         let out = js_sys::Array::new();
         for m in self.inner.roster().members() {
@@ -812,6 +857,24 @@ impl Group {
 // ---------------------------------------------------------------------------
 // Device certificates, standalone
 // ---------------------------------------------------------------------------
+
+/// Build the `external_senders` extension from a Host's device certificate.
+///
+/// The Host presents a device certificate like anybody else — that is what
+/// `DeviceCertIdentityProvider::validate_external_sender` already expects, and
+/// it means members can see exactly which key is allowed to propose and who
+/// vouched for it, using the machinery they already trust for leaves.
+fn external_senders(cert_bytes: &[u8]) -> Result<ExternalSendersExt, JsError> {
+    let cert = DeviceCert::decode(cert_bytes).map_err(js)?;
+    // Verified here rather than trusted: a Host that published a certificate
+    // its account key never signed would otherwise end up baked into a group
+    // context that cannot be changed without a commit.
+    cert.verify().map_err(js)?;
+
+    let key = SignaturePublicKey::from(cert.device_pub.clone());
+    let credential = BasicCredential::new(cert_bytes.to_vec()).into_credential();
+    Ok(ExternalSendersExt::new(vec![SigningIdentity::new(credential, key)]))
+}
 
 /// Read a device certificate without a group in hand — for the devices screen,
 /// which lists what an account has signed.

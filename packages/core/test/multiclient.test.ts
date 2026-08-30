@@ -711,6 +711,49 @@ scenarios('offline and reconnect', () => {
 
 // ---------------------------------------------------------------------------
 
+scenarios('the Host as an external sender', () => {
+  it('is named in every group a client opens', async () => {
+    // `docs/03` §5: "The Host is configured in **every** group as an MLS
+    // external sender." The extension is fixed at creation, so a group opened
+    // without one costs a commit to fix — which is why the client asks the Host
+    // what it is before opening anything.
+    const { world, group, host } = await conversation(['alice', 'bob']);
+
+    const senders = await host.externalSendersOf(group);
+    expect(senders).toHaveLength(1);
+    // The same certificate the Host publishes, verified — not merely present.
+    expect(senders[0]).toBe(world.externalSender);
+    await world.close();
+  });
+
+  it('is absent from a group opened against a Host that publishes none', async () => {
+    // A coherent deployment: those groups simply refuse external proposals.
+    const world = await World.create({ externalSender: null });
+    const alice = await world.join('alice');
+    const room = world.room();
+    const group = await alice.open(room);
+
+    expect(await alice.externalSendersOf(group)).toEqual([]);
+    await world.close();
+  });
+
+  it('still cannot commit, which is the whole division of labour', async () => {
+    // The Host proposes; a member commits. Nothing here gives the server a way
+    // to move a group, and the tests in `crates/revel-crypto/tests/
+    // external_sender.rs` prove the other half — that a proposal from a key the
+    // group never authorised is refused outright.
+    const { world, group, host } = await conversation(['alice', 'bob']);
+    const before = await host.epoch(group);
+
+    // The server has every handshake record and the public tree, and there is
+    // no route, method or key by which it can produce a commit.
+    expect(await host.serverEpoch(group)).toBe(before);
+    await world.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 scenarios('attachments', () => {
   const ENC = new TextEncoder();
   const DEC = new TextDecoder();

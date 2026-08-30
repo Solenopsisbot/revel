@@ -46,12 +46,16 @@ export class LocalCryptoEngine implements CryptoEngine {
     return this.#open().keyPackage();
   }
 
-  async createGroup(groupId: string): Promise<GroupState> {
-    return this.#open().createGroup(groupId);
+  async createGroup(groupId: string, externalSender?: Uint8Array): Promise<GroupState> {
+    return this.#open().createGroup(groupId, externalSender);
   }
 
   async identity(): Promise<Identity> {
     return this.#open().identity();
+  }
+
+  async externalSenders(groupId: string): Promise<Uint8Array[]> {
+    return this.#open().externalSenders(groupId);
   }
 
   async signAuth(payload: Uint8Array): Promise<Uint8Array> {

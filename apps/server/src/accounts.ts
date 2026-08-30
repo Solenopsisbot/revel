@@ -30,6 +30,7 @@
 import {
   type AccountProfile,
   ClaimHandle,
+  type HostInfo,
   normaliseHandle,
   parseAddress,
   UpdateProfile,
@@ -42,6 +43,18 @@ export interface AccountDeps {
   store: Store;
   /** This IdP's name — the part after the `@`. */
   idp: string;
+  /** The Host's name, as it appears in a device-auth challenge. */
+  host: string;
+  /**
+   * The Host's own device certificate, base64, or null.
+   *
+   * Published so a client can name it as an MLS external sender when it opens a
+   * group (`docs/03` §5). It must be here before the first group is created,
+   * because `external_senders` is a group context extension fixed at creation:
+   * a Host that starts publishing one later cannot retrofit it into existing
+   * groups without a commit each.
+   */
+  externalSender: string | null;
   authenticate(req: Request): Promise<Actor | null>;
   now?: () => number;
 }
@@ -57,6 +70,22 @@ const RESERVED = new Set(['me']);
 
 export function mountAccounts(app: Hono, deps: AccountDeps): void {
   const now = deps.now ?? (() => Date.now());
+
+  /**
+   * What this box is, before you have talked to it.
+   *
+   * Unauthenticated, because two of the three things here are needed *before*
+   * you can authenticate: the name goes into the challenge you sign, and the
+   * external sender goes into a group at creation.
+   */
+  app.get('/.well-known/revel/host', (c) => {
+    const info: HostInfo = {
+      host: deps.host,
+      idp: deps.idp,
+      externalSender: deps.externalSender,
+    };
+    return c.json(info);
+  });
 
   /** Who am I, and what am I called. */
   app.get('/idp/accounts/me', async (c) => {

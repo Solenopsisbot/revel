@@ -6,7 +6,17 @@
  * taken by somebody else, and treating one as an identifier is how a message
  * gets delivered to the wrong person with the right name.
  */
-import { AccountProfile, displayAddress, formatAddress, parseAddress } from '@revel/protocol';
+import {
+  AccountProfile,
+  type DeviceCert,
+  decodeDeviceCert,
+  displayAddress,
+  formatAddress,
+  fromBase64,
+  HostInfo,
+  parseAddress,
+  verifyDeviceCert,
+} from '@revel/protocol';
 import { describe, expect, it } from 'vitest';
 import { authHarness } from './authHelpers.js';
 
@@ -48,6 +58,43 @@ describe('parsing an address', () => {
     expect(displayAddress(local, 'revel.chat')).toBe('viola');
     expect(displayAddress(foreign, 'revel.chat')).toBe('ash@cool.town');
     expect(formatAddress(local)).toBe('viola@revel.chat');
+  });
+});
+
+describe('what a Host says about itself', () => {
+  it('publishes its name, its IdP and its external sender, unauthenticated', async () => {
+    // Unauthenticated on purpose: two of the three are needed *before* you can
+    // authenticate. The name goes into the challenge you sign, and the external
+    // sender goes into a group at creation.
+    const h = await authHarness();
+    const res = await h.get('/.well-known/revel/host');
+    expect(res.status).toBe(200);
+
+    const info = (await res.json()) as any;
+    expect(HostInfo.safeParse(info).success).toBe(true);
+    expect(info.host).toBe(IDP);
+  });
+
+  it('publishes a certificate that verifies', async () => {
+    // Baked into the group context of every group opened while it is
+    // published, and unchangeable there without a commit. A Host that
+    // published a certificate its own account key never signed would be
+    // unable to propose into any of them, and would find out much later.
+    const h = await authHarness();
+    const info = (await (await h.get('/.well-known/revel/host')).json()) as any;
+    const cert = decodeDeviceCert(fromBase64(info.externalSender));
+
+    expect(cert).not.toBeNull();
+    expect(cert?.label).toBe(IDP);
+    expect(await verifyDeviceCert(cert as DeviceCert)).toBe(true);
+  });
+
+  it('may legitimately publish none', async () => {
+    // A Host that does not act as an external sender is a coherent deployment,
+    // not an error: its groups simply refuse external proposals.
+    const h = await authHarness({ externalSender: null });
+    const info = (await (await h.get('/.well-known/revel/host')).json()) as any;
+    expect(info.externalSender).toBeNull();
   });
 });
 

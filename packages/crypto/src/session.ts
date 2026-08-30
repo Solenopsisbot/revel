@@ -74,12 +74,12 @@ export class Session {
     return this.#device.keyPackage();
   }
 
-  createGroup(groupId: string): GroupState {
+  createGroup(groupId: string, externalSender?: Uint8Array): GroupState {
     this.#alive();
     if (this.#groups.has(groupId)) {
       throw new Error(`already holding group ${groupId}; forget it first`);
     }
-    const group = this.#device.createGroup(ENC.encode(groupId));
+    const group = this.#device.createGroup(ENC.encode(groupId), externalSender);
     this.#groups.set(groupId, group);
     return stateOf(groupId, group);
   }
@@ -228,6 +228,10 @@ export class Session {
     const group = this.#device.loadGroup(ENC.encode(groupId));
     this.#groups.set(groupId, group);
     return stateOf(groupId, group);
+  }
+
+  externalSenders(groupId: string): Uint8Array[] {
+    return [...this.#group(groupId).externalSenders()] as Uint8Array[];
   }
 
   signAuth(payload: Uint8Array): Uint8Array {

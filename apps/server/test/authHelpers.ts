@@ -16,7 +16,13 @@ import {
   toBase64,
   verifyDeviceCert,
 } from '@revel/protocol';
-import { createApp, Hub, MemoryStore, sessionAuthenticator } from '@revel/server';
+import {
+  createApp,
+  createHostIdentity,
+  Hub,
+  MemoryStore,
+  sessionAuthenticator,
+} from '@revel/server';
 
 const HOST = 'revel.test';
 const ENC = new TextEncoder();
@@ -79,13 +85,20 @@ async function issue(
 
 // ---------------------------------------------------------------------------
 
-export async function authHarness() {
+export async function authHarness(over: { externalSender?: string | null } = {}) {
   const store = new MemoryStore();
+  // A real external-sender identity, so anything that opens a group in these
+  // tests opens the same shape of group production does.
+  const identity = await createHostIdentity(HOST);
+  const externalSender =
+    over.externalSender === undefined ? identity.certificate : over.externalSender;
+
   const app = createApp({
     store,
     hub: new Hub(),
     ids: new SnowflakeFactory(1),
     host: HOST,
+    externalSender,
     authenticate: sessionAuthenticator({ store, host: HOST }),
   });
 
@@ -164,7 +177,7 @@ export async function authHarness() {
     };
   }
 
-  return { store, app, post, get, del, patch, person, keypair, issue };
+  return { store, app, post, get, del, patch, person, keypair, issue, externalSender };
 }
 
 export const HOST_NAME = HOST;

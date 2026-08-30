@@ -22,10 +22,11 @@ const TABLE: {
 } = {
   exportAccountSecret: (s) => s.exportAccountSecret(),
   exportDeviceSecret: (s) => s.exportDeviceSecret(),
+  externalSenders: (s, groupId) => s.externalSenders(groupId),
   identity: (s) => s.identity(),
   keyPackage: (s) => s.keyPackage(),
   signAuth: (s, payload) => s.signAuth(payload),
-  createGroup: (s, groupId) => s.createGroup(groupId),
+  createGroup: (s, groupId, externalSender) => s.createGroup(groupId, externalSender),
   joinGroup: (s, welcome, tree) => s.joinGroup(welcome, tree),
   groups: (s) => s.groups(),
   state: (s, groupId) => s.state(groupId),

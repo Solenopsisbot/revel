@@ -73,6 +73,31 @@ export const AccountProfile = z.object({
 });
 export type AccountProfile = z.infer<typeof AccountProfile>;
 
+/**
+ * What a client needs to know about a Host before it does anything.
+ *
+ * Fetched once, unauthenticated, because two of the three things in it are
+ * needed *before* you can authenticate: the Host's name goes into the challenge
+ * signature, and the external sender goes into a group at creation and can
+ * never be added for free afterwards (`docs/03` §5, `docs/29` §1).
+ */
+export const HostInfo = z.object({
+  /** The name that appears in a device-auth challenge. */
+  host: z.string().max(255),
+  /** The IdP this box serves handles for. Often the same box; not always. */
+  idp: IdpName,
+  /**
+   * The Host's device certificate, base64, or null if it does not act as one.
+   *
+   * A client puts this in the `external_senders` group context extension when
+   * it opens a group. Null is a legitimate answer — a Host that has published
+   * no external sender simply cannot propose — and produces groups that refuse
+   * external proposals entirely rather than a reason to fail.
+   */
+  externalSender: z.string().base64().nullable(),
+});
+export type HostInfo = z.infer<typeof HostInfo>;
+
 export const ClaimHandle = z.object({ handle: HandleInput });
 export type ClaimHandle = z.infer<typeof ClaimHandle>;
 

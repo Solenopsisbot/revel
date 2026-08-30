@@ -37,6 +37,7 @@ import {
   type DeviceInfo,
   decodeDeviceCert,
   fromBase64,
+  issueDeviceCert,
   RegisterDevice,
   SessionRequest,
   type SessionResponse,
@@ -221,6 +222,44 @@ export function mountAuth(app: Hono, deps: AuthDeps): void {
     await deps.store.deleteSession(await hash(new TextEncoder().encode(token)));
     return c.body(null, 204);
   });
+}
+
+/**
+ * Generate this Host's own identity as an MLS external sender (`docs/03` §5).
+ *
+ * The Host holds an account key and signs itself a device certificate, exactly
+ * like a person's device. That is not a workaround: `validate_external_sender`
+ * in the crypto core already expects a device certificate, so members check the
+ * Host's right to propose with the same machinery they check each other's right
+ * to hold a leaf, and can see who vouched for it.
+ *
+ * **The key must outlive the process.** It is baked into the group context of
+ * every group opened while it was published, and a group's `external_senders`
+ * extension cannot be changed without a commit. A Host that regenerates this on
+ * restart silently loses the ability to propose into every group it has ever
+ * served. Persisting it is the deployment's job — there is nowhere in this
+ * codebase that durably holds a server secret yet, which is why this returns
+ * the key rather than hiding it.
+ */
+export async function createHostIdentity(label = 'host'): Promise<{
+  certificate: string;
+  accountKey: CryptoKey;
+  devicePub: Uint8Array;
+}> {
+  const account = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, [
+    'sign',
+    'verify',
+  ])) as CryptoKeyPair;
+  const device = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, [
+    'sign',
+    'verify',
+  ])) as CryptoKeyPair;
+
+  const accountPub = new Uint8Array(await crypto.subtle.exportKey('raw', account.publicKey));
+  const devicePub = new Uint8Array(await crypto.subtle.exportKey('raw', device.publicKey));
+  const certificate = await issueDeviceCert(account.privateKey, accountPub, devicePub, label);
+
+  return { certificate: toBase64(certificate), accountKey: account.privateKey, devicePub };
 }
 
 /**

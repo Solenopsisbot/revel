@@ -134,12 +134,16 @@ export class WorkerCryptoEngine implements CryptoEngine {
     return this.#call('identity');
   }
 
+  externalSenders(groupId: string): Promise<Uint8Array[]> {
+    return this.#call('externalSenders', groupId);
+  }
+
   signAuth(payload: Uint8Array): Promise<Uint8Array> {
     return this.#call('signAuth', payload);
   }
 
-  createGroup(groupId: string): Promise<GroupState> {
-    return this.#call('createGroup', groupId);
+  createGroup(groupId: string, externalSender?: Uint8Array): Promise<GroupState> {
+    return this.#call('createGroup', groupId, externalSender);
   }
 
   joinGroup(welcome: Uint8Array, tree: Uint8Array): Promise<GroupState> {
