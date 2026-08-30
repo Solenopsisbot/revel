@@ -13,7 +13,7 @@
       // Runs before first paint: reads the stored appearance and stamps the
       // attributes the token layer reads. Doing this in a component would mean
       // a frame of the default theme first.
-      (function () {
+      (() => {
         try {
           var q = new URLSearchParams(location.search);
           var a = JSON.parse(localStorage.getItem('revel.appearance') || '{}');

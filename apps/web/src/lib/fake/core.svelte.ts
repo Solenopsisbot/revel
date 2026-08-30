@@ -72,8 +72,20 @@ class Core {
   /** Which face you are speaking as. Only surfaced when you have several. */
   speakingAs = $state('june');
   messages = $state<Record<string, Message[]>>(structuredClone(messages));
-  /** Faces currently typing in the open room. */
-  typing = $state<string[]>([]);
+  /**
+   * Faces currently typing, **per place**.
+   *
+   * Keyed by room id, or `roomId/threadId` for a branch. A thread is a branch
+   * inside a room (`docs/16`) and that is exactly wrong for a typing
+   * indicator: showing branch typing in the room is how a busy room ends up
+   * permanently claiming somebody is about to say something in it.
+   */
+  typingIn = $state<Record<string, string[]>>({});
+
+  /** Who is typing here. Omit `thread` for the room itself. */
+  typing(roomId = this.currentRoomId, thread?: string): string[] {
+    return this.typingIn[thread ? `${roomId}/${thread}` : roomId] ?? [];
+  }
   membersOpen = $state(true);
   /** The message being replied to, if any. Cleared on send or Escape. */
   replyTo = $state<string | null>(null);
@@ -156,6 +168,20 @@ class Core {
    * if a thread cannot outlive the room it branches from.
    */
   openThreadId = $state<string | null>(null);
+  /**
+   * Thread names, by the id of the message each branches from.
+   *
+   * Only the name is kept. Count, who is in it and when it last moved are all
+   * facts about which messages carry a `thread`, and deriving them means there
+   * is no second number to keep in step.
+   */
+  threadNames = $state<Record<string, string>>({});
+
+  nameThread(parentId: string, name: string) {
+    const trimmed = name.trim();
+    if (trimmed) this.threadNames[parentId] = trimmed;
+    else delete this.threadNames[parentId];
+  }
 
   /** Emoji the picker offers first. Persisted; most recent leads. */
   recentEmoji = $state<string[]>(['👍', '🔥', '💯', '👀', '😂', '❤️']);
@@ -822,10 +848,12 @@ class Core {
   }
 
   /** Someone else typing, so the indicator has something to show. */
-  simulateTyping(faceId: string, ms = 3200) {
-    if (!this.typing.includes(faceId)) this.typing = [...this.typing, faceId];
+  simulateTyping(faceId: string, ms = 3200, thread?: string) {
+    const key = thread ? `${this.currentRoomId}/${thread}` : this.currentRoomId;
+    const here = this.typingIn[key] ?? [];
+    if (!here.includes(faceId)) this.typingIn[key] = [...here, faceId];
     setTimeout(() => {
-      this.typing = this.typing.filter((f) => f !== faceId);
+      this.typingIn[key] = (this.typingIn[key] ?? []).filter((f) => f !== faceId);
     }, ms);
   }
 }

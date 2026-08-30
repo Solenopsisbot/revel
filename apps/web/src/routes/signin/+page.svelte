@@ -1,53 +1,53 @@
 <script lang="ts">
-  import Moment from '$lib/moment/Moment.svelte';
-  import Field from '$lib/moment/Field.svelte';
-  import Button from '$lib/moment/Button.svelte';
-  import Icon from '$lib/Icon.svelte';
-  import { goto } from '$app/navigation';
-  import { page } from '$app/state';
+import { goto } from '$app/navigation';
+import { page } from '$app/state';
+import Icon from '$lib/Icon.svelte';
+import Button from '$lib/moment/Button.svelte';
+import Field from '$lib/moment/Field.svelte';
+import Moment from '$lib/moment/Moment.svelte';
 
-  /**
-   * The normal path: handle + password + second factor. Deliberately boring —
-   * `docs/17` says nobody should have to understand identity providers to sign
-   * in, and the QR flow is the convenience path, not the requirement.
-   */
-  type Step = 'credentials' | 'twofactor' | 'scan';
-  const initial = new URLSearchParams(page.url.search).get('step') as Step | null;
-  let step = $state<Step>(initial ?? 'credentials');
+/**
+ * The normal path: handle + password + second factor. Deliberately boring —
+ * `docs/17` says nobody should have to understand identity providers to sign
+ * in, and the QR flow is the convenience path, not the requirement.
+ */
+type Step = 'credentials' | 'twofactor' | 'scan';
+const initial = new URLSearchParams(page.url.search).get('step') as Step | null;
+let step = $state<Step>(initial ?? 'credentials');
 
-  let handle = $state('');
-  let password = $state('');
-  let code = $state('');
-  let busy = $state(false);
-  let error = $state('');
+let handle = $state('');
+let password = $state('');
+let code = $state('');
+let busy = $state(false);
+let error = $state('');
 
-  const ready = $derived(handle.trim().length > 0 && password.length > 0);
+const ready = $derived(handle.trim().length > 0 && password.length > 0);
 
-  async function submit() {
-    if (!ready) return;
-    busy = true;
-    error = '';
-    await new Promise((r) => setTimeout(r, 550));
-    busy = false;
-    if (password === 'wrong') {
-      // One message for both cases, so it isn't an enumeration oracle
-      // (`docs/17`).
-      error = "That handle and password don't match.";
-      return;
-    }
-    step = 'twofactor';
+async function submit() {
+  if (!ready) return;
+  busy = true;
+  error = '';
+  await new Promise((r) => setTimeout(r, 550));
+  busy = false;
+  if (password === 'wrong') {
+    // One message for both cases, so it isn't an enumeration oracle
+    // (`docs/17`).
+    error = "That handle and password don't match.";
+    return;
   }
+  step = 'twofactor';
+}
 
-  async function verify() {
-    busy = true;
-    await new Promise((r) => setTimeout(r, 500));
-    busy = false;
-    if (code.trim().length !== 6) {
-      error = 'That code has expired or is wrong. Codes last 30 seconds.';
-      return;
-    }
-    goto('/');
+async function verify() {
+  busy = true;
+  await new Promise((r) => setTimeout(r, 500));
+  busy = false;
+  if (code.trim().length !== 6) {
+    error = 'That code has expired or is wrong. Codes last 30 seconds.';
+    return;
   }
+  goto('/');
+}
 </script>
 
 <Moment pose={step === 'scan' ? 'alert' : 'leaning'}>

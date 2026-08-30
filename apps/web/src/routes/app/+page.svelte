@@ -1,395 +1,419 @@
 <script lang="ts">
-  import Avatar from '$lib/Avatar.svelte';
-  import Icon from '$lib/Icon.svelte';
-  import { core, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
-  import MessageList from '$lib/MessageList.svelte';
-  import Composer from '$lib/Composer.svelte';
-  import SettingsOverlay from '$lib/settings/SettingsOverlay.svelte';
-  import WrenSurface from '$lib/wren/WrenSurface.svelte';
-  import ContextMenu from '$lib/ContextMenu.svelte';
-  import ProfileCard from '$lib/ProfileCard.svelte';
-  import CommandBar from '$lib/command/CommandBar.svelte';
-  import SpaceSettings from '$lib/space/SpaceSettings.svelte';
-  import CallBar from '$lib/voice/CallBar.svelte';
-  import CallStage from '$lib/voice/CallStage.svelte';
-  import IncomingCall from '$lib/voice/IncomingCall.svelte';
-  import Onboarding from '$lib/onboarding/Onboarding.svelte';
-  import { onboarding } from '$lib/onboarding/onboarding.svelte.js';
-  import { contextMenu } from '$lib/contextmenu.svelte.js';
-  import { roomMenu, spaceMenu, memberMenu } from '$lib/menus.js';
-  import { voice } from '$lib/voice/voice.svelte.js';
-  import { layout } from '$lib/layout.svelte.js';
-  import { drawers } from '$lib/drawers.svelte.js';
-  import { back } from '$lib/back.js';
-  import { longpress } from '$lib/touch.svelte.js';
-  import SearchPanel from '$lib/search/SearchPanel.svelte';
-  import { search } from '$lib/search/search.svelte.js';
-  import { applyUrl, syncUrl } from '$lib/deeplink.js';
-  import ThreadPanel from '$lib/thread/ThreadPanel.svelte';
-  import { lightbox } from '$lib/media/lightbox.svelte.js';
-  import { wren } from '$lib/wren/wren.svelte.js';
-  import { untrack } from 'svelte';
-  import { page } from '$app/state';
+import { untrack } from 'svelte';
+import { page } from '$app/state';
+import Avatar from '$lib/Avatar.svelte';
+import { back } from '$lib/back.js';
+import Composer from '$lib/Composer.svelte';
+import ContextMenu from '$lib/ContextMenu.svelte';
+import CommandBar from '$lib/command/CommandBar.svelte';
+import { contextMenu } from '$lib/contextmenu.svelte.js';
+import { applyUrl, syncUrl } from '$lib/deeplink.js';
+import { drawers } from '$lib/drawers.svelte.js';
+import { conversation } from '$lib/fake/conversation.svelte.js';
+import { core, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
+import Icon from '$lib/Icon.svelte';
+import { layout } from '$lib/layout.svelte.js';
+import MessageList from '$lib/MessageList.svelte';
+import { lightbox } from '$lib/media/lightbox.svelte.js';
+import { memberMenu, roomMenu, spaceMenu } from '$lib/menus.js';
+import Onboarding from '$lib/onboarding/Onboarding.svelte';
+import { onboarding } from '$lib/onboarding/onboarding.svelte.js';
+import ProfileCard from '$lib/ProfileCard.svelte';
+import SearchPanel from '$lib/search/SearchPanel.svelte';
+import { search } from '$lib/search/search.svelte.js';
+import SettingsOverlay from '$lib/settings/SettingsOverlay.svelte';
+import SpaceSettings from '$lib/space/SpaceSettings.svelte';
+import ThreadPanel from '$lib/thread/ThreadPanel.svelte';
+import { longpress } from '$lib/touch.svelte.js';
+import CallBar from '$lib/voice/CallBar.svelte';
+import CallStage from '$lib/voice/CallStage.svelte';
+import IncomingCall from '$lib/voice/IncomingCall.svelte';
+import { voice } from '$lib/voice/voice.svelte.js';
+import WrenSurface from '$lib/wren/WrenSurface.svelte';
+import { wren } from '$lib/wren/wren.svelte.js';
 
-  // The URL says where we are (`docs/19`): a space and room or a DM, an
-  // optional message to land on, and an optional settings pane. Read once, at
-  // init, before anything renders — landing somewhere and then jumping is a
-  // worse first frame than landing in the right place.
-  const linked = applyUrl(page.url);
-  if (linked.message) {
-    const here = core.messages[core.currentRoomId]?.some((m) => m.id === linked.message);
-    if (here) core.jumpTo = linked.message;
-    else core.awaitingKeys = linked.message;
-  }
+// The URL says where we are (`docs/19`): a space and room or a DM, an
+// optional message to land on, and an optional settings pane. Read once, at
+// init, before anything renders — landing somewhere and then jumping is a
+// worse first frame than landing in the right place.
+const linked = applyUrl(page.url);
+if (linked.message) {
+  const here = core.messages[core.currentRoomId]?.some((m) => m.id === linked.message);
+  if (here) core.jumpTo = linked.message;
+  else core.awaitingKeys = linked.message;
+}
 
-  const deepLink = page.url.searchParams.get('settings');
-  let settingsOpen = $state(!!deepLink);
-  let settingsSection = $state(deepLink ?? 'account');
+const deepLink = page.url.searchParams.get('settings');
+let settingsOpen = $state(!!deepLink);
+let settingsSection = $state(deepLink ?? 'account');
 
-  const me = $derived(core.faces[core.speakingAs]!);
+const me = $derived(core.faces[core.speakingAs]!);
 
-  let commandOpen = $state(false);
-  let spaceOpen = $state(false);
-  let spaceTab = $state('overview');
-  let spaceRoom = $state<string | undefined>(undefined);
-  let editingFace = $state<string | null>(null);
-  let spaceHead = $state<HTMLElement>();
+let commandOpen = $state(false);
+let spaceOpen = $state(false);
+let spaceTab = $state('overview');
+let spaceRoom = $state<string | undefined>(undefined);
+let editingFace = $state<string | null>(null);
+let spaceHead = $state<HTMLElement>();
 
-  /** Every surface the command bar can reach is one the chrome can reach too
+/** Every surface the command bar can reach is one the chrome can reach too
       — that is the rule, not a coincidence (`docs/12`). */
-  const cmdCtx = {
-    openSettings: (section: string) => {
-      settingsSection = section;
-      settingsOpen = true;
-    },
-    openSpaceSettings: (tab = 'overview') => {
-      spaceTab = tab;
-      spaceRoom = undefined;
-      spaceOpen = true;
-    },
-    openRoomSettings: (roomId: string) => {
-      spaceTab = 'rooms';
-      spaceRoom = roomId;
-      spaceOpen = true;
-    },
-  };
+const cmdCtx = {
+  openSettings: (section: string) => {
+    settingsSection = section;
+    settingsOpen = true;
+  },
+  openSpaceSettings: (tab = 'overview') => {
+    spaceTab = tab;
+    spaceRoom = undefined;
+    spaceOpen = true;
+  },
+  openRoomSettings: (roomId: string) => {
+    spaceTab = 'rooms';
+    spaceRoom = roomId;
+    spaceOpen = true;
+  },
+};
 
-  function onKey(e: KeyboardEvent) {
-    // ⌘K is the command surface, ⌘F is search (`docs/19` — two keys, two jobs,
-    // because merging them makes both worse).
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-      e.preventDefault();
-      commandOpen = !commandOpen;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key === ',') {
-      e.preventDefault();
-      settingsOpen = true;
-    }
-    // ⌘F is search, and it is worth taking from the browser now that there is
-    // something to take it for: find-in-page can only see the messages already
-    // rendered, which is a fraction of a room and none of the others.
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
-      e.preventDefault();
-      if (search.open) search.close();
-      else search.show();
-    }
-    // Escape unwinds the most specific thing on screen, in the same order the
-    // back ladder does — one key, one meaning.
-    if (e.key === 'Escape') {
-      if (drawers.open) drawers.close();
-      else if (core.openThreadId) core.closeThread();
-    }
-  }
-
-  /**
-   * Right-clicking chrome that has no menu should do nothing, not open the
-   * browser's.
-   *
-   * Anything with a menu of its own has already called `preventDefault` by the
-   * time this runs, so it never sees those. What is left is the empty case —
-   * right-clicking a header, a divider, the space between two rooms — where
-   * the native menu offers Back, Reload and Save As, none of which mean
-   * anything inside an app and all of which look like the app leaking.
-   *
-   * The exceptions are where the browser genuinely has something to give:
-   * selected text, a field you can paste into, a link or an image. Those keep
-   * their menu, because "copy that" is a real thing to want and reimplementing
-   * it worse would be the actual mistake.
-   */
-  function swallowEmptyContextMenu(e: MouseEvent) {
-    if (e.defaultPrevented) return;
-    const el = e.target instanceof Element ? e.target : null;
-    if (el?.closest('input, textarea, [contenteditable=""], [contenteditable="true"], a[href], img, video, audio')) {
-      return;
-    }
-    // A selection means "copy" is on the menu, and copy is the one item worth
-    // keeping everywhere.
-    if (!window.getSelection()?.isCollapsed) return;
+function onKey(e: KeyboardEvent) {
+  // ⌘K is the command surface, ⌘F is search (`docs/19` — two keys, two jobs,
+  // because merging them makes both worse).
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault();
+    commandOpen = !commandOpen;
   }
-
-  function openRoomMenu(e: MouseEvent, roomId: string) {
-    const room = core.space.rooms.find((r) => r.id === roomId);
-    if (!room) return;
-    const resolved = core.notifyFor(core.currentSpaceId, roomId);
-    contextMenu.open(
-      e,
-      roomMenu(room, resolved),
-      (id) => {
-        const [verb, arg] = id.split(':');
-        if (verb === 'notify') {
-          core.setRoomNotify(
-            core.currentSpaceId,
-            roomId,
-            arg === 'inherit' ? undefined : (arg as 'all' | 'mentions' | 'none'),
-          );
-        }
-        if (id === 'mark-read') core.markRead(core.currentSpaceId, roomId);
-        if (id === 'room-settings') cmdCtx.openRoomSettings(roomId);
-        if (id === 'leave-room') core.leaveRoom(core.currentSpaceId, roomId);
-      },
-      `#${room.name}`,
-    );
+  if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+    e.preventDefault();
+    settingsOpen = true;
   }
-
-  function openSpaceMenu(e: MouseEvent, spaceId = core.currentSpaceId) {
-    const space = core.spaces.find((s) => s.id === spaceId);
-    if (!space) return;
-    if (spaceId !== core.currentSpaceId) core.openRoom(spaceId, space.rooms[0]!.id);
-    contextMenu.open(
-      e,
-      spaceMenu(space),
-      (id) => {
-        if (id === 'space-settings') cmdCtx.openSpaceSettings();
-        if (id === 'invite') cmdCtx.openSpaceSettings('invites');
-        if (id === 'create-room') cmdCtx.openSpaceSettings('rooms');
-        if (id === 'space-notify') cmdCtx.openSettings('notifications');
-        if (id === 'server-sees') cmdCtx.openSettings('about');
-        if (id === 'leave-space') cmdCtx.openSpaceSettings('danger');
-      },
-      space.name,
-    );
+  // ⌘F is search, and it is worth taking from the browser now that there is
+  // something to take it for: find-in-page can only see the messages already
+  // rendered, which is a fraction of a room and none of the others.
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+    e.preventDefault();
+    if (search.open) search.close();
+    else search.show();
   }
-
-  /** Unread anywhere in Home, for the rail dot. */
-  const dmUnread = $derived(core.dms.some((d) => d.unread));
-
-  function openDmMenu(e: MouseEvent, id: string) {
-    const dm = core.dms.find((d) => d.id === id);
-    if (!dm) return;
-    const level = dm.notify ?? core.notifications.global;
-    contextMenu.open(
-      e,
-      [
-        { id: 'notify:inherit', label: 'Use the default', header: 'Notifications', checked: !dm.notify },
-        { id: 'notify:all', label: 'Everything', checked: dm.notify === 'all' },
-        { id: 'notify:mentions', label: 'Mentions', checked: dm.notify === 'mentions' },
-        { id: 'notify:none', label: 'Nothing', checked: dm.notify === 'none' },
-        { id: 'mark-read', label: 'Mark as read', icon: 'check', header: 'Conversation', disabled: !dm.unread },
-        { id: 'call', label: 'Start a call', icon: 'voice' },
-        { id: 'close', label: 'Close conversation', icon: 'x', danger: true },
-      ],
-      (picked) => {
-        const [verb, arg] = picked.split(':');
-        if (verb === 'notify') dm.notify = arg === 'inherit' ? undefined : (arg as 'all' | 'mentions' | 'none');
-        if (picked === 'mark-read') { dm.unread = undefined; dm.mention = false; }
-        if (picked === 'call') voice.startCall(dm.id);
-        // Closing hides the conversation; it does not delete anything, and
-        // messaging them again brings the same room back (the id is derived).
-        if (picked === 'close') core.closeDm(dm.id);
-      },
-      dm.name ?? core.dmTitle(dm),
-    );
+  // Escape unwinds the most specific thing on screen, in the same order the
+  // back ladder does — one key, one meaning.
+  if (e.key === 'Escape') {
+    if (drawers.open) drawers.close();
+    else if (core.openThreadId) core.closeThread();
   }
+}
 
-  function openMemberMenu(e: MouseEvent, faceId: string) {
-    const face = core.faces[faceId];
-    if (!face) return;
-    contextMenu.open(
-      e,
-      memberMenu({ name: face.name, isAgent: !!face.agent, isMe: faceId === core.speakingAs }),
-      (id) => {
-        if (id === 'profile' || id === 'agent-info') core.profileFor = faceId;
-        if (id === 'dm') core.openDm(faceId);
-        if (id === 'block') cmdCtx.openSettings('privacy');
-        if (id === 'verify') cmdCtx.openSettings('devices');
-      },
-      face.name,
-    );
+/**
+ * Right-clicking chrome that has no menu should do nothing, not open the
+ * browser's.
+ *
+ * Anything with a menu of its own has already called `preventDefault` by the
+ * time this runs, so it never sees those. What is left is the empty case —
+ * right-clicking a header, a divider, the space between two rooms — where
+ * the native menu offers Back, Reload and Save As, none of which mean
+ * anything inside an app and all of which look like the app leaking.
+ *
+ * The exceptions are where the browser genuinely has something to give:
+ * selected text, a field you can paste into, a link or an image. Those keep
+ * their menu, because "copy that" is a real thing to want and reimplementing
+ * it worse would be the actual mistake.
+ */
+function swallowEmptyContextMenu(e: MouseEvent) {
+  if (e.defaultPrevented) return;
+  const el = e.target instanceof Element ? e.target : null;
+  if (
+    el?.closest(
+      'input, textarea, [contenteditable=""], [contenteditable="true"], a[href], img, video, audio',
+    )
+  ) {
+    return;
   }
+  // A selection means "copy" is on the menu, and copy is the one item worth
+  // keeping everywhere.
+  if (!window.getSelection()?.isCollapsed) return;
+  e.preventDefault();
+}
 
-  /** Where one of Wren's actions wants to take you. She uses the same routes
-      the chrome does — there is no screen she can reach that you can't. */
-  function route(to: { settings?: string; members?: boolean }) {
-    if (to.settings) {
-      settingsSection = to.settings;
-      settingsOpen = true;
-    }
-    if (to.members) core.membersOpen = true;
-  }
-
-  const categories = $derived(
-    core.space.rooms.reduce<Record<string, typeof core.space.rooms>>((acc, r) => {
-      (acc[r.category] ??= []).push(r);
-      return acc;
-    }, {}),
+function openRoomMenu(e: MouseEvent, roomId: string) {
+  const room = core.space.rooms.find((r) => r.id === roomId);
+  if (!room) return;
+  const resolved = core.notifyFor(core.currentSpaceId, roomId);
+  contextMenu.open(
+    e,
+    roomMenu(room, resolved),
+    (id) => {
+      const [verb, arg] = id.split(':');
+      if (verb === 'notify') {
+        core.setRoomNotify(
+          core.currentSpaceId,
+          roomId,
+          arg === 'inherit' ? undefined : (arg as 'all' | 'mentions' | 'none'),
+        );
+      }
+      if (id === 'mark-read') core.markRead(core.currentSpaceId, roomId);
+      if (id === 'room-settings') cmdCtx.openRoomSettings(roomId);
+      if (id === 'leave-room') core.leaveRoom(core.currentSpaceId, roomId);
+    },
+    `#${room.name}`,
   );
+}
 
-  // ── mobile ────────────────────────────────────────────────────────────────
+function openSpaceMenu(e: MouseEvent, spaceId = core.currentSpaceId) {
+  const space = core.spaces.find((s) => s.id === spaceId);
+  if (!space) return;
+  if (spaceId !== core.currentSpaceId) core.openRoom(spaceId, space.rooms[0]!.id);
+  contextMenu.open(
+    e,
+    spaceMenu(space),
+    (id) => {
+      if (id === 'space-settings') cmdCtx.openSpaceSettings();
+      if (id === 'invite') cmdCtx.openSpaceSettings('invites');
+      if (id === 'create-room') cmdCtx.openSpaceSettings('rooms');
+      if (id === 'space-notify') cmdCtx.openSettings('notifications');
+      if (id === 'server-sees') cmdCtx.openSettings('about');
+      if (id === 'leave-space') cmdCtx.openSpaceSettings('danger');
+    },
+    space.name,
+  );
+}
 
-  let navEl = $state<HTMLElement>();
-  let membersEl = $state<HTMLElement>();
+/** Unread anywhere in Home, for the rail dot. */
+const dmUnread = $derived(core.dms.some((d) => d.unread));
 
-  /**
-   * Mirror where we are into the address bar.
-   *
-   * `replaceState`, so refreshing lands you here and a link is shareable, but
-   * changing room adds no history entry — see `deeplink.ts` for why that
-   * matters to the back ladder.
-   */
-  $effect(() => {
-    syncUrl({
-      scope: core.scope,
-      spaceId: core.currentSpaceId,
-      roomId: core.currentRoomId,
-      settings: settingsOpen ? settingsSection : undefined,
-    });
-  });
+function openDmMenu(e: MouseEvent, id: string) {
+  const dm = core.dms.find((d) => d.id === id);
+  if (!dm) return;
+  const level = dm.notify ?? core.notifications.global;
+  contextMenu.open(
+    e,
+    [
+      {
+        id: 'notify:inherit',
+        label: 'Use the default',
+        header: 'Notifications',
+        checked: !dm.notify,
+      },
+      { id: 'notify:all', label: 'Everything', checked: dm.notify === 'all' },
+      { id: 'notify:mentions', label: 'Mentions', checked: dm.notify === 'mentions' },
+      { id: 'notify:none', label: 'Nothing', checked: dm.notify === 'none' },
+      {
+        id: 'mark-read',
+        label: 'Mark as read',
+        icon: 'check',
+        header: 'Conversation',
+        disabled: !dm.unread,
+      },
+      { id: 'call', label: 'Start a call', icon: 'voice' },
+      { id: 'close', label: 'Close conversation', icon: 'x', danger: true },
+    ],
+    (picked) => {
+      const [verb, arg] = picked.split(':');
+      if (verb === 'notify')
+        dm.notify = arg === 'inherit' ? undefined : (arg as 'all' | 'mentions' | 'none');
+      if (picked === 'mark-read') {
+        dm.unread = undefined;
+        dm.mention = false;
+      }
+      if (picked === 'call') voice.startCall(dm.id);
+      // Closing hides the conversation; it does not delete anything, and
+      // messaging them again brings the same room back (the id is derived).
+      if (picked === 'close') core.closeDm(dm.id);
+    },
+    dm.name ?? core.dmTitle(dm),
+  );
+}
 
-  $effect(() => layout.watch());
-  // Indexing starts with the app, not with the first search: the state worth
-  // showing is "still catching up", and you only see it if it began earlier.
-  $effect(() => untrack(() => search.start()));
-  // `untrack` is load-bearing: `watchConnection` seeds the state from
-  // `navigator.onLine`, and seeding reads `connection` to decide whether to
-  // flush the outbox. An effect that reads what it writes re-runs on its own
-  // write — here that meant re-seeding to "online" the instant anything set it
-  // to "offline". Same shape as the theme loop in `+layout.svelte`.
-  $effect(() => untrack(() => core.watchConnection()));
+function openMemberMenu(e: MouseEvent, faceId: string) {
+  const face = core.faces[faceId];
+  if (!face) return;
+  contextMenu.open(
+    e,
+    memberMenu({ name: face.name, isAgent: !!face.agent, isMe: faceId === core.speakingAs }),
+    (id) => {
+      if (id === 'profile' || id === 'agent-info') core.profileFor = faceId;
+      if (id === 'dm') core.openDm(faceId);
+      if (id === 'block') cmdCtx.openSettings('privacy');
+      if (id === 'verify') cmdCtx.openSettings('devices');
+    },
+    face.name,
+  );
+}
 
-  /**
-   * Tell the gesture how wide the panels actually are, so the drag can be 1:1
-   * with the thumb. Measured rather than hardcoded — the widths are `min()`
-   * expressions in CSS and that stays the one place they are decided.
-   *
-   * Depends on `layout.narrow` only. Reading `drawers.x` here would make the
-   * effect re-run on every frame of a drag, and writing a width back into the
-   * store it just read from is the shape of loop that froze the app once
-   * already.
-   */
-  $effect(() => {
-    if (!layout.narrow) return;
-    if (navEl) drawers.setWidth('nav', navEl.offsetWidth);
-    if (membersEl) drawers.setWidth('members', membersEl.offsetWidth);
-  });
-
-  /** Chat is the app; the drawer is transient (`docs/24`). Picking something
-      from it is the end of its job, so it gets out of the way. */
-  function navigated() {
-    if (layout.narrow) drawers.close();
+/** Where one of Wren's actions wants to take you. She uses the same routes
+      the chrome does — there is no screen she can reach that you can't. */
+function route(to: { settings?: string; members?: boolean }) {
+  if (to.settings) {
+    settingsSection = to.settings;
+    settingsOpen = true;
   }
+  if (to.members) core.membersOpen = true;
+}
 
-  // ── back ──────────────────────────────────────────────────────────────────
+const categories = $derived(
+  core.space.rooms.reduce<Record<string, typeof core.space.rooms>>((acc, r) => {
+    (acc[r.category] ??= []).push(r);
+    return acc;
+  }, {}),
+);
 
-  /** Remember where you have been, so back has somewhere to go. */
-  $effect(() => {
-    const loc = { scope: core.scope, spaceId: core.currentSpaceId, roomId: core.currentRoomId } as const;
-    untrack(() => back.record({ ...loc }));
+// ── mobile ────────────────────────────────────────────────────────────────
+
+let navEl = $state<HTMLElement>();
+let membersEl = $state<HTMLElement>();
+
+/**
+ * Mirror where we are into the address bar.
+ *
+ * `replaceState`, so refreshing lands you here and a link is shareable, but
+ * changing room adds no history entry — see `deeplink.ts` for why that
+ * matters to the back ladder.
+ */
+$effect(() => {
+  syncUrl({
+    scope: core.scope,
+    spaceId: core.currentSpaceId,
+    roomId: core.currentRoomId,
+    settings: settingsOpen ? settingsSection : undefined,
   });
+});
 
-  /**
-   * Up a level, per the two rows of `docs/24`'s table that are about place
-   * rather than about closing something:
-   *
-   *   in a room       → the room list drawer, opened
-   *   in the room list → the previous space, or home
-   *
-   * The second row is the interesting one. Closing the drawer instead would
-   * put you back in the room, where the next back press would open it again —
-   * a loop that never reaches the top and never lets you leave the app.
-   */
-  function goUp() {
-    if (drawers.members) {
+$effect(() => layout.watch());
+// Indexing starts with the app, not with the first search: the state worth
+// showing is "still catching up", and you only see it if it began earlier.
+$effect(() => untrack(() => search.start()));
+// `untrack` is load-bearing: `watchConnection` seeds the state from
+// `navigator.onLine`, and seeding reads `connection` to decide whether to
+// flush the outbox. An effect that reads what it writes re-runs on its own
+// write — here that meant re-seeding to "online" the instant anything set it
+// to "offline". Same shape as the theme loop in `+layout.svelte`.
+$effect(() => untrack(() => core.watchConnection()));
+
+/**
+ * Tell the gesture how wide the panels actually are, so the drag can be 1:1
+ * with the thumb. Measured rather than hardcoded — the widths are `min()`
+ * expressions in CSS and that stays the one place they are decided.
+ *
+ * Depends on `layout.narrow` only. Reading `drawers.x` here would make the
+ * effect re-run on every frame of a drag, and writing a width back into the
+ * store it just read from is the shape of loop that froze the app once
+ * already.
+ */
+$effect(() => {
+  if (!layout.narrow) return;
+  if (navEl) drawers.setWidth('nav', navEl.offsetWidth);
+  if (membersEl) drawers.setWidth('members', membersEl.offsetWidth);
+});
+
+/** Chat is the app; the drawer is transient (`docs/24`). Picking something
+      from it is the end of its job, so it gets out of the way. */
+function navigated() {
+  if (layout.narrow) drawers.close();
+}
+
+// ── back ──────────────────────────────────────────────────────────────────
+
+/** Remember where you have been, so back has somewhere to go. */
+$effect(() => {
+  const loc = {
+    scope: core.scope,
+    spaceId: core.currentSpaceId,
+    roomId: core.currentRoomId,
+  } as const;
+  untrack(() => back.record({ ...loc }));
+});
+
+/**
+ * Up a level, per the two rows of `docs/24`'s table that are about place
+ * rather than about closing something:
+ *
+ *   in a room       → the room list drawer, opened
+ *   in the room list → the previous space, or home
+ *
+ * The second row is the interesting one. Closing the drawer instead would
+ * put you back in the room, where the next back press would open it again —
+ * a loop that never reaches the top and never lets you leave the app.
+ */
+function goUp() {
+  if (drawers.members) {
+    drawers.close();
+    return;
+  }
+  if (drawers.nav) {
+    // Home with the room list open is the top of the ladder. From here the
+    // next press is allowed to leave.
+    if (core.scope === 'home') {
       drawers.close();
       return;
     }
-    if (drawers.nav) {
-      // Home with the room list open is the top of the ladder. From here the
-      // next press is allowed to leave.
-      if (core.scope === 'home') {
-        drawers.close();
-        return;
-      }
-      const prev = back.popTo((l) => l.scope === 'home' || l.spaceId !== core.currentSpaceId);
-      if (prev && prev.scope === 'space') core.openRoom(prev.spaceId, prev.roomId);
-      else core.openHome(prev?.roomId);
-      return;
-    }
-    drawers.open_('nav');
-  }
-
-  /** `docs/24`: a call minimises, it does not hang up. Looking at the call is
-      the same thing as being in its room, so leaving the view means going
-      somewhere else — back to wherever you were before you joined. */
-  function minimiseCall() {
-    const prev = back.popTo((l) => l.roomId !== core.currentRoomId);
+    const prev = back.popTo((l) => l.scope === 'home' || l.spaceId !== core.currentSpaceId);
     if (prev && prev.scope === 'space') core.openRoom(prev.spaceId, prev.roomId);
     else core.openHome(prev?.roomId);
+    return;
   }
+  drawers.open_('nav');
+}
 
-  /**
-   * Everything back can undo, most general first — so the *last* entry is what
-   * one press takes away, and `layers.length` is how many history entries we
-   * need to own.
-   *
-   * One list rather than a chain of ifs in a handler: the count and the action
-   * have to agree, and deriving both from the same array is what makes that
-   * true by construction instead of by inspection.
-   */
-  const layers = $derived.by(() => {
-    const l: (() => void)[] = [];
-    // Where you are. Phone only — on a desktop the rooms are always on screen,
-    // so there is no "up" to go to and back should leave the app.
-    if (layout.narrow && (core.scope === 'space' || drawers.open)) l.push(goUp);
-    if (voice.viewingCall) l.push(minimiseCall);
-    // `docs/24`'s first row, and the one that was honestly absent until now:
-    // "a thread → its room". Below the sheets, above the room itself.
-    if (core.openThreadId) l.push(() => core.closeThread());
-    // Below the sheets on purpose. A search panel is somewhere you stay while
-    // you read the room behind it, so back should take a sheet off the top of
-    // it first and only then put the panel away.
-    if (search.open) l.push(() => search.close());
-    if (settingsOpen) l.push(() => (settingsOpen = false));
-    if (spaceOpen) l.push(() => (spaceOpen = false));
-    if (commandOpen) l.push(() => (commandOpen = false));
-    if (core.speakingAsOpen) l.push(() => (core.speakingAsOpen = false));
-    if (core.profileFor) l.push(() => (core.profileFor = null));
-    if (lightbox.open) l.push(() => lightbox.close());
-    if (wren.popup) l.push(() => (wren.popup = null));
-    if (onboarding.open) l.push(() => onboarding.dismiss());
-    // A context menu sits over all of it, so it is always the first thing to go.
-    if (contextMenu.current) l.push(() => contextMenu.close());
-    return l;
-  });
+/** `docs/24`: a call minimises, it does not hang up. Looking at the call is
+      the same thing as being in its room, so leaving the view means going
+      somewhere else — back to wherever you were before you joined. */
+function minimiseCall() {
+  const prev = back.popTo((l) => l.roomId !== core.currentRoomId);
+  if (prev && prev.scope === 'space') core.openRoom(prev.spaceId, prev.roomId);
+  else core.openHome(prev?.roomId);
+}
 
-  $effect(() => back.sync(layers.length));
+/**
+ * Everything back can undo, most general first — so the *last* entry is what
+ * one press takes away, and `layers.length` is how many history entries we
+ * need to own.
+ *
+ * One list rather than a chain of ifs in a handler: the count and the action
+ * have to agree, and deriving both from the same array is what makes that
+ * true by construction instead of by inspection.
+ */
+const layers = $derived.by(() => {
+  const l: (() => void)[] = [];
+  // Where you are. Phone only — on a desktop the rooms are always on screen,
+  // so there is no "up" to go to and back should leave the app.
+  if (layout.narrow && (core.scope === 'space' || drawers.open)) l.push(goUp);
+  if (voice.viewingCall) l.push(minimiseCall);
+  // `docs/24`'s first row, and the one that was honestly absent until now:
+  // "a thread → its room". Below the sheets, above the room itself.
+  if (core.openThreadId) l.push(() => core.closeThread());
+  // Below the sheets on purpose. A search panel is somewhere you stay while
+  // you read the room behind it, so back should take a sheet off the top of
+  // it first and only then put the panel away.
+  if (search.open) l.push(() => search.close());
+  if (settingsOpen) l.push(() => (settingsOpen = false));
+  if (spaceOpen) l.push(() => (spaceOpen = false));
+  if (commandOpen) l.push(() => (commandOpen = false));
+  if (core.speakingAsOpen) l.push(() => (core.speakingAsOpen = false));
+  if (core.profileFor) l.push(() => (core.profileFor = null));
+  if (lightbox.open) l.push(() => lightbox.close());
+  if (wren.popup) l.push(() => (wren.popup = null));
+  if (onboarding.open) l.push(() => onboarding.dismiss());
+  // A context menu sits over all of it, so it is always the first thing to go.
+  if (contextMenu.current) l.push(() => contextMenu.close());
+  return l;
+});
 
-  // Reads `layers` only when the callback fires, which is outside the effect's
-  // tracking — so this attaches one listener for the life of the page rather
-  // than re-attaching on every state change.
-  $effect(() =>
-    back.attach(
-      () => layers.length,
-      () => layers[layers.length - 1]?.(),
-    ),
-  );
+$effect(() => back.sync(layers.length));
 
-  /** The members list is a column on a desktop and a drawer on a phone. Same
+// Reads `layers` only when the callback fires, which is outside the effect's
+// tracking — so this attaches one listener for the life of the page rather
+// than re-attaching on every state change.
+$effect(() =>
+  back.attach(
+    () => layers.length,
+    () => layers[layers.length - 1]?.(),
+  ),
+);
+
+/** The members list is a column on a desktop and a drawer on a phone. Same
       button, same meaning, two mechanisms. */
-  function toggleMembers() {
-    if (layout.narrow) drawers.toggle('members');
-    else core.membersOpen = !core.membersOpen;
-  }
+function toggleMembers() {
+  if (layout.narrow) drawers.toggle('members');
+  else core.membersOpen = !core.membersOpen;
+}
 </script>
 
 <!-- The drawer gesture listens on the window, not the shell, so a swipe that
@@ -525,6 +549,26 @@
               <span class="dot" aria-label="unread"></span>
             {/if}
           </button>
+          <!-- Threads you are actually in, under the room they branch off.
+               `docs/16`: a thread is a branch inside a room, so it belongs
+               under the room rather than beside it in a list of its own — and
+               only the ones you have spoken in, because every branch anybody
+               ever started is a list nobody reads. -->
+          {#if room.id === core.currentRoomId && conversation.myThreads(room.id).length}
+            <div class="threads">
+              {#each conversation.myThreads(room.id) as t (t.parent)}
+                <button
+                  class="thread"
+                  class:active={core.openThreadId === t.parent}
+                  onclick={() => { core.openThread(t.parent); navigated(); }}
+                >
+                  <Icon name="forward" size={13} />
+                  <span class="th-nm">{conversation.label(t, room.id)}</span>
+                  <span class="th-n">{t.count}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
           {#if room.kind === 'voice' && room.inCall?.length}
             <!-- Occupants before you commit, so you can see who's in there
                  without joining to find out (`docs/21`). -->
@@ -857,6 +901,25 @@
   .no-dms { padding: 22px 14px; text-align: center; }
   .no-dms b { display: block; font-size: var(--text-sm); margin-bottom: 4px; }
   .no-dms span { font-size: 12px; color: var(--text-mute); line-height: 1.5; }
+
+  .threads {
+    display: flex; flex-direction: column; gap: 1px;
+    margin: 0 0 3px 26px; padding-left: 9px;
+    /* A hairline that says "these hang off the room above" without drawing a
+       whole tree. `docs/07`: structure by alignment, not by boxes. */
+    border-left: 1px solid var(--line);
+  }
+  .thread {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 7px; border: 0; background: none; border-radius: var(--r-xs);
+    color: var(--text-mute); font: inherit; font-size: var(--text-xs);
+    cursor: pointer; text-align: left; width: 100%;
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+  .thread:hover { background: var(--ground-3); color: var(--text); }
+  .thread.active { background: var(--ground-3); color: var(--text); font-weight: 600; }
+  .th-nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .th-n { font-variant-numeric: tabular-nums; opacity: .7; }
 
   .incall { display: flex; flex-direction: column; gap: 1px; margin: 0 0 4px 30px; }
   .occupant {

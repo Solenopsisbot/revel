@@ -1,39 +1,39 @@
 <script lang="ts">
-  import Moment from '$lib/moment/Moment.svelte';
-  import Field from '$lib/moment/Field.svelte';
-  import Button from '$lib/moment/Button.svelte';
-  import Icon from '$lib/Icon.svelte';
-  import { goto } from '$app/navigation';
-  import { page } from '$app/state';
+import { goto } from '$app/navigation';
+import { page } from '$app/state';
+import Icon from '$lib/Icon.svelte';
+import Button from '$lib/moment/Button.svelte';
+import Field from '$lib/moment/Field.svelte';
+import Moment from '$lib/moment/Moment.svelte';
 
-  type Step = 'account' | 'code' | 'passkey';
-  // ?step= jumps straight to a stage. These screens are seen once in a real
-  // account's life, so being able to open one directly is the difference
-  // between reviewing it and rebuilding it every time.
-  const initial = new URLSearchParams(page.url.search).get('step') as Step | null;
-  let step = $state<Step>(initial ?? 'account');
+type Step = 'account' | 'code' | 'passkey';
+// ?step= jumps straight to a stage. These screens are seen once in a real
+// account's life, so being able to open one directly is the difference
+// between reviewing it and rebuilding it every time.
+const initial = new URLSearchParams(page.url.search).get('step') as Step | null;
+let step = $state<Step>(initial ?? 'account');
 
-  let handle = $state('');
-  let password = $state('');
-  let provider = $state('revel.chat');
-  let providerOpen = $state(false);
-  let saved = $state(false);
-  let copied = $state(false);
-  let showQr = $state(false);
+let handle = $state('');
+let password = $state('');
+let provider = $state('revel.chat');
+let providerOpen = $state(false);
+let saved = $state(false);
+let copied = $state(false);
+let showQr = $state(false);
 
-  // Mock. The real one comes from the crypto core and is shown exactly once.
-  const code = 'SPQR-4K7M-XN2A-9WTD-B3JC-7QME-Z2XV-K8RT';
-  const ready = $derived(handle.trim().length >= 2 && password.length >= 8);
+// Mock. The real one comes from the crypto core and is shown exactly once.
+const code = 'SPQR-4K7M-XN2A-9WTD-B3JC-7QME-Z2XV-K8RT';
+const ready = $derived(handle.trim().length >= 2 && password.length >= 8);
 
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(code);
-      copied = true;
-      setTimeout(() => (copied = false), 2000);
-    } catch {
-      /* clipboard refused; the code is on screen regardless */
-    }
+async function copy() {
+  try {
+    await navigator.clipboard.writeText(code);
+    copied = true;
+    setTimeout(() => (copied = false), 2000);
+  } catch {
+    /* clipboard refused; the code is on screen regardless */
   }
+}
 </script>
 
 <!-- The recovery-code step is the sentence people have to believe, so Wren

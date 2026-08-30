@@ -99,6 +99,8 @@ const target = $derived(m.replyTo ? conversation.find(m.replyTo) : undefined);
 
 /** Replies branching off this message, or null if nobody has started one. */
 const summary = $derived(core.threadSummary(m.id));
+/** What the branch is called, if anybody named it. */
+const threadName = $derived(core.threadNames[m.id]);
 
 const menuItems = $derived<Item[]>([
   { id: 'react', label: 'Add reaction', icon: 'react' },
@@ -444,6 +446,10 @@ function who(by: string[], key: string) {
             {#if core.faces[id]}<Avatar face={core.faces[id]} size={18} />{/if}
           {/each}
         </span>
+        <!-- Its name, when it has one. A row that says only "3 replies" makes
+             you open it to find out whether it is the one you were following;
+             a name is the whole reason threads are nameable. -->
+        {#if threadName}<span class="th-name">{threadName}</span>{/if}
         <span class="n">{summary.count} {summary.count === 1 ? 'reply' : 'replies'}</span>
         <span class="last">{ago(summary.lastAt)}</span>
         <Icon name="chevron-right" size={14} />
@@ -621,15 +627,29 @@ function who(by: string[], key: string) {
 
   /* An optimistic message is provisional and says so. It does NOT animate
      into place, because that would claim it succeeded (docs/32). */
+  /* Reads as a branch off the message above rather than a chip floating under
+     it: an elbow on the left, the same hairline the sidebar's nested threads
+     use. `docs/07`: structure by alignment, not by boxes. */
   .thread-line {
-    display: flex; align-items: center; gap: 8px; margin: 7px 0 0;
+    position: relative;
+    display: flex; align-items: center; gap: 8px; margin: 6px 0 0 2px;
     border: 0; background: transparent; cursor: pointer; font: inherit;
-    padding: 4px 9px 4px 4px; border-radius: var(--r-pill);
-    color: var(--text-mute); font-size: 12px; font-weight: 700;
+    padding: 4px 10px 4px 16px; border-radius: var(--r-pill);
+    color: var(--text-dim); font-size: 12px; font-weight: 700;
     min-height: var(--tap);
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .thread-line:hover { background: var(--ground-3); color: var(--text-dim); }
+  .thread-line::before {
+    content: ''; position: absolute; left: 3px; top: 2px; bottom: 50%;
+    width: 8px; border-left: 1.5px solid var(--line);
+    border-bottom: 1.5px solid var(--line); border-bottom-left-radius: 6px;
+  }
+  .thread-line:hover { background: var(--ground-3); color: var(--text); }
+  .thread-line:hover::before { border-color: var(--brand); }
+  .th-name {
+    color: var(--text); max-width: 22ch;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .thread-line .n { color: var(--brand); }
   .thread-line .last { font-weight: 400; }
   .thread-line .faces { display: flex; }

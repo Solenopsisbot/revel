@@ -35,7 +35,7 @@ function submit() {
   draft = '';
   // Someone replies, so the typing indicator and arrival animation have
   // something to do.
-  core.simulateTyping('rae', 2600);
+  core.simulateTyping('rae', 2600, thread);
   if (input) input.style.height = 'auto';
 }
 

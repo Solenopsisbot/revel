@@ -1,30 +1,30 @@
 <script lang="ts">
-  import Moment from '$lib/moment/Moment.svelte';
-  import Field from '$lib/moment/Field.svelte';
-  import Button from '$lib/moment/Button.svelte';
-  import { goto } from '$app/navigation';
+import { goto } from '$app/navigation';
+import Button from '$lib/moment/Button.svelte';
+import Field from '$lib/moment/Field.svelte';
+import Moment from '$lib/moment/Moment.svelte';
 
-  /**
-   * The hardest screen in the product (`docs/08`): the one place the
-   * architecture's honesty collides with what the user wants to hear. The line
-   * between "we can't help you" reading as a design principle rather than as
-   * cruelty is about three words wide, so the copy here is the deck's, verbatim.
-   */
-  let code = $state('');
-  let busy = $state(false);
-  let error = $state('');
+/**
+ * The hardest screen in the product (`docs/08`): the one place the
+ * architecture's honesty collides with what the user wants to hear. The line
+ * between "we can't help you" reading as a design principle rather than as
+ * cruelty is about three words wide, so the copy here is the deck's, verbatim.
+ */
+let code = $state('');
+let busy = $state(false);
+let error = $state('');
 
-  async function reset() {
-    busy = true;
-    error = '';
-    await new Promise((r) => setTimeout(r, 600));
-    busy = false;
-    if (code.replace(/[\s-]/g, '').length < 20) {
-      error = "That doesn't look like a recovery code. They're 32 characters, in eight groups.";
-      return;
-    }
-    goto('/');
+async function reset() {
+  busy = true;
+  error = '';
+  await new Promise((r) => setTimeout(r, 600));
+  busy = false;
+  if (code.replace(/[\s-]/g, '').length < 20) {
+    error = "That doesn't look like a recovery code. They're 32 characters, in eight groups.";
+    return;
   }
+  goto('/');
+}
 </script>
 
 <Moment pose="serious">

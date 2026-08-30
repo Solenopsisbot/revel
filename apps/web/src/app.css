@@ -1,10 +1,16 @@
 /* The design system is the single source of truth for colour, type, shape and
    motion. Everything below is layout — if a value here could have been a
    token, it should have been. */
-@import '@revel/ui/tokens.css';
+@import "@revel/ui/tokens.css";
 
-* { box-sizing: border-box; }
-html, body { height: 100%; margin: 0; }
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
 body {
   background: var(--ground-0);
   color: var(--text);
@@ -13,7 +19,10 @@ body {
   line-height: var(--leading-body);
   overflow: hidden;
 }
-button { font: inherit; color: inherit; }
+button {
+  font: inherit;
+  color: inherit;
+}
 /* Fields and the composer draw their own focus treatment on their wrapper.
    A blanket :focus-visible would paint a second, smaller ring inside it. */
 a:focus-visible,
@@ -24,7 +33,10 @@ button:focus-visible,
   border-radius: var(--r-xs);
 }
 input:focus-visible,
-textarea:focus-visible { outline: none; box-shadow: none; }
+textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
 
 /* ---- scrollbars -------------------------------------------------------
    Styled once, globally, rather than per-scroll-container: there are a dozen
@@ -42,9 +54,14 @@ textarea:focus-visible { outline: none; box-shadow: none; }
    uglier and a waste of a phone's width. Anything that wants no bar at all
    still says so locally — a component's own rule outranks `*`. */
 @media (pointer: fine) {
-  *::-webkit-scrollbar { width: var(--sb-size); height: var(--sb-size); }
+  *::-webkit-scrollbar {
+    width: var(--sb-size);
+    height: var(--sb-size);
+  }
   *::-webkit-scrollbar-track,
-  *::-webkit-scrollbar-corner { background: transparent; }
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
   *::-webkit-scrollbar-thumb {
     background-color: var(--sb-thumb);
     border-radius: var(--r-pill);
@@ -57,11 +74,18 @@ textarea:focus-visible { outline: none; box-shadow: none; }
        room would otherwise end up with a four-pixel nub. */
     min-height: 36px;
   }
-  *::-webkit-scrollbar-thumb:hover { background-color: var(--sb-thumb-hover); }
-  *::-webkit-scrollbar-thumb:active { background-color: var(--sb-thumb-active); }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--sb-thumb-hover);
+  }
+  *::-webkit-scrollbar-thumb:active {
+    background-color: var(--sb-thumb-active);
+  }
 
   @supports not selector(::-webkit-scrollbar) {
-    * { scrollbar-width: thin; scrollbar-color: var(--sb-thumb) transparent; }
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--sb-thumb) transparent;
+    }
   }
 }
 

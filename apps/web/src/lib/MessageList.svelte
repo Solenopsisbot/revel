@@ -95,7 +95,9 @@ $effect(() => {
   return () => clearTimeout(timer);
 });
 
-const typingNames = $derived(core.typing.map((f) => core.faces[f]?.name ?? f));
+// The room's own place. A branch's typing shows in the branch, not here —
+// otherwise a busy room permanently claims somebody is about to speak in it.
+const typingNames = $derived(core.typing(core.currentRoomId).map((f) => core.faces[f]?.name ?? f));
 
 /** Bubbles or rows (`docs/07`): the room's explicit choice if it has one,
       otherwise its kind decides. */

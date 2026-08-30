@@ -72,7 +72,12 @@ export function threadsIn(state: RoomState, account?: string): ThreadSummary[] {
     });
   }
 
-  return out.sort((a, b) => b.lastAt - a.lastAt);
+  // By the last reply's **id**, not its timestamp. `at` is the server's clock
+  // in milliseconds and two replies in the same millisecond tie, which made
+  // this order nondeterministic — a flake in the tests and, in a busy room, a
+  // thread list that reshuffles for no reason. Snowflakes exist to give events
+  // a total order (`docs/04` §6); this is what that is for.
+  return out.sort((a, b) => compareIds(b.lastId ?? '', a.lastId ?? ''));
 }
 
 /** One thread, or undefined if nothing has branched off that message. */

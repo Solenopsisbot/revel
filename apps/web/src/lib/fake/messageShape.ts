@@ -157,3 +157,71 @@ export function findIn(
   const found = messages.find((m) => m.id === messageId);
   return found ? asCoreMessage(found, faces) : undefined;
 }
+
+/**
+ * Threads in a room, newest activity first.
+ *
+ * Derived from the messages, exactly as `packages/core`'s `threadsIn` is, and
+ * for the same reason: a reply that arrives or is removed updates the summary
+ * by existing or not existing, so there is no count to keep in step.
+ *
+ * `docs/16`: a thread is "a branch inside a room. **Not a room.**" There is no
+ * thread object here because there is nothing for one to hold.
+ */
+export interface ThreadSummary {
+  parent: string;
+  name?: string;
+  count: number;
+  /** Faces that have said something in it, in the order they first did. */
+  faces: string[];
+  lastAt: number;
+  /** The newest reply's id — what the order is actually decided by. */
+  lastId: string;
+  /** Whether the face you are speaking as has said anything in it. */
+  joined: boolean;
+}
+
+export function threadsOf(
+  messages: FakeMessage[],
+  names: Record<string, string>,
+  meFaceId?: string,
+): ThreadSummary[] {
+  const byParent = new Map<string, FakeMessage[]>();
+  for (const m of messages) {
+    if (!m.thread) continue;
+    byParent.set(m.thread, [...(byParent.get(m.thread) ?? []), m]);
+  }
+
+  const out: ThreadSummary[] = [];
+  for (const [parent, replies] of byParent) {
+    const faceIds: string[] = [];
+    for (const r of replies) if (!faceIds.includes(r.faceId)) faceIds.push(r.faceId);
+    const name = names[parent];
+    const last = replies.reduce((a, b) => (a.id >= b.id ? a : b));
+    out.push({
+      parent,
+      ...(name ? { name } : {}),
+      count: replies.length,
+      faces: faceIds,
+      lastAt: last.at,
+      lastId: last.id,
+      joined: !!meFaceId && faceIds.includes(meFaceId),
+    });
+  }
+  // By id, not by timestamp: two replies in the same millisecond tie, and a
+  // thread list that reshuffles on a tie is one nobody can keep their place in.
+  return out.sort((a, b) => (a.lastId < b.lastId ? 1 : a.lastId > b.lastId ? -1 : 0));
+}
+
+/**
+ * What to call a thread nobody named: the parent's first line.
+ *
+ * Not a generic "Thread" — six identical labels is a list you have to click
+ * through one at a time, which is the failure a name is supposed to fix.
+ */
+export function threadLabelOf(summary: ThreadSummary, parent?: FakeMessage): string {
+  if (summary.name) return summary.name;
+  const line = (typeof parent?.body === 'string' ? parent.body : '').split('\n')[0]?.trim() ?? '';
+  if (!line) return 'Thread';
+  return line.length > 44 ? `${line.slice(0, 41)}…` : line;
+}

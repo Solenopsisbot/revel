@@ -1,31 +1,46 @@
 <script lang="ts">
-  import Mark from '$lib/Mark.svelte';
-  import Reveal from '$lib/Reveal.svelte';
-  import Button from '$lib/moment/Button.svelte';
-  import { goto } from '$app/navigation';
+import { goto } from '$app/navigation';
+import Mark from '$lib/Mark.svelte';
+import Button from '$lib/moment/Button.svelte';
+import Reveal from '$lib/Reveal.svelte';
 
-  const pillars = [
-    {
-      title: 'No cleartext path',
-      body: `Every room is end to end encrypted. Not as an option, not for "public" rooms, not for bots. There is one pipeline and it carries ciphertext, so there is nothing on the server to hand over, to leak, or to quietly start reading.`,
-    },
-    {
-      title: 'No ghost readers',
-      body: `Anything that can read a room is in that room's member list — people, their devices, and bots alike. If a translation bot can see your messages, you can see the bot.`,
-    },
-    {
-      title: 'Your key is you',
-      body: `Your account is a keypair you own. Your handle lives with a provider you can leave, and moving doesn't cost you your rooms, your history or your contacts.`,
-    },
-  ];
+const pillars = [
+  {
+    title: 'No cleartext path',
+    body: `Every room is end to end encrypted. Not as an option, not for "public" rooms, not for bots. There is one pipeline and it carries ciphertext, so there is nothing on the server to hand over, to leak, or to quietly start reading.`,
+  },
+  {
+    title: 'No ghost readers',
+    body: `Anything that can read a room is in that room's member list — people, their devices, and bots alike. If a translation bot can see your messages, you can see the bot.`,
+  },
+  {
+    title: 'Your key is you',
+    body: `Your account is a keypair you own. Your handle lives with a provider you can leave, and moving doesn't cost you your rooms, your history or your contacts.`,
+  },
+];
 
-  const costs: [string, string][] = [
-    ['Server-side search', 'Your device searches its own copy. A new device says so while it indexes, rather than quietly returning half the results.'],
-    ['Link previews', "Built by the sender's device and sent with the message, so nobody's server fetches a URL on your behalf."],
-    ['Spam and abuse filtering', 'Nothing scans your messages, because nothing can. Reports carry cryptographic proof instead, and moderators are members like anyone else.'],
-    ['Notification previews', 'Pushes carry no content. Your phone decrypts locally, so a preview on your lock screen is your choice rather than ours.'],
-    ['Recovering your account', 'We never had your password, so there is nothing to reset. Lose it and your recovery code, and the account is gone.'],
-  ];
+const costs: [string, string][] = [
+  [
+    'Server-side search',
+    'Your device searches its own copy. A new device says so while it indexes, rather than quietly returning half the results.',
+  ],
+  [
+    'Link previews',
+    "Built by the sender's device and sent with the message, so nobody's server fetches a URL on your behalf.",
+  ],
+  [
+    'Spam and abuse filtering',
+    'Nothing scans your messages, because nothing can. Reports carry cryptographic proof instead, and moderators are members like anyone else.',
+  ],
+  [
+    'Notification previews',
+    'Pushes carry no content. Your phone decrypts locally, so a preview on your lock screen is your choice rather than ours.',
+  ],
+  [
+    'Recovering your account',
+    'We never had your password, so there is nothing to reset. Lose it and your recovery code, and the account is gone.',
+  ],
+];
 </script>
 
 <svelte:head><title>Revel — somewhere to actually talk</title></svelte:head>

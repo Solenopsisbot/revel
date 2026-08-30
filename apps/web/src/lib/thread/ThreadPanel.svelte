@@ -49,6 +49,49 @@ const rows = $derived(
   }),
 );
 
+/**
+ * What this thread is called.
+ *
+ * Its name if somebody gave it one, otherwise the parent's first line — never
+ * a bare "Thread", because a sidebar of six identical labels is a list you have
+ * to click through one at a time, which is the failure a name exists to fix.
+ */
+const summary = $derived(conversation.threads().find((t) => t.parent === parentId));
+const label = $derived(summary ? conversation.label(summary) : 'Thread');
+
+/** This branch's own typing, never the room's. */
+const typingHere = $derived(core.typing(core.currentRoomId, parentId));
+
+let renaming = $state(false);
+let draftName = $state('');
+let renameEl = $state<HTMLInputElement>();
+
+function startRename() {
+  draftName = summary?.name ?? '';
+  renaming = true;
+  queueMicrotask(() => renameEl?.select());
+}
+
+function commitName() {
+  if (!renaming) return;
+  renaming = false;
+  core.nameThread(parentId, draftName);
+}
+
+function onNameKey(e: KeyboardEvent) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    commitName();
+  }
+  // Escape abandons rather than saves — the same rule the message editor uses,
+  // so the two never disagree about what Escape means.
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    renaming = false;
+  }
+}
+
 let viewport = $state<HTMLElement>();
 
 // New replies land at the bottom, and this is short enough that following
@@ -72,7 +115,25 @@ $effect(() => {
       </button>
     {/if}
     <div class="title">
-      <b>Thread</b>
+      <!-- A thread's name is editable in place, by anyone in the room. There is
+           no permission for "may name a branch" (`docs/04` §4) and inventing
+           one would be inventing policy; last writer wins, like a room name. -->
+      {#if renaming}
+        <input
+          class="rename"
+          bind:this={renameEl}
+          bind:value={draftName}
+          onblur={commitName}
+          onkeydown={onNameKey}
+          aria-label="Thread name"
+          placeholder={label}
+          maxlength="120"
+        />
+      {:else}
+        <button class="name-btn" onclick={startRename} title="Rename this thread">
+          <b>{label}</b>
+        </button>
+      {/if}
       <span>in #{core.room.name}</span>
     </div>
     {#if !layout.narrow}
@@ -120,6 +181,13 @@ $effect(() => {
     {/each}
   </div>
 
+  <!-- Typing in a branch is not typing in the room (`docs/16`), so the notice
+       belongs here and only here. -->
+  {#if typingHere.length}
+    <div class="typing">
+      {typingHere.map((id) => core.faces[id]?.name ?? 'Someone').join(', ')} typing…
+    </div>
+  {/if}
   <Composer thread={parentId} />
 </aside>
 
@@ -178,4 +246,19 @@ $effect(() => {
   .empty { padding: 26px 18px; }
   .empty p { margin: 0 0 10px; font-size: var(--text-sm); color: var(--text-dim); }
   .empty .fine { color: var(--text-mute); font-size: 12px; line-height: 1.6; max-width: 40ch; margin: 0; }
+
+  .name-btn {
+    border: 0; background: none; padding: 0; font: inherit; color: inherit;
+    cursor: pointer; text-align: left; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .name-btn:hover b { text-decoration: underline; text-decoration-style: dotted; }
+  .rename {
+    font: inherit; font-weight: 700; color: var(--text);
+    background: var(--ground-2); border: 1px solid var(--line);
+    border-radius: var(--r-xs); padding: 1px 6px; width: 100%;
+  }
+  .typing {
+    padding: 4px 14px; font-size: var(--text-xs); color: var(--text-mute);
+  }
 </style>
