@@ -124,6 +124,8 @@ function clone(state: RoomState): RoomState {
     byId: new Map(state.byId),
     pinned: [...state.pinned],
     receipts: new Map(state.receipts),
+    threadNames: new Map(state.threadNames),
+    threadNamesAt: new Map(state.threadNamesAt),
     faces: new Map(state.faces),
     facesAt: new Map(state.facesAt),
     threads: new Map(state.threads),
@@ -232,6 +234,16 @@ function apply(draft: RoomState, event: LocalEvent, options: ReduceOptions): voi
         draft.facesAt.set(face.id, event.id);
       }
       return;
+    case 'm.thread': {
+      // Last writer wins by event id, like `room.name` and for the same
+      // reason: paging far enough back must not rename a thread to whatever it
+      // was called a month ago.
+      const at = draft.threadNamesAt.get(payload.target);
+      if (at && compareIds(event.id, at) <= 0) return;
+      draft.threadNames.set(payload.target, payload.name);
+      draft.threadNamesAt.set(payload.target, event.id);
+      return;
+    }
     case 'm.typing':
       // Deliberately nothing. Typing is `ephemeral` (`docs/03` §7) — never
       // stored, dropped if nobody is listening, and meaningless the moment it

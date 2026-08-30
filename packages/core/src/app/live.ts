@@ -18,6 +18,7 @@ import type {
 } from '@revel/protocol';
 import { Attachments } from '../blobs/attachments.js';
 import type { Message, RoomState } from '../rooms/state.js';
+import { type ThreadSummary, threadsIn } from '../rooms/threads.js';
 import { type Hit, type Query, type SearchOptions, search } from '../search/search.js';
 import type { RoomSync, TypingPerson } from '../sync/engine.js';
 import type { GroupSync } from '../sync/groups.js';
@@ -40,6 +41,8 @@ export interface LiveCoreOptions {
   crypto: CryptoEngine;
   transport: Transport;
   stream?: WebSocketStream;
+  /** This device's account, so a thread can say whether you are in it. */
+  account: string;
   /** Shared, so an attachment is decrypted once per app rather than per view. */
   attachments?: Attachments;
 }
@@ -47,10 +50,12 @@ export interface LiveCoreOptions {
 class LiveConversation implements ConversationCore {
   #rooms: RoomSync;
   #files: Attachments;
+  #account: string;
 
-  constructor(rooms: RoomSync, files: Attachments) {
+  constructor(rooms: RoomSync, files: Attachments, account: string) {
     this.#rooms = rooms;
     this.#files = files;
+    this.#account = account;
   }
 
   room(roomId: string): RoomState {
@@ -58,7 +63,16 @@ class LiveConversation implements ConversationCore {
   }
 
   timeline(roomId: string): Message[] {
-    return this.#rooms.state(roomId).messages;
+    // Branches are excluded here and shown as a summary on the parent. The fake
+    // core did this and this did not, which is precisely the divergence one
+    // interface with two implementations is supposed to make impossible — and
+    // a test caught it, which is why the test drives the interface and not the
+    // engine underneath.
+    return this.#rooms.state(roomId).messages.filter((m) => !m.thread);
+  }
+
+  threadMessages(roomId: string, parentId: string): Message[] {
+    return this.#rooms.state(roomId).messages.filter((m) => m.thread === parentId);
   }
 
   watch(roomId: string, listener: (state: RoomState) => void): () => void {
@@ -96,8 +110,9 @@ class LiveConversation implements ConversationCore {
       ...(options.attachments?.length ? { attachments: options.attachments } : {}),
     });
     // Sending is the end of typing, and saying so beats waiting for the notice
-    // to time out on the other side.
-    await this.#rooms.stopTyping(roomId);
+    // to time out on the other side. In the same place it was sent — a reply
+    // into a thread ends typing in the thread, not in the room.
+    await this.#rooms.stopTyping(roomId, options.thread);
   }
 
   async edit(roomId: string, messageId: string, body: unknown): Promise<void> {
@@ -137,20 +152,35 @@ class LiveConversation implements ConversationCore {
     return this.#files.open(ref);
   }
 
-  typing(roomId: string): TypingPerson[] {
-    return this.#rooms.typing(roomId);
+  threads(roomId: string): ThreadSummary[] {
+    return threadsIn(this.#rooms.state(roomId), this.#account);
   }
 
-  watchTyping(roomId: string, listener: (who: TypingPerson[]) => void): () => void {
-    return this.#rooms.watchTyping(roomId, listener);
+  async nameThread(roomId: string, parentId: string, name: string): Promise<void> {
+    await this.#rooms.nameThread(roomId, parentId, name);
   }
 
-  async setTyping(roomId: string, face?: FaceRef): Promise<void> {
-    await this.#rooms.setTyping(roomId, face ? { face } : {});
+  typing(roomId: string, thread?: string): TypingPerson[] {
+    return this.#rooms.typing(roomId, thread);
   }
 
-  async stopTyping(roomId: string): Promise<void> {
-    await this.#rooms.stopTyping(roomId);
+  watchTyping(
+    roomId: string,
+    listener: (who: TypingPerson[]) => void,
+    thread?: string,
+  ): () => void {
+    return this.#rooms.watchTyping(roomId, listener, thread);
+  }
+
+  async setTyping(
+    roomId: string,
+    options: { face?: FaceRef; thread?: string } = {},
+  ): Promise<void> {
+    await this.#rooms.setTyping(roomId, options);
+  }
+
+  async stopTyping(roomId: string, thread?: string): Promise<void> {
+    await this.#rooms.stopTyping(roomId, thread);
   }
 
   unread(roomId: string): number {
@@ -331,7 +361,7 @@ export class LiveCore implements RevelCore {
   constructor(options: LiveCoreOptions) {
     const files = options.attachments ?? new Attachments({ transport: options.transport });
     this.#rooms = options.rooms;
-    this.conversation = new LiveConversation(options.rooms, files);
+    this.conversation = new LiveConversation(options.rooms, files, options.account);
     this.directory = new LiveDirectory(options);
     this.identity = new LiveIdentity(options.transport);
     this.connection = new LiveConnection(options.stream);

@@ -102,6 +102,20 @@ export const EncryptedEvent = z.discriminatedUnion('type', [
   }),
   evt({ ...base, type: z.literal('m.pin'), target: Id, unpin: z.boolean().optional() }),
   /**
+   * Name a thread.
+   *
+   * `target` is the message the thread branches from, which is already how a
+   * thread is identified everywhere else — there is no separate thread object
+   * to name, and inventing one would mean a thread could exist without any
+   * messages in it.
+   *
+   * Last writer wins by event id, like `room.name`, and for the same reason: a
+   * page of old history must not un-rename something. Anyone in the room may
+   * send one; a thread is a shared thing and `docs/04` §4 has no permission
+   * for "may name a branch", so inventing one here would be inventing policy.
+   */
+  evt({ ...base, type: z.literal('m.thread'), target: Id, name: z.string().max(120) }),
+  /**
    * One per (target, author, kind). Translations, transcripts, notes — the
    * "annotate publicly" idea, and how a translator agent adds value without a
    * server ever reading anything (`docs/10`).

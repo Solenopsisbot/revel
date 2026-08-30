@@ -152,6 +152,18 @@ export interface RoomState {
   pinned: string[];
   /** account → the last event id they have read. Only ever moves forward. */
   receipts: Map<string, string>;
+
+  /**
+   * Thread names, by the id of the message each branches from.
+   *
+   * Only the **name** is stored. Everything else about a thread — how many
+   * replies, who is in it, when it last moved — is derivable from the messages
+   * that carry `thread`, and `threadsIn` derives it. Two sources of truth for
+   * the same count is two things that can disagree, and the derived one cannot.
+   */
+  threadNames: Map<string, string>;
+  /** Which event set each name, so a page of old history cannot un-rename one. */
+  threadNamesAt: Map<string, string>;
   /** face id → the face, from `room.faces`. */
   faces: Map<string, FaceRef>;
   /** face id → the id of the event that last set it. Same reason as `nameAt`. */
@@ -194,6 +206,8 @@ export function emptyRoom(roomId: string): RoomState {
     byId: new Map(),
     pinned: [],
     receipts: new Map(),
+    threadNames: new Map(),
+    threadNamesAt: new Map(),
     faces: new Map(),
     facesAt: new Map(),
     threads: new Map(),

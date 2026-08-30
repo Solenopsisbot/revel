@@ -250,7 +250,7 @@ export class RoomSync {
 
     const decrypted: LocalEvent[] = [];
     const purges: Event[] = [];
-    let typingMoved = false;
+    const typingMoved = new Set<string>();
 
     for (const event of batch) {
       // Ephemeral events never touch the store and never reach the reducer.
@@ -260,7 +260,8 @@ export class RoomSync {
       // still were.
       if (event.class === 'ephemeral') {
         const local = await this.#decrypt(roomId, event).catch(() => null);
-        if (local && this.#applyEphemeral(roomId, local)) typingMoved = true;
+        const moved = local && this.#applyEphemeral(roomId, local);
+        if (moved) typingMoved.add(moved);
         continue;
       }
       // A purge tombstone carries the id of the event it erased and no payload
@@ -288,7 +289,7 @@ export class RoomSync {
     // Crypto state moved: processing anything advances the ratchet, and a
     // commit moves the epoch outright.
     await this.persistCrypto();
-    if (typingMoved) this.#notifyTyping(roomId);
+    for (const key of typingMoved) this.#notifyPlace(key);
     await this.#commit(roomId, state);
     return state;
   }
@@ -310,15 +311,27 @@ export class RoomSync {
   /** Resend while still typing. Comfortably inside the TTL. */
   static readonly TYPING_RESEND_MS = 4000;
 
-  /** roomId → account → when their notice arrived. */
+  /**
+   * `roomId` or `roomId/threadId` → account → when their notice arrived.
+   *
+   * Keyed by *place*, not by room. A thread is a branch inside a room
+   * (`docs/16`), and somebody typing in a branch is not typing in the room —
+   * showing it there is how a busy room ends up permanently claiming that
+   * three people are about to say something in it.
+   */
   #typing = new Map<string, Map<string, { at: number; face?: FaceRef }>>();
   #typingListeners = new Map<string, Set<(who: TypingPerson[]) => void>>();
   /** When this device last told a room it was typing, so it can throttle. */
   #typingSent = new Map<string, number>();
 
-  /** Who is currently typing in a room, excluding this device's account. */
-  typing(roomId: string): TypingPerson[] {
-    const held = this.#typing.get(roomId);
+  /**
+   * Who is currently typing here, excluding this device's account.
+   *
+   * `thread` narrows it to one branch. Omitted means the room itself, and a
+   * notice from a thread does not appear there.
+   */
+  typing(roomId: string, thread?: string): TypingPerson[] {
+    const held = this.#typing.get(place(roomId, thread));
     if (!held) return [];
 
     const cutoff = this.#now() - RoomSync.TYPING_TTL_MS;
@@ -335,16 +348,21 @@ export class RoomSync {
   }
 
   /** Watch it. Returns an unsubscribe. */
-  watchTyping(roomId: string, listener: (who: TypingPerson[]) => void): () => void {
-    let set = this.#typingListeners.get(roomId);
+  watchTyping(
+    roomId: string,
+    listener: (who: TypingPerson[]) => void,
+    thread?: string,
+  ): () => void {
+    const key = place(roomId, thread);
+    let set = this.#typingListeners.get(key);
     if (!set) {
       set = new Set();
-      this.#typingListeners.set(roomId, set);
+      this.#typingListeners.set(key, set);
     }
     set.add(listener);
     return () => {
       set.delete(listener);
-      if (set.size === 0) this.#typingListeners.delete(roomId);
+      if (set.size === 0) this.#typingListeners.delete(key);
     };
   }
 
@@ -355,51 +373,83 @@ export class RoomSync {
    * ephemeral event per keystroke is absurd, and the only way to guarantee
    * nobody does it is to make the obvious call site correct.
    */
-  async setTyping(roomId: string, options: { face?: FaceRef } = {}): Promise<void> {
-    const last = this.#typingSent.get(roomId) ?? 0;
+  async setTyping(
+    roomId: string,
+    options: { face?: FaceRef; thread?: string } = {},
+  ): Promise<void> {
+    // Throttled per *place*: typing in a thread and typing in the room are two
+    // separate claims, and one must not silence the other.
+    const key = place(roomId, options.thread);
+    const last = this.#typingSent.get(key) ?? 0;
     if (this.#now() - last < RoomSync.TYPING_RESEND_MS) return;
-    this.#typingSent.set(roomId, this.#now());
+    this.#typingSent.set(key, this.#now());
 
     // Failing to say you are typing is not worth surfacing, and definitely not
     // worth throwing into a keystroke handler.
     await this.send(
       roomId,
-      { type: 'm.typing', ...(options.face ? { face: options.face } : {}) },
+      {
+        type: 'm.typing',
+        ...(options.face ? { face: options.face } : {}),
+        ...(options.thread ? { thread: options.thread } : {}),
+      },
       { class: 'ephemeral' },
     ).catch(() => {});
   }
 
   /** Say this device has stopped — sent when a composer empties or sends. */
-  async stopTyping(roomId: string): Promise<void> {
-    if (!this.#typingSent.delete(roomId)) return;
-    await this.send(roomId, { type: 'm.typing', stop: true }, { class: 'ephemeral' }).catch(
-      () => {},
-    );
+  async stopTyping(roomId: string, thread?: string): Promise<void> {
+    if (!this.#typingSent.delete(place(roomId, thread))) return;
+    await this.send(
+      roomId,
+      { type: 'm.typing', stop: true, ...(thread ? { thread } : {}) },
+      { class: 'ephemeral' },
+    ).catch(() => {});
   }
 
-  /** Returns whether anything changed, so `receive` knows to notify once. */
-  #applyEphemeral(roomId: string, local: LocalEvent): boolean {
+  /** Returns the place that changed, so `receive` knows what to notify. */
+  #applyEphemeral(roomId: string, local: LocalEvent): string | null {
     // `payload` is the discriminated parse result, not the event — reading
     // `.type` off it gives `undefined` for everything the schema *does* know,
     // which is a silent no-op rather than an error. Unwrap first.
-    if (!local.payload.known) return false;
-    const payload = local.payload.event as { type: string; stop?: boolean; face?: FaceRef };
-    if (payload.type !== 'm.typing') return false;
+    if (!local.payload.known) return null;
+    const payload = local.payload.event as {
+      type: string;
+      stop?: boolean;
+      face?: FaceRef;
+      thread?: string;
+    };
+    if (payload.type !== 'm.typing') return null;
 
-    let held = this.#typing.get(roomId);
+    const key = place(roomId, payload.thread);
+    let held = this.#typing.get(key);
     if (!held) {
       held = new Map();
-      this.#typing.set(roomId, held);
+      this.#typing.set(key, held);
     }
 
-    if (payload.stop) return held.delete(local.account);
+    if (payload.stop) return held.delete(local.account) ? key : null;
     held.set(local.account, { at: this.#now(), ...(payload.face ? { face: payload.face } : {}) });
-    return true;
+    return key;
   }
 
-  #notifyTyping(roomId: string): void {
-    const who = this.typing(roomId);
-    for (const listener of this.#typingListeners.get(roomId) ?? []) listener(who);
+  #notifyPlace(key: string): void {
+    const [roomId, thread] = key.split('/');
+    const who = this.typing(roomId as string, thread);
+    for (const listener of this.#typingListeners.get(key) ?? []) listener(who);
+  }
+
+  /**
+   * Give a thread a name.
+   *
+   * Last writer wins by event id, and anyone in the room may — a thread is a
+   * shared thing and `docs/04` §4 has no permission for "may name a branch", so
+   * inventing one here would be inventing policy.
+   */
+  async nameThread(roomId: string, parentId: string, name: string): Promise<RoomState> {
+    // `silent`: stored, so the name survives and reaches everybody, and never
+    // notifies — renaming a branch is not worth a phone buzzing.
+    return this.send(roomId, { type: 'm.thread', target: parentId, name }, { class: 'silent' });
   }
 
   // -- read state -----------------------------------------------------------
@@ -710,6 +760,19 @@ export class RoomSync {
     this.#rooms.set(roomId, state);
     for (const listener of this.#listeners.get(roomId) ?? []) listener(state);
   }
+}
+
+/**
+ * A room, or a thread inside one.
+ *
+ * Typing is per *place*: `docs/16` calls a thread "a branch inside a room, not
+ * a room", and that is exactly right for delivery and exactly wrong for a
+ * typing indicator — somebody typing in a branch is not typing in the room, and
+ * showing it there is how a busy room permanently claims three people are about
+ * to say something in it.
+ */
+function place(roomId: string, thread?: string): string {
+  return thread ? `${roomId}/${thread}` : roomId;
 }
 
 /** Snowflake order, duplicated here to keep `state.ts` free of imports. */

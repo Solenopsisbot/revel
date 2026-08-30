@@ -38,6 +38,7 @@ import type {
   UpdateProfile,
 } from '@revel/protocol';
 import type { Message, RoomState } from '../rooms/state.js';
+import type { ThreadSummary } from '../rooms/threads.js';
 import type { Hit, Query, SearchOptions } from '../search/search.js';
 import type { TypingPerson } from '../sync/engine.js';
 
@@ -51,8 +52,16 @@ export interface ConversationCore {
    * switch. What is not loaded yet is empty, not pending.
    */
   room(roomId: string): RoomState;
-  /** Messages in order. The thing a timeline renders. */
+  /**
+   * The room's own timeline, in order.
+   *
+   * **Thread replies are not in it.** `docs/16`: a thread is a branch inside a
+   * room, and the room shows that a branch happened rather than what is in it.
+   * Use [`threadMessages`] for the branch.
+   */
   timeline(roomId: string): Message[];
+  /** One thread's replies, oldest first. The parent stays in the room. */
+  threadMessages(roomId: string, parentId: string): Message[];
   watch(roomId: string, listener: (state: RoomState) => void): () => void;
 
   /** Load from the local store, then catch up in the background. */
@@ -72,11 +81,29 @@ export interface ConversationCore {
   /** Fetch and decrypt one. Cached by blob id. */
   openAttachment(ref: BlobRef): Promise<Uint8Array>;
 
-  typing(roomId: string): TypingPerson[];
-  watchTyping(roomId: string, listener: (who: TypingPerson[]) => void): () => void;
-  /** Safe to call per keystroke; the throttle is inside. */
-  setTyping(roomId: string, face?: FaceRef): Promise<void>;
-  stopTyping(roomId: string): Promise<void>;
+  /**
+   * Threads in a room, newest activity first.
+   *
+   * Derived from the messages rather than stored beside them, so a reply that
+   * arrives or is redacted updates the summary by existing or not existing.
+   * `joined` is what a "your threads" list filters on — every branch anybody
+   * ever started is a list nobody reads.
+   */
+  threads(roomId: string): ThreadSummary[];
+  /** Give a thread a name. Anyone in the room may; last writer wins. */
+  nameThread(roomId: string, parentId: string, name: string): Promise<void>;
+
+  /**
+   * Who is typing. `thread` narrows it to one branch.
+   *
+   * A room and each of its threads are separate places: somebody typing in a
+   * branch is not typing in the room.
+   */
+  typing(roomId: string, thread?: string): TypingPerson[];
+  watchTyping(roomId: string, listener: (who: TypingPerson[]) => void, thread?: string): () => void;
+  /** Safe to call per keystroke; the throttle is inside, and it is per place. */
+  setTyping(roomId: string, options?: { face?: FaceRef; thread?: string }): Promise<void>;
+  stopTyping(roomId: string, thread?: string): Promise<void>;
 
   unread(roomId: string): number;
   markRead(roomId: string, upTo?: string): Promise<void>;

@@ -44,6 +44,12 @@ export {
   type RoomState,
 } from './rooms/state.js';
 export {
+  type ThreadSummary,
+  threadLabel,
+  threadOf,
+  threadsIn,
+} from './rooms/threads.js';
+export {
   type Hit,
   isEmptyQuery,
   parseQuery,

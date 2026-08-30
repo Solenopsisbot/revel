@@ -429,6 +429,7 @@ export class Client {
 
     // After the engines it wraps, because it holds them rather than making them.
     client.core = new LiveCore({
+      account: client.account,
       rooms: client.rooms,
       groups: client.groups,
       crypto: client.crypto,

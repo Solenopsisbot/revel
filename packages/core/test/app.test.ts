@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { RevelCore } from '../src/index.js';
+import { type RevelCore, type ThreadSummary, threadLabel } from '../src/index.js';
 import { type Client, World, wasmBuilt } from './harness.js';
 
 const scenarios = wasmBuilt ? describe : describe.skip;
@@ -296,6 +296,196 @@ scenarios('the identity surface', () => {
     const profile = await alice.core.identity.updateProfile({ displayName: 'Viola' });
     expect(profile.displayName).toBe('Viola');
     expect(alice.core.identity.account()).toMatchObject({ displayName: 'Viola' });
+    await world.close();
+  });
+});
+
+scenarios('threads', () => {
+  it('branches off a message without leaving the room', async () => {
+    // `docs/16`: "a branch inside a room. **Not a room.**" A reply into a
+    // thread is an ordinary message that points at a parent, which is why it
+    // needs no membership, no history of its own and no permission model.
+    const { world, alice, bob, room } = await pair();
+    await alice.core.conversation.send(room, 'shall we move this to a thread');
+    await world.settle();
+
+    const parent = alice.core.conversation.timeline(room)[0]?.id as string;
+    await bob.core.conversation.send(room, 'yes', { thread: parent });
+    await world.settle();
+
+    const [thread] = alice.core.conversation.threads(room);
+    expect(thread?.parent).toBe(parent);
+    expect(thread?.count).toBe(1);
+    expect(thread?.participants).toEqual([bob.account]);
+    await world.close();
+  });
+
+  it('keeps replies out of the room timeline', async () => {
+    const { world, alice, bob, room } = await pair();
+    await alice.core.conversation.send(room, 'parent');
+    await world.settle();
+    const parent = alice.core.conversation.timeline(room)[0]?.id as string;
+
+    await bob.core.conversation.send(room, 'in the branch', { thread: parent });
+    await world.settle();
+
+    // The reply exists and is not in the room's own timeline: it is in the
+    // branch. The room shows that a branch happened, not what is in it.
+    expect(alice.core.conversation.timeline(room).map((m) => m.body)).toEqual(['parent']);
+    expect(alice.core.conversation.room(room).messages).toHaveLength(2);
+    await world.close();
+  });
+
+  it('says which threads you are actually in', async () => {
+    // What a "your threads" list filters on. Every branch anybody ever started
+    // is a list nobody reads.
+    const { world, alice, bob, room } = await pair();
+    await alice.core.conversation.send(room, 'one');
+    await alice.core.conversation.send(room, 'two');
+    await world.settle();
+
+    const [a, b] = alice.core.conversation.timeline(room);
+    await bob.core.conversation.send(room, 'only bob', { thread: a?.id as string });
+    await alice.core.conversation.send(room, 'alice too', { thread: b?.id as string });
+    await world.settle();
+
+    const mine = alice.core.conversation.threads(room).filter((t) => t.joined);
+    expect(mine.map((t) => t.parent)).toEqual([b?.id]);
+    await world.close();
+  });
+
+  it('can be named, and the name reaches everybody', async () => {
+    const { world, alice, bob, room } = await pair();
+    await alice.core.conversation.send(room, 'parent');
+    await world.settle();
+    const parent = alice.core.conversation.timeline(room)[0]?.id as string;
+    await bob.core.conversation.send(room, 'reply', { thread: parent });
+    await world.settle();
+
+    await alice.core.conversation.nameThread(room, parent, 'the train thing');
+    await world.settle();
+
+    expect(bob.core.conversation.threads(room)[0]?.name).toBe('the train thing');
+    await world.close();
+  });
+
+  it('does not let old history rename a thread', async () => {
+    // Last writer wins by event id, like `room.name` — paging far enough back
+    // must not rename a thread to whatever it was called a month ago.
+    const { world, alice, bob, room } = await pair();
+    await alice.core.conversation.send(room, 'parent');
+    await world.settle();
+    const parent = alice.core.conversation.timeline(room)[0]?.id as string;
+    await bob.core.conversation.send(room, 'reply', { thread: parent });
+    await world.settle();
+
+    await alice.core.conversation.nameThread(room, parent, 'first name');
+    await world.settle();
+    await alice.core.conversation.nameThread(room, parent, 'second name');
+    await world.settle();
+
+    expect(alice.core.conversation.threads(room)[0]?.name).toBe('second name');
+    await world.close();
+  });
+
+  it('has a name to show even when nobody named it', async () => {
+    // The parent's first line, not a generic "Thread" — six identical labels is
+    // a list you have to click through one at a time, which is the failure a
+    // name is supposed to fix.
+    const { world, alice, bob, room } = await pair();
+    await alice.core.conversation.send(room, 'the coffee machine is broken again');
+    await world.settle();
+    const parent = alice.core.conversation.timeline(room)[0];
+    await bob.core.conversation.send(room, 'again?!', { thread: parent?.id as string });
+    await world.settle();
+
+    const [summary] = alice.core.conversation.threads(room);
+    expect(threadLabel(summary as ThreadSummary, parent)).toBe(
+      'the coffee machine is broken again',
+    );
+    await world.close();
+  });
+
+  it('sorts by liveliness, not by when the branch started', async () => {
+    const { world, alice, bob, room } = await pair();
+    await alice.core.conversation.send(room, 'older parent');
+    await alice.core.conversation.send(room, 'newer parent');
+    await world.settle();
+    const [older, newer] = alice.core.conversation.timeline(room);
+
+    await bob.core.conversation.send(room, 'x', { thread: newer?.id as string });
+    await world.settle();
+    await bob.core.conversation.send(room, 'y', { thread: older?.id as string });
+    await world.settle();
+
+    expect(alice.core.conversation.threads(room)[0]?.parent).toBe(older?.id);
+    await world.close();
+  });
+});
+
+scenarios('typing, per place', () => {
+  it('does not show a thread‘s typing in the room', async () => {
+    // A thread is a branch inside a room, and that is exactly wrong for a
+    // typing indicator: showing it in the room is how a busy room ends up
+    // permanently claiming three people are about to say something in it.
+    const { world, alice, bob, room } = await pair();
+    await alice.core.conversation.send(room, 'parent');
+    await world.settle();
+    const parent = alice.core.conversation.timeline(room)[0]?.id as string;
+
+    await bob.core.conversation.setTyping(room, { thread: parent });
+    await world.settle();
+
+    expect(alice.core.conversation.typing(room)).toEqual([]);
+    expect(alice.core.conversation.typing(room, parent)).toHaveLength(1);
+    await world.close();
+  });
+
+  it('does not show the room‘s typing in a thread', async () => {
+    const { world, alice, bob, room } = await pair();
+    await alice.core.conversation.send(room, 'parent');
+    await world.settle();
+    const parent = alice.core.conversation.timeline(room)[0]?.id as string;
+
+    await bob.core.conversation.setTyping(room);
+    await world.settle();
+
+    expect(alice.core.conversation.typing(room)).toHaveLength(1);
+    expect(alice.core.conversation.typing(room, parent)).toEqual([]);
+    await world.close();
+  });
+
+  it('throttles each place separately, so one does not silence the other', async () => {
+    const { world, alice, bob, room } = await pair();
+    await alice.core.conversation.send(room, 'parent');
+    await world.settle();
+    const parent = alice.core.conversation.timeline(room)[0]?.id as string;
+
+    const before = world.eventPosts;
+    await bob.core.conversation.setTyping(room);
+    await bob.core.conversation.setTyping(room, { thread: parent });
+    await world.settle();
+
+    expect(world.eventPosts - before).toBe(2);
+    await world.close();
+  });
+
+  it('stops in the place a reply was sent, not in the room', async () => {
+    const { world, alice, bob, room } = await pair();
+    await alice.core.conversation.send(room, 'parent');
+    await world.settle();
+    const parent = alice.core.conversation.timeline(room)[0]?.id as string;
+
+    await bob.core.conversation.setTyping(room);
+    await bob.core.conversation.setTyping(room, { thread: parent });
+    await world.settle();
+
+    await bob.core.conversation.send(room, 'done', { thread: parent });
+    await world.settle();
+
+    // The branch is quiet; the room still knows bob was typing in it.
+    expect(alice.core.conversation.typing(room, parent)).toEqual([]);
+    expect(alice.core.conversation.typing(room)).toHaveLength(1);
     await world.close();
   });
 });
