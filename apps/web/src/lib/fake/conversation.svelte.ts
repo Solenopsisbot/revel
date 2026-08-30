@@ -18,6 +18,7 @@ import {
   allOf,
   findIn,
   repliesOf,
+  roomStateOf,
   type ThreadSummary,
   threadLabelOf,
   threadsOf,
@@ -42,6 +43,17 @@ export const conversation = {
 
   find(messageId: string, roomId: string = core.currentRoomId): UiMessage | undefined {
     return findIn(core.messages[roomId] ?? [], core.faces, messageId);
+  },
+
+  /**
+   * A room in the shape `packages/core` reduces to.
+   *
+   * What `search` takes: rooms are passed in rather than looked up because
+   * *what is searchable* is a policy question (`docs/03`), and the matcher
+   * should not be the layer deciding it.
+   */
+  roomState(roomId: string = core.currentRoomId) {
+    return roomStateOf(roomId, core.messages[roomId] ?? [], core.faces, core.threadNames);
   },
 
   /** Threads in a room, newest activity first. */

@@ -16,6 +16,7 @@
  * the one behaviour that would make search worse than useless.
  */
 
+import { parseQuery as coreParseQuery, search as coreSearch, isEmptyQuery } from '@revel/core';
 import type { UiMessage as Message } from '../fake/conversation.svelte.js';
 import { conversation } from '../fake/conversation.svelte.js';
 import { core } from '../fake/core.svelte.js';
@@ -65,31 +66,6 @@ export interface Hit {
 /** Enough results to scroll; past this nobody is reading, they are refining. */
 const MAX_HITS = 120;
 /** Characters of body either side of the first match. */
-const CONTEXT = 90;
-
-function parse(raw: string): Parsed {
-  const terms: string[] = [];
-  let from: string | undefined;
-  let has: Parsed['has'];
-  let inThread: boolean | undefined;
-
-  for (const tok of raw.trim().split(/\s+/)) {
-    if (!tok) continue;
-    const m = /^(from|has|in):(.+)$/i.exec(tok);
-    if (!m) {
-      terms.push(tok.toLowerCase());
-      continue;
-    }
-    const [, key, value] = m;
-    const k = key!.toLowerCase();
-    if (k === 'from') from = value!.toLowerCase();
-    else if (k === 'in' && value!.toLowerCase() === 'thread') inThread = true;
-    else if (k === 'has' && (value === 'file' || value === 'image' || value === 'link'))
-      has = value;
-  }
-
-  return { terms, phrase: terms.join(' '), from, has, inThread };
-}
 
 /** Every index of `needle` in `hay`, both already lower-cased. */
 function occurrences(hay: string, needle: string): number[] {
@@ -235,131 +211,38 @@ class Search {
    * what it returns is what the UI was designed against.
    */
   readonly results = $derived.by<Hit[]>(() => {
-    const q = parse(this.query);
-    // A bare `from:` or `has:` with no words is a legitimate query — "every
-    // file Rae has sent me" is a real thing to want.
-    if (!q.terms.length && !q.from && !q.has && !q.inThread) return [];
+    // The matching is `packages/core`'s. This method decides *what is
+    // searchable* — scope, window, which rooms — because `docs/03` makes that a
+    // policy question and the core's `search` takes rooms as an argument for
+    // exactly that reason. It does not decide what a match is, or how a match
+    // is scored, or where an excerpt is cut. There were two implementations of
+    // those and one of them was going to drift.
+    const q = coreParseQuery(this.query);
+    if (isEmptyQuery(q)) return [];
 
-    const cutoff = Date.now() - WINDOW_MS[this.window];
-    const hits: Hit[] = [];
+    const scoped = this.roomsIn(this.scope);
+    const states = scoped.map(({ roomId }) => conversation.roomState(roomId));
 
-    for (const { roomId, spaceId } of this.roomsIn(this.scope)) {
-      // Through the seam, so search sees the same shape the timeline does.
-      const list = conversation.all(roomId);
-      if (!list.length) continue;
-      const spaceName = spaceId
-        ? (core.spaces.find((s) => s.id === spaceId)?.name ?? '')
-        : 'Direct messages';
-      const where = this.label(roomId, spaceId);
-
-      for (const m of list) {
-        if (m.redacted) continue; // the text is genuinely gone
-        if (m.at < cutoff) continue;
-        if (q.from) {
-          const f = m.face;
-          if (!f || !f.name.toLowerCase().startsWith(q.from)) continue;
-        }
-        if (q.has === 'file' && !m.attachments?.length) continue;
-        if (
-          q.has === 'image' &&
-          !m.attachments?.some((a) => a.kind === 'image' || a.kind === 'gif')
-        )
-          continue;
-        if (q.has === 'link' && !m.link) continue;
-        if (q.inThread && !m.thread) continue;
-
-        const body = m.text;
-        const lower = body.toLowerCase();
-
-        let score = 0;
-        let first = -1;
-        const marks: [number, number][] = [];
-
-        if (q.terms.length) {
-          // Every term has to appear somewhere, or it isn't a match. Partial
-          // matching would drown a two-word query in noise.
-          let all = true;
-          for (const term of q.terms) {
-            const at = occurrences(lower, term);
-            if (!at.length) {
-              all = false;
-              break;
-            }
-            for (const i of at) marks.push([i, i + term.length]);
-            score += 3 + at.length - 1 + (at.some((i) => atWordStart(lower, i)) ? 2 : 0);
-            if (first === -1 || at[0]! < first) first = at[0]!;
-          }
-          if (!all) continue;
-          // The whole query, in order, in one place: much more likely to be
-          // what was meant than the same words scattered.
-          if (q.terms.length > 1 && lower.includes(q.phrase)) score += 10;
-        } else {
-          score = 1; // a pure filter query; recency decides the order
-        }
-
-        // A gentle recency tilt, not a sort key. What you searched for beats
-        // when it was said, but a fresher one of two equal matches wins.
-        const ageDays = (Date.now() - m.at) / 86_400_000;
-        score += Math.max(0, 2 - ageDays / 10);
-
-        const { excerpt, marks: shifted } = this.excerpt(body, marks, Math.max(0, first));
-        hits.push({
-          message: m,
-          roomId,
-          // A thread reply found on its own is context-free — "#design" is
-          // true but not where you would look for it.
-          where: m.thread ? `${where} · thread` : where,
-          spaceId,
-          spaceName,
-          score,
-          excerpt,
-          marks: shifted,
-        });
-      }
-    }
-
-    hits.sort((a, b) => b.score - a.score || b.message.at - a.message.at);
-    return hits.slice(0, MAX_HITS);
+    return coreSearch(states, q, { window: this.window, limit: 200 }).map((hit): Hit => {
+      const found = scoped.find((r) => r.roomId === hit.roomId);
+      const spaceId = found?.spaceId;
+      return {
+        message: hit.message as unknown as Hit['message'],
+        roomId: hit.roomId,
+        where: this.label(hit.roomId, spaceId),
+        ...(spaceId ? { spaceId } : {}),
+        spaceName: spaceId
+          ? (core.spaces.find((s) => s.id === spaceId)?.name ?? '')
+          : 'Direct messages',
+        score: hit.score,
+        excerpt: hit.excerpt,
+        marks: hit.marks,
+      };
+    });
   });
 
   /** True when there is a query but nothing came back. */
   readonly empty = $derived(this.query.trim().length > 0 && this.results.length === 0);
-
-  /**
-   * A window of the body around the first match, with the mark ranges moved to
-   * match. Long messages are common here and a result row that shows the first
-   * 90 characters of a paragraph whose match is at character 400 is a result
-   * row that looks wrong.
-   */
-  private excerpt(body: string, marks: [number, number][], first: number) {
-    if (body.length <= CONTEXT * 2) {
-      return { excerpt: body, marks: this.merge(marks) };
-    }
-    let start = Math.max(0, first - CONTEXT);
-    // Snap to a word boundary so the excerpt doesn't begin mid-word.
-    while (start > 0 && /[a-z0-9]/i.test(body[start - 1]!)) start--;
-    const end = Math.min(body.length, start + CONTEXT * 2);
-
-    const slice = (start ? '…' : '') + body.slice(start, end) + (end < body.length ? '…' : '');
-    const shift = start - (start ? 1 : 0);
-    const moved = marks
-      .map(([a, b]) => [a - shift, b - shift] as [number, number])
-      .filter(([a, b]) => a >= 0 && b <= slice.length);
-    return { excerpt: slice, marks: this.merge(moved) };
-  }
-
-  /** Sorted, non-overlapping — two terms can land on the same characters. */
-  private merge(marks: [number, number][]): [number, number][] {
-    if (marks.length < 2) return marks;
-    const sorted = [...marks].sort((a, b) => a[0] - b[0]);
-    const out: [number, number][] = [sorted[0]!];
-    for (const [a, b] of sorted.slice(1)) {
-      const last = out[out.length - 1]!;
-      if (a <= last[1]) last[1] = Math.max(last[1], b);
-      else out.push([a, b]);
-    }
-    return out;
-  }
 
   // ── surface ───────────────────────────────────────────────────────────────
 

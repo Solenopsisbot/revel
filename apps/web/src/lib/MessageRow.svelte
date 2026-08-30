@@ -16,6 +16,7 @@ import EmojiPicker from './EmojiPicker.svelte';
 // fixtures exercise that the protocol has not grown yet. The fixtures are
 // translated into it at the seam (`fake/conversation.svelte.ts`), so this
 // component does not change again when the source does.
+import { connection } from './fake/connection.svelte.js';
 import { conversation, type UiMessage as Message } from './fake/conversation.svelte.js';
 import { core, MY_ACCOUNT } from './fake/core.svelte.js';
 import type { Face } from './fake/data.js';
@@ -478,7 +479,7 @@ function who(by: string[], key: string) {
       </div>
     {/if}
 
-    {#if m.pending && core.connection !== 'online'}
+    {#if m.pending && !connection.quiet}
       <!-- Only when there is something to say. A message that is pending for
            420ms on a good connection needs no label; one sitting in an outbox
            does, or "it didn't send" is the obvious conclusion. -->

@@ -1387,3 +1387,39 @@ section could reasonably conclude that faces are unlinkable to everyone, and
 that is the kind of misunderstanding that gets somebody outed. Recorded here
 rather than edited into `docs/11` because it changes what that document
 promises, which is Viola's call and not a footnote.
+
+---
+
+## 24. C4 and C5: connection, and one matcher instead of two
+
+**C4 — connection.** The fake reported `online | connecting | offline` from
+`navigator.onLine`; `ConnectionCore` reports `connecting | open | closed` and is
+explicit that it means **the socket, not the network**. Those are genuinely
+different questions: `navigator.onLine` is true on a captive-portal wifi that
+will not carry a byte, and the thing that decides whether messages arrive is
+whether the socket is open. The seam translates, and when `LiveCore` takes over
+the status comes from `WebSocketStream.onStatus`, which knows the real answer.
+
+Two things fixed on the way past: `setConnection` called `flushPending` twice,
+and `flushPending` is now honest in its comment about being a fixture standing
+in for an outbox — the real core re-sends nothing on reconnect, because flipping
+`pending` to delivered claims a success the server never gave (`docs/32`).
+
+**C5 — search.** The app had its own matcher: its own query parser, its own
+scoring, its own excerpt window, its own mark merging. `packages/core` had
+another. **Two implementations of the same thing, and one of them was going to
+drift.** The app now keeps what is genuinely its own — scope, the time window,
+the index-progress state — and hands the matching to the core, which is exactly
+the split `docs/03` implies by making *what is searchable* a policy question and
+having `search` take its rooms as an argument.
+
+`search.svelte.ts` lost 110 lines.
+
+### A divergence the swap exposed
+
+`packages/core`'s `has:image` filter reads an attachment's **MIME type**,
+because that is what a real `BlobRef` carries. The fixtures describe an
+attachment by `kind`, because that is what a renderer needs. Left alone, the
+app's search and the core's would have disagreed about what an image is — the
+kind of difference that shows up as "search says there are no images in this
+room" and takes an afternoon. The seam derives one from the other, with a test.

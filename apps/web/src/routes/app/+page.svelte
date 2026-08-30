@@ -9,6 +9,7 @@ import CommandBar from '$lib/command/CommandBar.svelte';
 import { contextMenu } from '$lib/contextmenu.svelte.js';
 import { applyUrl, syncUrl } from '$lib/deeplink.js';
 import { drawers } from '$lib/drawers.svelte.js';
+import { connection } from '$lib/fake/connection.svelte.js';
 import { conversation } from '$lib/fake/conversation.svelte.js';
 import { core, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
 import Icon from '$lib/Icon.svelte';
@@ -651,7 +652,7 @@ function toggleMembers() {
       </span>
       <h1>{core.room.name}</h1>
       <div class="spacer"></div>
-      {#if core.connection !== 'online'}
+      {#if !connection.quiet}
         <!-- One dot, and only when there is something to say. `docs/24` is
              specific about the shape: not a banner, not a modal, not a toast
              per reconnect — a phone's connection comes and goes all day, and

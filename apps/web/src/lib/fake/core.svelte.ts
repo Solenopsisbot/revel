@@ -144,6 +144,15 @@ class Core {
    * §2 — so a resend can never become a duplicate. That property is what
    * lets an outbox exist at all.
    */
+  /**
+   * Coming back online, in a mock.
+   *
+   * The real core does not do this: `RoomSync` re-sends nothing on reconnect
+   * and a message that failed stays failed until somebody retries it, because
+   * flipping `pending` to delivered would claim a success the server never
+   * gave (`docs/32`: an optimistic message must not animate as though it
+   * succeeded). This is a fixture standing in for a real outbox.
+   */
   flushPending() {
     for (const list of Object.values(this.messages)) {
       for (const m of list) if (m.pending) m.pending = false;

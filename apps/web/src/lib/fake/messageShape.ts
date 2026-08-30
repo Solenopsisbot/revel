@@ -30,7 +30,7 @@
  * `conversation.svelte.ts` is the thin thing that binds these to `core`.
  */
 
-import type { Message } from '@revel/core';
+import type { Message, RoomState } from '@revel/core';
 import type { FaceRef } from '@revel/protocol';
 import type { Face, Message as FakeMessage } from './data.js';
 
@@ -109,7 +109,18 @@ export function asCoreMessage(m: FakeMessage, faces: Record<string, Face>): UiMe
       : {}),
     ...(m.replyTo ? { replyTo: m.replyTo } : {}),
     ...(m.thread ? { thread: m.thread } : {}),
-    ...(m.attachments ? { attachments: m.attachments } : {}),
+    // Given a MIME type, because that is what a real `BlobRef` carries and
+    // what `packages/core`'s `has:image` filter reads. The fixtures carry a
+    // `kind` instead, and translating here is the difference between the app's
+    // search and the core's agreeing about what an image is.
+    ...(m.attachments
+      ? {
+          attachments: m.attachments.map((a) => ({
+            ...a,
+            mime: mimeOf(a.kind, a.name),
+          })),
+        }
+      : {}),
     // `mentions` and `expression` exist on the real `Message` and not on the
     // fixture one. Left out rather than faked: an empty field the UI could
     // start relying on is worse than an absent one it has to handle.
@@ -224,4 +235,53 @@ export function threadLabelOf(summary: ThreadSummary, parent?: FakeMessage): str
   const line = (typeof parent?.body === 'string' ? parent.body : '').split('\n')[0]?.trim() ?? '';
   if (!line) return 'Thread';
   return line.length > 44 ? `${line.slice(0, 41)}…` : line;
+}
+
+/**
+ * A MIME type for a fixture attachment.
+ *
+ * The fixtures describe an attachment by `kind` — the thing a renderer needs —
+ * and a real `BlobRef` carries a MIME type, which is what a filter needs. One
+ * is derivable from the other; the reverse is not, which is why the protocol
+ * carries the type.
+ */
+function mimeOf(kind: string, name: string): string {
+  if (kind === 'image') return 'image/png';
+  if (kind === 'gif') return 'image/gif';
+  if (kind === 'video') return 'video/mp4';
+  if (kind === 'audio') return 'audio/mpeg';
+  const ext = name.split('.').pop()?.toLowerCase();
+  return ext === 'pdf' ? 'application/pdf' : 'application/octet-stream';
+}
+
+/**
+ * A room, in the shape `packages/core` reduces to.
+ *
+ * Enough of a `RoomState` for the parts that read one — search, above all,
+ * which takes rooms as an argument precisely because *what is searchable* is a
+ * policy question (`docs/03`) and not the matcher's business.
+ *
+ * The fields that are genuinely absent stay empty rather than being invented:
+ * a fixture has no receipts and no applied-event set, and filling them with
+ * plausible values would be inviting something to depend on them.
+ */
+export function roomStateOf(
+  roomId: string,
+  messages: FakeMessage[],
+  faces: Record<string, Face>,
+  names: Record<string, string>,
+): RoomState {
+  return {
+    roomId,
+    messages: allOf(messages, faces) as unknown as RoomState['messages'],
+    pinned: messages.filter((m) => m.pinned).map((m) => m.id),
+    receipts: new Map(),
+    threadNames: new Map(Object.entries(names)),
+    threadNamesAt: new Map(),
+    applied: new Set(),
+    deferred: new Map(),
+    faces: new Map(),
+    facesAt: new Map(),
+    nameAt: undefined,
+  } as unknown as RoomState;
 }

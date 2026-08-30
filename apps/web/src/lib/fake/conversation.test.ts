@@ -118,7 +118,14 @@ describe('translating a fixture message', () => {
     if (reply) expect(asCoreMessage(reply, faces).replyTo).toBe(reply.replyTo);
     if (thread) expect(asCoreMessage(thread, faces).thread).toBe(thread.thread);
     if (pinned) expect(asCoreMessage(pinned, faces).pinned).toBe(true);
-    if (withFile) expect(asCoreMessage(withFile, faces).attachments).toEqual(withFile.attachments);
+    if (withFile) {
+      const mapped = asCoreMessage(withFile, faces).attachments ?? [];
+      expect(mapped).toHaveLength(withFile.attachments?.length ?? 0);
+      // And each one gained a MIME type. `packages/core`'s `has:image` filter
+      // reads `mime`; the fixtures carry a `kind`. Without the translation the
+      // app's search and the core's would disagree about what an image is.
+      expect(mapped.every((a: { mime?: string }) => !!a.mime)).toBe(true);
+    }
   });
 });
 
