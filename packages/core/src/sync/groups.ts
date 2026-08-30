@@ -86,6 +86,14 @@ export interface GroupTransport {
     options?: { since?: number; limit?: number },
   ): Promise<HandshakeRecord[]>;
 
+  /**
+   * Publish a tree on its own.
+   *
+   * Not the normal path — a commit carries its own tree in `HandshakeInput`,
+   * because publishing separately races the Welcome. This is the repair: a
+   * group whose tree is missing or wrong at the current epoch, which any member
+   * can fix because the tree is public and every member can check it.
+   */
   putTree(groupId: string, tree: RatchetTree): Promise<void>;
   getTree(groupId: string): Promise<RatchetTree | null>;
 
@@ -357,7 +365,16 @@ export class GroupSync {
     const joined: string[] = [];
     for (const welcome of await this.#transport.welcomes()) {
       try {
-        joined.push(await this.join(fromBase64(welcome.bytes)));
+        // The tree comes from the server beside the Welcome, never inside it
+        // (`docs/03` §5). The inviter published both in one request, so if the
+        // Welcome is here the tree is too.
+        const tree = await this.#transport.getTree(welcome.group);
+        // No tree, no join — and left unacked, so it is offered again. The
+        // inviter published both in one request, so this means something is
+        // genuinely wrong rather than that we were early; retrying is still the
+        // right answer, because the repair is somebody re-publishing the tree.
+        if (!tree) continue;
+        joined.push(await this.join(fromBase64(welcome.bytes), fromBase64(tree.tree)));
       } catch {
         // Left unacked on purpose. It will be re-offered, and if it is genuinely
         // stale the inviter's next commit replaces it.
@@ -367,14 +384,14 @@ export class GroupSync {
   }
 
   /**
-   * Join from a Welcome, and acknowledge it once the state is durable.
+   * Join from a Welcome and its ratchet tree, acknowledging once durable.
    *
    * The order is the whole point: acknowledging first and crashing second would
    * lose the only copy of an invitation, and the device would be a member of a
    * group it cannot open — worse than never having been added.
    */
-  async join(welcome: Uint8Array): Promise<string> {
-    const state = await this.#crypto.joinGroup(welcome);
+  async join(welcome: Uint8Array, tree: Uint8Array): Promise<string> {
+    const state = await this.#crypto.joinGroup(welcome, tree);
     await this.#persist();
 
     // Joining consumed a one-time key package. The shelf just got shorter.
@@ -494,6 +511,11 @@ export class GroupSync {
           kind: 'commit',
           epoch,
           bytes: toBase64(output.commit),
+          // The tree goes up with the commit that produced it, never after.
+          // The server publishes the Welcome the instant it accepts this, and a
+          // joiner that beat a second request would fetch the previous epoch's
+          // tree and fail to join for reasons nobody could reproduce.
+          tree: toBase64(output.tree),
           ...(output.welcome && devices.length
             ? { welcome: { bytes: toBase64(output.welcome), devices } }
             : {}),

@@ -6,6 +6,8 @@
  * never looks inside them. What is being tested is ordering, refusal and
  * routing, which is the entire job.
  */
+
+import { PendingWelcome } from '@revel/protocol';
 import { describe, expect, it } from 'vitest';
 import { SocketSession } from '../src/socket.js';
 import { b64, body, EVERYONE, harness, unb64, wire } from './helpers.js';
@@ -523,7 +525,13 @@ describe('welcomes', () => {
     const { welcomes } = (await (await h.welcomes('dev-b')).json()) as any;
     expect(welcomes).toHaveLength(1);
     expect(unb64(welcomes[0].bytes)).toBe('welcome-bob');
-    expect(welcomes[0].groupId).toBe(group);
+
+    // Checked against the schema, not against a remembered field name. The
+    // store's row calls this `groupId` and the wire calls it `group` — the
+    // route maps between them, and asserting the shape by hand is how the wrong
+    // one shipped in the first place.
+    expect(PendingWelcome.safeParse(welcomes[0]).success).toBe(true);
+    expect(welcomes[0].group).toBe(group);
   });
 
   it('is pushed straight at a device that is online', async () => {
@@ -675,6 +683,27 @@ describe('the ratchet tree, out of band', () => {
     expect(res.status).toBe(200);
     const tree = (await res.json()) as any;
     expect(tree.epoch).toBe(1);
+    expect(unb64(tree.tree)).toBe('tree@1');
+  });
+
+  it('is published by the commit that produced it, in the same request', async () => {
+    // Separately would be a race. The server publishes the Welcome the instant
+    // it accepts a commit, so a joiner that got there between two requests
+    // would fetch the previous epoch's tree and fail to join.
+    const { h, group: g } = await group();
+    await h.handshake('dev-a', g, commit(0, { tree: b64('tree@1') }));
+
+    const tree = (await (await h.getTree('dev-a', g)).json()) as any;
+    expect(tree.epoch).toBe(1);
+    expect(unb64(tree.tree)).toBe('tree@1');
+  });
+
+  it('is not written when the commit is refused', async () => {
+    const { h, group: g } = await group();
+    await h.handshake('dev-a', g, commit(0, { tree: b64('tree@1') }));
+    await h.handshake('dev-a', g, commit(0, { tree: b64('never') }));
+
+    const tree = (await (await h.getTree('dev-a', g)).json()) as any;
     expect(unb64(tree.tree)).toBe('tree@1');
   });
 

@@ -50,8 +50,8 @@ export class LocalCryptoEngine implements CryptoEngine {
     return this.#open().createGroup(groupId);
   }
 
-  async joinGroup(welcome: Uint8Array): Promise<GroupState> {
-    return this.#open().joinGroup(welcome);
+  async joinGroup(welcome: Uint8Array, tree: Uint8Array): Promise<GroupState> {
+    return this.#open().joinGroup(welcome, tree);
   }
 
   async groups(): Promise<string[]> {

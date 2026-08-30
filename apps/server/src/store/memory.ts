@@ -239,6 +239,10 @@ export class MemoryStore implements Store {
     group.epoch += 1;
     group.pendingProposals = 0;
 
+    // Before the Welcome rows below, so the tree is never the missing half of
+    // an invitation somebody can already see.
+    if (input.tree) await this.putTree(group.id, group.epoch, input.tree);
+
     for (const member of input.added ?? []) {
       this.groupMembers.set(`${group.id}:${member.devicePub}`, {
         ...member,

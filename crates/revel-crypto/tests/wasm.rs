@@ -158,7 +158,7 @@ fn the_binding_carries_a_full_exchange() {
     assert_eq!(group.epoch(), 1);
 
     let welcome = out.welcome().expect("adding somebody produces a Welcome");
-    let mut theirs = phone.join_group(&welcome).ok().unwrap();
+    let mut theirs = phone.join_group(&welcome, &out.tree()).ok().unwrap();
     assert_eq!(theirs.id(), b"room-general");
 
     let sealed = group.encrypt(b"the buttons need to feel pressable").ok().unwrap();
@@ -280,7 +280,7 @@ fn a_group_survives_a_reload() {
     group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
     let out = group.commit().ok().unwrap();
     group.apply_pending().ok().unwrap();
-    let mut theirs = phone.join_group(&out.welcome().unwrap()).ok().unwrap();
+    let mut theirs = phone.join_group(&out.welcome().unwrap(), &out.tree()).ok().unwrap();
 
     // A message sent before the reload, which must still be readable after.
     let sealed_message = group.encrypt(b"sent before the reload").ok().unwrap();
@@ -407,7 +407,7 @@ fn restoring_behind_the_last_send_is_refused_by_the_far_side() {
     group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
     let out = group.commit().ok().unwrap();
     group.apply_pending().ok().unwrap();
-    let mut theirs = phone.join_group(&out.welcome().unwrap()).ok().unwrap();
+    let mut theirs = phone.join_group(&out.welcome().unwrap(), &out.tree()).ok().unwrap();
 
     // Saved here, deliberately too early.
     let stale = laptop.export_group(b"g-rewind", &account).ok().unwrap();
@@ -479,7 +479,7 @@ fn a_pending_invite_survives_a_reload() {
         1
     );
 
-    let mut ours = laptop.join_group(&out.welcome().unwrap()).ok().unwrap();
+    let mut ours = laptop.join_group(&out.welcome().unwrap(), &out.tree()).ok().unwrap();
     assert_eq!(ours.id(), b"g-invited");
 
     let sealed = group.encrypt(b"welcome in").ok().unwrap();
@@ -519,7 +519,86 @@ fn a_reload_without_key_packages_cannot_open_the_welcome() {
     let account = Account::from_secret(&account_secret).ok().unwrap();
     let laptop = Device::restore(&account, "laptop", &device_secret).ok().unwrap();
     assert!(
-        laptop.join_group(&out.welcome().unwrap()).is_err(),
+        laptop.join_group(&out.welcome().unwrap(), &out.tree()).is_err(),
         "a Welcome opened without the key package secret it was sealed to"
+    );
+}
+
+/// The ratchet tree travels out of band, and the Welcome is small because of it.
+///
+/// `docs/03` §5 rejects the `ratchet_tree` extension and `docs/31` §2 measured
+/// what it costs: with the tree inlined, one join at 2,000 members is 627 KiB
+/// of Welcome. Off, the Welcome carries the joiner's secrets and nothing else.
+#[wasm_bindgen_test]
+fn the_welcome_does_not_carry_the_tree() {
+    let account = Account::new();
+    let laptop = Device::new(&account, "laptop").ok().unwrap();
+
+    let mut group = laptop.create_group(b"g-wide").ok().unwrap();
+    let mut phones = Vec::new();
+    for i in 0..8 {
+        let d = Device::new(&account, &format!("phone-{i}")).ok().unwrap();
+        group.stage_add(&d.key_package().ok().unwrap()).ok().unwrap();
+        phones.push(d);
+    }
+    let out = group.commit().ok().unwrap();
+    group.apply_pending().ok().unwrap();
+
+    let welcome = out.welcome().unwrap();
+    let tree = out.tree();
+
+    // The tree is the bulky part and it grows with the group; the Welcome grows
+    // only with the number of people being added. Asserting the relationship
+    // rather than an absolute size, because the absolute one is a benchmark and
+    // this is a test.
+    assert!(!tree.is_empty(), "no tree came out of the commit");
+    assert!(
+        welcome.len() < tree.len(),
+        "welcome {} bytes vs tree {} bytes — is the extension back on?",
+        welcome.len(),
+        tree.len()
+    );
+
+    // And it is genuinely required: the Welcome alone is not enough.
+    assert!(
+        phones[0].join_group(&welcome, &[]).is_err(),
+        "joined with no tree at all"
+    );
+    let mut joined = phones[0].join_group(&welcome, &tree).ok().unwrap();
+    assert_eq!(joined.id(), b"g-wide");
+
+    let sealed = group.encrypt(b"out of band").ok().unwrap();
+    assert_eq!(joined.process(&sealed).ok().unwrap().data().unwrap(), b"out of band");
+}
+
+/// A tree from the wrong epoch is refused, not quietly accepted.
+///
+/// The failure this prevents is a joiner whose view of the roster disagrees
+/// with everyone else's — which would not show up until somebody committed and
+/// the two trees produced different secrets.
+#[wasm_bindgen_test]
+fn a_tree_from_the_wrong_epoch_is_refused() {
+    let account = Account::new();
+    let laptop = Device::new(&account, "laptop").ok().unwrap();
+    let phone = Device::new(&account, "phone").ok().unwrap();
+    let tablet = Device::new(&account, "tablet").ok().unwrap();
+
+    let mut group = laptop.create_group(b"g-epochs").ok().unwrap();
+    group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
+    let first = group.commit().ok().unwrap();
+    group.apply_pending().ok().unwrap();
+
+    group.stage_add(&tablet.key_package().ok().unwrap()).ok().unwrap();
+    let second = group.commit().ok().unwrap();
+    group.apply_pending().ok().unwrap();
+
+    // The tablet's Welcome is for epoch 2; the tree from epoch 1 does not match.
+    assert!(
+        tablet.join_group(&second.welcome().unwrap(), &first.tree()).is_err(),
+        "a stale tree was accepted"
+    );
+    assert!(
+        tablet.join_group(&second.welcome().unwrap(), &second.tree()).is_ok(),
+        "the matching tree was refused"
     );
 }

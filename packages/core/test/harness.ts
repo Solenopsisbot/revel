@@ -580,6 +580,18 @@ export class Client {
     return this.groupTransport.welcomes();
   }
 
+  /** Somebody else's queue, read through the server rather than their client. */
+  async pendingWelcomesFor(other: Client) {
+    return this.world.store.listWelcomes(other.device);
+  }
+
+  /** The public tree at the group's current epoch. */
+  async treeOf(groupId: string): Promise<string> {
+    const tree = await this.groupTransport.getTree(groupId);
+    if (!tree) throw new Error(`no tree published for ${groupId}`);
+    return tree.tree;
+  }
+
   async handshakeLog(groupId: string) {
     return this.groupTransport.fetchHandshake(groupId);
   }

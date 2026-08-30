@@ -216,6 +216,14 @@ export interface HandshakeAppend {
   bytes: string;
   /** Rowed per device, and only for devices with an unconsumed claim. */
   welcome?: { bytes: string; devices: string[] };
+  /**
+   * The public tree at the new epoch, written in the same transaction.
+   *
+   * Separately would be a race: the Welcome is readable the instant the commit
+   * is accepted, and a joiner that got there first would fetch the previous
+   * epoch's tree and fail to join.
+   */
+  tree?: string;
   added?: GroupMemberInput[];
   removed?: string[];
   at: number;

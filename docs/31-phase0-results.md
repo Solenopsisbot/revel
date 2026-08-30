@@ -611,3 +611,67 @@ keys (`docs/04` §1) — 43 characters of base64url — so it would have rejecte
 every real one the first time anything populated it, and nothing had.
 `AccountId` and `DevicePub` now live in `ids.ts` beside the snowflake, which is
 where the next person will look before typing `z.string()`.
+
+---
+
+## 9. The ratchet tree, finally out of band
+
+`docs/03` §5 rejects the `ratchet_tree` extension and §2 above measured what
+leaving it on costs. The binding had it on anyway — mls-rs's default — and the
+tree endpoints added with the handshake surface had nothing writing to them.
+Both halves are now real: `mls_rules()` turns the extension off, and a commit
+carries the tree it produced.
+
+Measured through the web binding, one join at a time:
+
+| Group size | Welcome | Commit | Tree |
+| --- | --- | --- | --- |
+| 2 | **329 B** | 569 B | 0.9 KiB |
+| 50 | **329 B** | 569 B | 15.4 KiB |
+| 200 | **329 B** | 569 B | 62.2 KiB |
+| 500 | **329 B** | 569 B | 155.2 KiB |
+
+**The Welcome and the commit are constant.** Every byte that used to grow with
+the group is now in the tree, which is fetched once per epoch and shared by
+every joiner rather than copied into each one's Welcome. At 500 members a single
+join went from ~155 KiB to 329 bytes.
+
+A batched add still grows, because a Welcome genuinely contains one member's
+secrets per person added — 5,993 bytes for 49 at once, 59,095 for 499, about
+120 bytes each. That is irreducible and it is not the tree.
+
+Binary size: **317 kB brotli, unchanged.** Turning the extension off costs
+nothing to ship.
+
+### The ordering that makes it safe
+
+Out of band means a Welcome is no longer self-contained, and the obvious
+implementation has a race in it:
+
+```
+commit → POST handshake → server stores the Welcome and pushes it
+                        → joiner fetches the tree ← still the OLD epoch's
+       → applyPending → export tree → PUT tree
+```
+
+The tree for the new epoch does not exist until the commit is applied, and the
+commit is not applied until the server accepts it — by which point the Welcome
+is already readable. A joiner who moved quickly would fetch the previous epoch's
+tree and fail to join, intermittently, for reasons nobody could reproduce.
+
+The fix is that **mls-rs hands you the tree as part of the commit output**
+(`CommitOutput.ratchet_tree`), before it is applied. So the tree goes up in the
+same request as the commit, the server writes both in one transaction, and there
+is no window. `HandshakeInput.tree` exists for that and nothing else — the
+standalone `PUT /groups/:id/tree` is now only a repair path.
+
+### And a wire-shape bug the change surfaced
+
+`GET /welcomes` returned the store's row verbatim, whose field is `groupId`,
+while `PendingWelcome` — and every other frame in the protocol — calls it
+`group`. Nothing caught it: the type checker cannot see through a JSON boundary,
+and the test asserted the field name it had watched the route produce.
+
+It only became visible when a client first had to *use* the value, to fetch the
+tree for that group. The route now maps to the protocol shape explicitly and the
+test validates against the schema instead of a remembered name.

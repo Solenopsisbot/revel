@@ -83,9 +83,9 @@ export class Session {
     return stateOf(groupId, group);
   }
 
-  joinGroup(welcome: Uint8Array): GroupState {
+  joinGroup(welcome: Uint8Array, tree: Uint8Array): GroupState {
     this.#alive();
-    const group = this.#device.joinGroup(welcome);
+    const group = this.#device.joinGroup(welcome, tree);
     const groupId = DEC.decode(group.id);
     // Re-joining a group we already hold is legitimate — a fresh Welcome after
     // losing local state, say — but the old handle has to go or it leaks.
@@ -138,8 +138,9 @@ export class Session {
   commit(groupId: string): CommitOutput {
     const out = this.#group(groupId).commit();
     const commit = out.commit;
+    const tree = out.tree;
     const welcome = out.welcome;
-    return welcome ? { commit, welcome } : { commit };
+    return welcome ? { commit, tree, welcome } : { commit, tree };
   }
 
   applyPending(groupId: string): GroupState {

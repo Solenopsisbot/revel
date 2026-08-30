@@ -54,7 +54,7 @@ describeIfBuilt('Session', () => {
     expect(out.welcome).toBeInstanceOf(Uint8Array);
     alice.applyPending('g-general');
 
-    const joined = bob.joinGroup(out.welcome as Uint8Array);
+    const joined = bob.joinGroup(out.welcome as Uint8Array, out.tree);
     expect(joined.groupId).toBe('g-general');
 
     const got = bob.process('g-general', alice.encrypt('g-general', HELLO));
@@ -201,7 +201,7 @@ describeIfBuilt('Session', () => {
     laptop.stageAdd('g-reload', phone.keyPackage());
     const out = laptop.commit('g-reload');
     laptop.applyPending('g-reload');
-    const theirs = phone.joinGroup(out.welcome as Uint8Array);
+    const theirs = phone.joinGroup(out.welcome as Uint8Array, out.tree);
 
     const before = laptop.encrypt('g-reload', HELLO);
 
@@ -272,7 +272,7 @@ describeIfBuilt('Session', () => {
       deviceLabel: 'laptop',
     });
     expect(back.importKeyPackages(stored.packages)).toBe(1);
-    expect(back.joinGroup(out.welcome as Uint8Array).groupId).toBe('g-invited');
+    expect(back.joinGroup(out.welcome as Uint8Array, out.tree).groupId).toBe('g-invited');
 
     const got = back.process('g-invited', host.encrypt('g-invited', HELLO));
     expect(got.kind).toBe('application');
@@ -302,7 +302,7 @@ describeIfBuilt('Session', () => {
     host.applyPending('g-lost');
 
     const back = new Session({ accountSecret, deviceSecret, deviceLabel: 'laptop' });
-    expect(() => back.joinGroup(out.welcome as Uint8Array)).toThrow();
+    expect(() => back.joinGroup(out.welcome as Uint8Array, out.tree)).toThrow();
 
     back.close();
     host.close();
@@ -364,10 +364,17 @@ describeIfBuilt('Dispatcher', () => {
     const kp = other.handle({ id: 2, op: 'keyPackage', args: [] }) as Uint8Array;
 
     d.handle({ id: 3, op: 'stageAdd', args: ['g-wire', kp] });
-    const out = d.handle({ id: 4, op: 'commit', args: ['g-wire'] }) as { welcome?: Uint8Array };
+    const out = d.handle({ id: 4, op: 'commit', args: ['g-wire'] }) as {
+      welcome?: Uint8Array;
+      tree: Uint8Array;
+    };
     d.handle({ id: 5, op: 'applyPending', args: ['g-wire'] });
 
-    const joined = other.handle({ id: 3, op: 'joinGroup', args: [out.welcome as Uint8Array] });
+    const joined = other.handle({
+      id: 3,
+      op: 'joinGroup',
+      args: [out.welcome as Uint8Array, out.tree],
+    });
     expect(joined).toMatchObject({ groupId: 'g-wire' });
 
     const sealed = d.handle({ id: 6, op: 'encrypt', args: ['g-wire', HELLO] }) as Uint8Array;

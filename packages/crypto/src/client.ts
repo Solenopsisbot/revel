@@ -134,8 +134,8 @@ export class WorkerCryptoEngine implements CryptoEngine {
     return this.#call('createGroup', groupId);
   }
 
-  joinGroup(welcome: Uint8Array): Promise<GroupState> {
-    return this.#call('joinGroup', welcome);
+  joinGroup(welcome: Uint8Array, tree: Uint8Array): Promise<GroupState> {
+    return this.#call('joinGroup', welcome, tree);
   }
 
   groups(): Promise<string[]> {

@@ -538,6 +538,61 @@ scenarios('offline and reconnect', () => {
 
 // ---------------------------------------------------------------------------
 
+scenarios('the ratchet tree, out of band', () => {
+  it('keeps the Welcome small while the group grows', async () => {
+    // The whole reason `docs/03` §5 rejects the `ratchet_tree` extension.
+    // Inlined, the public tree rides in every Welcome and a single join at
+    // 2,000 members costs 627 KiB (`docs/31` §2). Out of band the Welcome
+    // carries the joiner's secrets and nothing else, and the tree is one
+    // cacheable fetch per epoch that every joiner shares.
+    const { world, group, host } = await conversation(['alice', 'bob']);
+
+    const sizes: { welcome: number; tree: number }[] = [];
+    for (let i = 0; i < 4; i++) {
+      const person = await world.join(`person-${i}`);
+      await person.replenish();
+      await host.invite(group, [person.account]);
+      await world.settle();
+      await person.sync();
+
+      const [welcome] = await host.pendingWelcomesFor(person);
+      const tree = await host.treeOf(group);
+      sizes.push({ welcome: welcome?.bytes.length ?? 0, tree: tree.length });
+    }
+
+    // The tree grows with the group. The Welcome does not.
+    const trees = sizes.map((s) => s.tree);
+    expect(trees[trees.length - 1]).toBeGreaterThan(trees[0] as number);
+    await world.close();
+  });
+
+  it('hands a joiner the tree for the epoch its Welcome is for', async () => {
+    // A tree from any other epoch fails the join outright — which is the right
+    // failure, because the alternative is a device whose roster silently
+    // disagrees with everybody else's until the next commit produces different
+    // secrets on either side.
+    const { world, room, group, host } = await conversation(['alice', 'bob']);
+
+    const carol = await world.join('carol');
+    await carol.replenish();
+    await host.invite(group, [carol.account]);
+    // Two more commits land before carol ever looks, so the current tree is
+    // several epochs past the one her Welcome was minted at.
+    await host.flush(group);
+    await host.flush(group);
+    await world.settle();
+
+    await carol.sync();
+    await host.say(room, 'made it');
+    await world.settle();
+
+    expect(carol.texts(room)).toEqual(['made it']);
+    await world.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 scenarios('inviting people who are not ready', () => {
   it('adds everyone it can and names the rest', async () => {
     // Four of five is better than none, and the fifth is retried when they next

@@ -24,7 +24,7 @@ const TABLE: {
   exportDeviceSecret: (s) => s.exportDeviceSecret(),
   keyPackage: (s) => s.keyPackage(),
   createGroup: (s, groupId) => s.createGroup(groupId),
-  joinGroup: (s, welcome) => s.joinGroup(welcome),
+  joinGroup: (s, welcome, tree) => s.joinGroup(welcome, tree),
   groups: (s) => s.groups(),
   state: (s, groupId) => s.state(groupId),
   members: (s, groupId) => s.members(groupId),

@@ -39,11 +39,12 @@ use ed25519_dalek::SigningKey;
 use mls_rs::{
     client_builder::{
         BaseConfig, WithCryptoProvider, WithGroupStateStorage, WithIdentityProvider,
-        WithKeyPackageRepo,
+        WithKeyPackageRepo, WithMlsRules,
     },
-    group::ReceivedMessage,
     crypto::SignatureSecretKey,
+    group::{ExportedTree, ReceivedMessage},
     identity::{basic::BasicCredential, SigningIdentity},
+    mls_rules::{CommitOptions, DefaultMlsRules},
     CipherSuite, CipherSuiteProvider, Client as MlsClient, CryptoProvider, ExtensionList,
     MlsMessage,
 };
@@ -65,16 +66,36 @@ const CS: CipherSuite = CipherSuite::CURVE25519_AES128;
 /// The tests can say `Client<impl MlsConfig>` because they never store one. A
 /// struct field needs a real type, so the builder's aliases are spelled out
 /// here in the order the builder applies them.
-type Config = WithGroupStateStorage<
-    LocalGroupStore,
-    WithKeyPackageRepo<
-        LocalKeyPackageStore,
-        WithCryptoProvider<
-            RustCryptoProvider,
-            WithIdentityProvider<DeviceCertIdentityProvider, BaseConfig>,
+type Config = WithMlsRules<
+    DefaultMlsRules,
+    WithGroupStateStorage<
+        LocalGroupStore,
+        WithKeyPackageRepo<
+            LocalKeyPackageStore,
+            WithCryptoProvider<
+                RustCryptoProvider,
+                WithIdentityProvider<DeviceCertIdentityProvider, BaseConfig>,
+            >,
         >,
     >,
 >;
+
+/// The ratchet tree travels **out of band**, not inside the Welcome.
+///
+/// `docs/03` §5 requires this and `docs/31` §2 has the numbers: with the
+/// `ratchet_tree` extension on, one join at 2,000 members costs 627 KiB because
+/// the whole public tree rides along in every Welcome. Off, the Welcome is
+/// 0.4 KiB at any group size and the tree is one cacheable fetch per epoch that
+/// every joiner shares.
+///
+/// The cost of turning it off is that a Welcome is no longer self-contained: a
+/// joiner needs the matching tree, and the wrong epoch's tree is no use. That is
+/// why the tree is published in the same request as the commit that produced it
+/// — see `HandshakeInput.tree`.
+fn mls_rules() -> DefaultMlsRules {
+    let options = CommitOptions::new().with_ratchet_tree_extension(false);
+    DefaultMlsRules::new().with_commit_options(options)
+}
 
 /// Every error crossing into JavaScript becomes a plain `Error` with a message.
 ///
@@ -215,6 +236,7 @@ impl Device {
                 .crypto_provider(crypto)
                 .key_package_repo(packages.clone())
                 .group_state_storage(store.clone())
+                .mls_rules(mls_rules())
                 .signing_identity(SigningIdentity::new(credential, public), signer, CS)
                 .build(),
             cert: encoded,
@@ -273,15 +295,25 @@ impl Device {
         Ok(Group::wrap(inner))
     }
 
-    /// Join a group from a Welcome.
+    /// Join a group from a Welcome and the matching ratchet tree.
     ///
-    /// The ratchet tree rides in the Welcome under mls-rs's default commit
-    /// options, so no out-of-band tree is needed. If that default ever changes,
-    /// this is the call that breaks, loudly, in tests.
+    /// The tree is **required**, and required at the right epoch: with the
+    /// `ratchet_tree` extension off (see [`mls_rules`]) the Welcome carries the
+    /// joiner's secrets and nothing else, so the public tree has to arrive
+    /// beside it. A tree from a different epoch fails here rather than
+    /// producing a group that disagrees with everyone else's.
+    ///
+    /// Making it an argument rather than an option is deliberate. A signature
+    /// you can forget is one that gets forgotten, and forgetting it would mean
+    /// every join failing at run time on a code path nobody tests locally.
     #[wasm_bindgen(js_name = joinGroup)]
-    pub fn join_group(&self, welcome: &[u8]) -> Result<Group, JsError> {
+    pub fn join_group(&self, welcome: &[u8], tree: &[u8]) -> Result<Group, JsError> {
         let msg = MlsMessage::from_bytes(welcome).map_err(js)?;
-        let (mut inner, _info) = self.client.join_group(None, &msg, None).map_err(js)?;
+        let exported = ExportedTree::from_bytes(tree).map_err(js)?;
+        let (mut inner, _info) = self
+            .client
+            .join_group(Some(exported), &msg, None)
+            .map_err(js)?;
         inner.write_to_storage().map_err(js)?;
         Ok(Group::wrap(inner))
     }
@@ -386,12 +418,13 @@ impl Device {
 // Group
 // ---------------------------------------------------------------------------
 
-/// The bytes a commit produces: one commit for the existing members, and a
-/// Welcome for anyone the commit added.
+/// The bytes a commit produces: one commit for the existing members, a Welcome
+/// for anyone it added, and the public ratchet tree at the new epoch.
 #[wasm_bindgen]
 pub struct Commit {
     commit: Vec<u8>,
     welcome: Option<Vec<u8>>,
+    tree: Vec<u8>,
 }
 
 #[wasm_bindgen]
@@ -400,6 +433,18 @@ impl Commit {
     #[wasm_bindgen(getter)]
     pub fn commit(&self) -> Vec<u8> {
         self.commit.clone()
+    }
+
+    /// The public tree at the epoch this commit produces.
+    ///
+    /// Comes from the commit itself rather than from the group afterwards, and
+    /// that is the whole point: `commit()` deliberately does not apply what it
+    /// builds, so asking the group for its tree here would give the *old* one.
+    /// Publishing it in the same request as the commit is what stops a joiner
+    /// racing the publish and fetching a tree from the wrong epoch.
+    #[wasm_bindgen(getter)]
+    pub fn tree(&self) -> Vec<u8> {
+        self.tree.clone()
     }
 
     /// Send this to whoever was added. Absent when the commit added nobody.
@@ -573,8 +618,19 @@ impl Group {
         self.adds.clear();
         self.removes.clear();
 
+        // Always present, because `mls_rules()` turns the inlined tree off. If
+        // that ever changes this becomes `None` and every join breaks, so it is
+        // an error here rather than an empty vector nobody notices.
+        let tree = out
+            .ratchet_tree
+            .as_ref()
+            .ok_or_else(|| JsError::new("commit produced no ratchet tree; is the extension on?"))?
+            .to_bytes()
+            .map_err(js)?;
+
         Ok(Commit {
             commit: out.commit_message.to_bytes().map_err(js)?,
+            tree,
             welcome: out
                 .welcome_messages
                 .first()

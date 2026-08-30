@@ -127,6 +127,21 @@ export const HandshakeInput = z.object({
   bytes: z.string().base64().max(350_000),
   /** Commit only. Stored per device and served on that device's next connect. */
   welcome: WelcomeInput.optional(),
+  /**
+   * The public ratchet tree at the epoch this commit produces.
+   *
+   * In the same request as the commit, and that is not an optimisation. The
+   * server stores the Welcome the moment it accepts the commit and pushes it at
+   * any invited device that is online; if the tree arrived in a second request,
+   * a joiner could fetch a tree from the previous epoch and fail to join for
+   * reasons nobody could reproduce.
+   *
+   * Capped far above the biggest thing `docs/31` §2 measured — 2.9 MB for a
+   * post-quantum tree at 2,000 members — because this is the one part of the
+   * design that is genuinely allowed to be large. It is fetched once per epoch
+   * and shared by every joiner, which is the whole reason it is out of band.
+   */
+  tree: z.string().base64().max(6_000_000).optional(),
   /** Delivery hints. See the note at the top of this file. */
   added: z.array(DevicePub).max(500).optional(),
   removed: z.array(DevicePub).max(500).optional(),

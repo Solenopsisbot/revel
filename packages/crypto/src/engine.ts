@@ -56,6 +56,20 @@ export interface CommitOutput {
   commit: Uint8Array;
   /** For whoever this commit added. Absent when it added nobody. */
   welcome?: Uint8Array;
+  /**
+   * The public ratchet tree at the epoch this commit produces.
+   *
+   * Always present, because the `ratchet_tree` extension is off — `docs/03` §5
+   * rejects it and `docs/31` §2 has the reason: inlined, one join at 2,000
+   * members costs 627 KiB of Welcome instead of 0.4 KiB.
+   *
+   * It comes out of the commit rather than out of the group afterwards, and
+   * that ordering is the point. `commit` does not apply, so asking the group
+   * for its tree here would hand back the *previous* epoch's. Publishing this
+   * one alongside the commit is what stops a joiner racing the publish and
+   * fetching a tree that does not match the Welcome it was given.
+   */
+  tree: Uint8Array;
 }
 
 /** The result of feeding the engine something that arrived. */
@@ -146,8 +160,16 @@ export interface CryptoEngine {
   /** Open a new group. The id is whatever the server assigned. */
   createGroup(groupId: string): Promise<GroupState>;
 
-  /** Join from a Welcome. The group id comes out of the Welcome itself. */
-  joinGroup(welcome: Uint8Array): Promise<GroupState>;
+  /**
+   * Join from a Welcome and the matching ratchet tree.
+   *
+   * The group id comes out of the Welcome itself. The tree is required and
+   * required at the right epoch: a Welcome carries the joiner's secrets and
+   * nothing else, so without the public tree there is no group to join, and
+   * with the wrong one the join fails rather than producing a device whose
+   * roster silently disagrees with everyone else's.
+   */
+  joinGroup(welcome: Uint8Array, tree: Uint8Array): Promise<GroupState>;
 
   /** Which groups this session currently holds in memory. */
   groups(): Promise<string[]>;

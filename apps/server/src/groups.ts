@@ -25,6 +25,7 @@ import {
   type GroupInfo,
   HandshakeInput,
   KeyPackageUpload,
+  type PendingWelcome,
   RatchetTree,
 } from '@revel/protocol';
 import type { Hono } from 'hono';
@@ -264,6 +265,7 @@ export function mountGroups(app: Hono, deps: GroupDeps): void {
       epoch: input.epoch,
       bytes: input.bytes,
       welcome: input.welcome,
+      tree: input.tree,
       added,
       removed: input.removed,
       at: Date.now(),
@@ -350,7 +352,17 @@ export function mountGroups(app: Hono, deps: GroupDeps): void {
   app.get('/welcomes', async (c) => {
     const actor = await auth(c.req.raw);
     if (!actor) return c.json({ error: 'unauthenticated' }, 401);
-    return c.json({ welcomes: await deps.store.listWelcomes(actor.devicePub) });
+    // Mapped to the wire shape rather than returned raw. The store's row is
+    // `groupId` and the protocol's field is `group` (as it is on every other
+    // frame), and returning the row directly quietly shipped the wrong name —
+    // invisible to the type checker, because JSON crossing a boundary is
+    // whatever you assert it is.
+    const welcomes = await deps.store.listWelcomes(actor.devicePub);
+    return c.json({
+      welcomes: welcomes.map(
+        (w): PendingWelcome => ({ group: w.groupId, bytes: w.bytes, createdAt: w.createdAt }),
+      ),
+    });
   });
 
   /**

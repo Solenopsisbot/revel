@@ -178,7 +178,7 @@ async function pair(host: FakeHost, log: string[] = []) {
   await alice.crypto.stageAdd(GROUP, await bob.crypto.keyPackage());
   const commit = await alice.crypto.commit(GROUP);
   await alice.crypto.applyPending(GROUP);
-  await bob.crypto.joinGroup(commit.welcome as Uint8Array);
+  await bob.crypto.joinGroup(commit.welcome as Uint8Array, commit.tree);
 
   await alice.sync.persistCrypto();
   await bob.sync.persistCrypto();
@@ -507,7 +507,9 @@ describeIfBuilt('RoomSync', () => {
       await sync.restoreCrypto();
 
       // Without the key package secret this Welcome could not be opened.
-      await expect(crypto.joinGroup(commit.welcome as Uint8Array)).resolves.toMatchObject({
+      await expect(
+        crypto.joinGroup(commit.welcome as Uint8Array, commit.tree),
+      ).resolves.toMatchObject({
         groupId: GROUP,
       });
     });
