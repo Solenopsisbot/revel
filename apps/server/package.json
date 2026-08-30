@@ -3,7 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./src/lib.ts",
+  "exports": { ".": "./src/lib.ts", "./entry": "./src/index.ts" },
   "scripts": { "dev": "bun run src/index.ts" },
-  "dependencies": { "@revel/protocol": "workspace:*", "hono": "^4.6.0", "zod": "^4.1.0" }
+  "dependencies": {
+    "@revel/protocol": "workspace:*",
+    "hono": "^4.6.0",
+    "zod": "^4.1.0"
+  }
 }

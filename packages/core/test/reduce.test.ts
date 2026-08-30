@@ -320,6 +320,77 @@ describe('pins', () => {
     expect(s.pinned).toEqual([]);
     expect(s.byId.get('1')?.pinned).toBeUndefined();
   });
+
+  it('orders the board by when each was pinned, not by when we heard', () => {
+    // Two devices that synced differently must show the same noticeboard.
+    let s = reduce(room(), ev('9', 'a', { type: 'm.pin', target: '1' }));
+    s = reduce(s, ev('4', 'a', { type: 'm.pin', target: '2' }));
+    expect(s.pinned).toEqual(['1', '2']);
+  });
+
+  it('takes a redacted message off the board', () => {
+    let s = reduce(room(), ev('4', 'a', { type: 'm.pin', target: '1' }));
+    s = reduce(s, ev('5', 'a', { type: 'm.redact', target: '1' }));
+    expect(s.pinned).toEqual([]);
+  });
+});
+
+describe('deferred events', () => {
+  it('applies a reaction that arrived before the message it is about', () => {
+    // The backfill case: live events land first, then somebody scrolls up.
+    // Without this the reaction is dropped and never comes back.
+    let s = reduce(emptyRoom('100'), ev('9', 'b', { type: 'm.reaction', target: '1', key: '🔥' }));
+    expect(s.messages).toHaveLength(0);
+    expect(s.deferred.get('1')).toHaveLength(1);
+
+    s = reduce(s, message('1', 'a', 'first'));
+    expect(s.byId.get('1')?.reactions).toEqual([{ key: '🔥', accounts: ['b'] }]);
+    expect(s.deferred.size).toBe(0);
+  });
+
+  it('applies everything that was waiting, in id order', () => {
+    let s = emptyRoom('100');
+    s = reduce(s, ev('9', 'a', { type: 'm.redact', target: '1' }));
+    s = reduce(s, ev('8', 'a', { type: 'm.edit', target: '1', body: 'edited' }));
+    s = reduce(s, message('1', 'a', 'first'));
+
+    // 8 then 9: the edit lands, then the redaction wipes it.
+    const m = s.byId.get('1') as Message;
+    expect(m.redacted).toMatchObject({ by: 'author', at: 9 });
+    expect(m.body).toBe('');
+  });
+
+  it('stops queueing once far too much is waiting', () => {
+    // A reaction to a message purged before this device ever synced has a
+    // target that is never coming, and there is no bound on how many of those
+    // a room can contain.
+    let s = emptyRoom('100');
+    for (let i = 0; i < 10_050; i++) {
+      s = reduce(s, ev(String(1000 + i), 'a', { type: 'm.reaction', target: '1', key: 'x' }));
+    }
+    let waiting = 0;
+    for (const list of s.deferred.values()) waiting += list.length;
+    expect(waiting).toBe(10_000);
+  });
+});
+
+describe('room metadata is last-written, not last-applied', () => {
+  it('keeps the newest name even when an older one arrives later', () => {
+    let s = reduce(room(), ev('9', 'a', { type: 'room.name', name: 'current' }));
+    s = reduce(s, ev('4', 'a', { type: 'room.name', name: 'ancient' }));
+    // Paging far enough up must not rename the room to what it was called then.
+    expect(s.name).toBe('current');
+  });
+
+  it('keeps the newest version of a face', () => {
+    const faces = (id: string, name: string) => ({
+      type: 'room.faces',
+      faces: [{ id: '11', name }],
+    });
+    let s = reduce(room(), ev('9', 'a', faces('11', 'Kiko')));
+    s = reduce(s, ev('4', 'a', faces('11', 'Old Name')));
+    expect(s.faces.get('11')?.name).toBe('Kiko');
+  });
 });
 
 describe('annotations', () => {

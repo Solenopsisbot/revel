@@ -29,6 +29,14 @@ the design. Two things to know before using it:
 - **It is keyed by group, not room.** A space-wide audience is one MLS group
   shared by many rooms (`docs/03` §4). This layer does not know what a room is.
 
+## Without a Worker
+
+`LocalCryptoEngine` is the same engine running on the calling thread. The Worker
+exists because a browser has a thread that paints; an agent host, a bot or a
+test does not, and for those a Worker is two wasm instantiations and a message
+protocol in exchange for nothing. Do not use it in a browser — see `docs/31` §6
+for what that costs.
+
 ## Layout
 
 | file | what |

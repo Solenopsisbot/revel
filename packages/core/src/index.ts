@@ -5,14 +5,15 @@
  * the notification rules. No DOM, no framework — it runs in a browser, in
  * Tauri, in Bun, and in a test.
  *
- * What exists so far is the reducer (`docs/04` §3). The store and the sync
- * engine are next; see the README.
+ * The reducer is `docs/04` §3; the store is `docs/02`'s "one `Store` interface"
+ * with two implementations behind it. The sync engine is next; see the README.
  */
 export {
   addPending,
   dropPending,
   emptyRoom,
   markFailed,
+  markPurged,
   type ReduceOptions,
   reduce,
   reduceAll,
@@ -28,3 +29,21 @@ export {
   type Reaction,
   type RoomState,
 } from './rooms/state.js';
+export { IndexedDbStore, type IndexedDbStoreOptions } from './store/indexeddb.js';
+export { MemoryStore } from './store/memory.js';
+export type {
+  ListEventsOptions,
+  LocalStore,
+  SealedKind,
+  SealedRecord,
+} from './store/types.js';
+export { type RoomListener, RoomSync, type RoomSyncOptions, toAccountId } from './sync/engine.js';
+export {
+  type EventStream,
+  type FetchOptions,
+  HttpTransport,
+  type HttpTransportOptions,
+  type SendResult,
+  type Transport,
+  TransportError,
+} from './sync/transport.js';

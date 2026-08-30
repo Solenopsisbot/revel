@@ -92,8 +92,19 @@ export interface Message {
   redacted?: { by: 'author' | 'moderator'; at: number; reason?: string };
   /** The server dropped the bytes. Distinct from a redaction: nobody chose it. */
   purged?: boolean;
+  /** When the server dropped them. */
+  purgedAt?: number;
 
   pinned?: boolean;
+  /**
+   * The id of the event that pinned it.
+   *
+   * `pinned` is ordered by this rather than by the order pins happened to be
+   * applied in. "Most recently pinned first" has to be a fact about the log,
+   * not about which page of history arrived first, or two devices that
+   * synced differently would show the noticeboard in different orders.
+   */
+  pinnedAt?: string;
   reactions?: Reaction[];
   annotations?: Annotation[];
 
@@ -123,18 +134,28 @@ export interface RoomState {
   roomId: string;
   name?: string;
   topic?: string;
+  /**
+   * The id of the event that set the name and topic.
+   *
+   * Last write wins, and "last" has to mean by event id rather than by
+   * whichever page of history arrived last — otherwise scrolling up far enough
+   * renames the room to something it was called a year ago.
+   */
+  nameAt?: string;
 
   /** In event-id order, which is time order. */
   messages: Message[];
   /** id → the same object that is in `messages`. */
   byId: Map<string, Message>;
 
-  /** Pinned message ids, most recently pinned first. */
+  /** Pinned message ids, most recently pinned first — by `Message.pinnedAt`. */
   pinned: string[];
   /** account → the last event id they have read. Only ever moves forward. */
   receipts: Map<string, string>;
   /** face id → the face, from `room.faces`. */
   faces: Map<string, FaceRef>;
+  /** face id → the id of the event that last set it. Same reason as `nameAt`. */
+  facesAt: Map<string, string>;
   /** thread root id → reply ids, in order. */
   threads: Map<string, string[]>;
 
@@ -149,6 +170,21 @@ export interface RoomState {
   applied: Set<string>;
   /** The highest event id applied. */
   lastEventId?: string;
+
+  /**
+   * Events waiting for the message they refer to, keyed by that message's id.
+   *
+   * An edit, a reaction, a pin or an annotation names a target, and there is no
+   * guarantee the target has arrived. Dropping those would be *almost* fine —
+   * except that scrolling up is exactly the case where it is not: live
+   * messages arrive first, then a backfill brings the older ones, and a
+   * reaction to something you had not loaded yet would be gone for good.
+   *
+   * So they are parked here and applied the moment their target lands. This is
+   * what makes the reducer genuinely independent of the order events are
+   * *delivered* in, rather than only of the order within one batch.
+   */
+  deferred: Map<string, LocalEvent[]>;
 }
 
 export function emptyRoom(roomId: string): RoomState {
@@ -159,8 +195,10 @@ export function emptyRoom(roomId: string): RoomState {
     pinned: [],
     receipts: new Map(),
     faces: new Map(),
+    facesAt: new Map(),
     threads: new Map(),
     applied: new Set(),
+    deferred: new Map(),
   };
 }
 

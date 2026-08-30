@@ -58,6 +58,26 @@ export function reduce(
  * over a socket burst or a page of history has no reason to have done that
  * already. Sorting here rather than trusting the caller is the difference
  * between a reducer and a reducer plus a rule nobody remembers.
+ *
+ * ## How much order-independence this actually has
+ *
+ * Within a batch: complete. Hand over the same events in any order and the room
+ * is identical, because they are sorted before anything is applied.
+ *
+ * Across batches: guaranteed for the two patterns delivery actually produces —
+ * **forward** (live events, ids increasing) and **backward** (a backfill page,
+ * entirely older than what is held). Both are covered by the deferral in
+ * `RoomState.deferred`: an event whose target has not arrived waits for it, and
+ * every event waiting on one message is applied in id order when it lands.
+ *
+ * It is *not* guaranteed for an arbitrary interleaving — batches shuffled so
+ * that some events targeting a message are applied directly and others are
+ * deferred can order those two groups differently than a single sorted pass
+ * would. Making that exact would mean keeping a per-message event log and
+ * recomputing the message on every late arrival, which is a large amount of
+ * machinery for a delivery pattern no transport produces. The property tests
+ * assert the two real ones and say this out loud rather than quietly testing
+ * the easy case.
  */
 export function reduceAll(
   state: RoomState,
@@ -81,6 +101,18 @@ export function reduceAll(
     apply(draft, event, options);
   }
 
+  // Anything that was waiting for a message this batch brought in, applied now
+  // rather than the moment the message landed.
+  //
+  // The timing is the whole trick. Draining at insert time puts a deferred
+  // event ahead of every lower-id event still to come in the same batch, which
+  // is wrong precisely where it matters: backfilling a page reinstates an old
+  // message, and the edits and reactions from that same page must apply before
+  // the ones held over from the live stream. Deferred events are always newer
+  // than the page that unblocked them, so waiting until the end and sorting
+  // gives the same order a single pass over the whole log would have.
+  drainReady(draft, options);
+
   return draft;
 }
 
@@ -93,9 +125,51 @@ function clone(state: RoomState): RoomState {
     pinned: [...state.pinned],
     receipts: new Map(state.receipts),
     faces: new Map(state.faces),
+    facesAt: new Map(state.facesAt),
     threads: new Map(state.threads),
     applied: new Set(state.applied),
+    deferred: new Map(state.deferred),
   };
+}
+
+/**
+ * How many events may be waiting for targets that have not arrived.
+ *
+ * Unbounded, this is a leak with a plausible cause: a reaction to a message
+ * that was purged before this device ever synced has a target that is never
+ * coming. Ten thousand is far above any real backlog and far below anything a
+ * person would notice.
+ */
+const MAX_DEFERRED = 10_000;
+
+/**
+ * Park an event until its target arrives. See `RoomState.deferred`.
+ *
+ * The event is already in `applied`, so a re-delivery will not queue it twice.
+ */
+function defer(draft: RoomState, target: string, event: LocalEvent): void {
+  let waiting = 0;
+  for (const list of draft.deferred.values()) waiting += list.length;
+  if (waiting >= MAX_DEFERRED) return;
+
+  const list = draft.deferred.get(target);
+  draft.deferred.set(target, list ? [...list, event] : [event]);
+}
+
+/** Apply everything whose target has now arrived, in id order across all of them. */
+function drainReady(draft: RoomState, options: ReduceOptions): void {
+  const ready: LocalEvent[] = [];
+  for (const [target, waiting] of draft.deferred) {
+    if (!draft.byId.has(target)) continue;
+    ready.push(...waiting);
+    draft.deferred.delete(target);
+  }
+  if (ready.length === 0) return;
+
+  ready.sort((a, b) => compareIds(a.id, b.id));
+  // One pass is enough: nothing that can be deferred inserts a message, so
+  // draining cannot unblock anything else.
+  for (const event of ready) apply(draft, event, options);
 }
 
 function apply(draft: RoomState, event: LocalEvent, options: ReduceOptions): void {
@@ -133,17 +207,30 @@ function apply(draft: RoomState, event: LocalEvent, options: ReduceOptions): voi
       receipt(draft, event, payload);
       return;
     case 'm.pin':
-      pin(draft, payload);
+      pin(draft, event, payload);
       return;
     case 'm.annotation':
       annotate(draft, event, payload);
       return;
     case 'room.name':
-      draft.name = payload.name;
-      draft.topic = payload.topic;
+      // Newest by id wins, not newest to arrive. A backfill delivers old
+      // events after new ones, and without this, paging far enough up renames
+      // the room to whatever it was called back then.
+      if (!draft.nameAt || compareIds(event.id, draft.nameAt) > 0) {
+        draft.name = payload.name;
+        draft.topic = payload.topic;
+        draft.nameAt = event.id;
+      }
       return;
     case 'room.faces':
-      for (const face of payload.faces) draft.faces.set(face.id, face);
+      // Per face, for the same reason: a face renamed last week must not be
+      // un-renamed by a page of history from last month.
+      for (const face of payload.faces) {
+        const at = draft.facesAt.get(face.id);
+        if (at && compareIds(event.id, at) <= 0) continue;
+        draft.faces.set(face.id, face);
+        draft.facesAt.set(face.id, event.id);
+      }
       return;
     case 'm.typing':
       // Deliberately nothing. Typing is `ephemeral` (`docs/03` §7) — never
@@ -286,7 +373,7 @@ function replace(draft: RoomState, message: Message): void {
 
 function edit(draft: RoomState, event: LocalEvent, payload: KnownShape): void {
   const target = draft.byId.get(payload.target);
-  if (!target) return;
+  if (!target) return defer(draft, payload.target, event);
   // Authors always may, and only authors ever may — an edit is not a moderation
   // action. Somebody else's edit of your words would be a forgery with your
   // name on it, which is a different and much worse thing than a deletion.
@@ -310,7 +397,8 @@ function redact(
   options: ReduceOptions,
 ): void {
   const target = draft.byId.get(payload.target);
-  if (!target || target.redacted) return;
+  if (!target) return defer(draft, payload.target, event);
+  if (target.redacted) return;
 
   const isAuthor = target.account === event.account;
   if (!isAuthor && !(options.mayModerate?.(event.account) ?? false)) return;
@@ -325,6 +413,8 @@ function redact(
     // tombstone with six laughing faces attached reads as a joke about the
     // deletion rather than a record of one.
     reactions: undefined,
+    pinned: undefined,
+    pinnedAt: undefined,
     annotations: undefined,
     redacted: {
       by: isAuthor ? 'author' : 'moderator',
@@ -332,6 +422,9 @@ function redact(
       reason: payload.reason,
     },
   });
+  // A pinned message that is redacted stops being a notice: what was on the
+  // board is gone, and leaving the tombstone up there is worse than nothing.
+  repin(draft);
 }
 
 // ---------------------------------------------------------------------------
@@ -340,7 +433,8 @@ function redact(
 
 function react(draft: RoomState, event: LocalEvent, payload: KnownShape): void {
   const target = draft.byId.get(payload.target);
-  if (!target || target.redacted || target.purged) return;
+  if (!target) return defer(draft, payload.target, event);
+  if (target.redacted || target.purged) return;
 
   const reactions = (target.reactions ?? []).map((r) => ({ ...r, accounts: [...r.accounts] }));
   const existing = reactions.find((r) => r.key === payload.key);
@@ -376,27 +470,40 @@ function receipt(draft: RoomState, event: LocalEvent, payload: KnownShape): void
   draft.receipts.set(event.account, payload.upTo);
 }
 
-function pin(draft: RoomState, payload: KnownShape): void {
+function pin(draft: RoomState, event: LocalEvent, payload: KnownShape): void {
   const target = draft.byId.get(payload.target);
-  if (!target) return;
+  if (!target) return defer(draft, payload.target, event);
 
   if (payload.unpin) {
-    draft.pinned = draft.pinned.filter((id) => id !== payload.target);
-    replace(draft, { ...target, pinned: undefined });
-    return;
+    replace(draft, { ...target, pinned: undefined, pinnedAt: undefined });
+  } else {
+    // Keep the first pin's id, not the latest: pinning something already
+    // pinned is a no-op, and letting it jump to the top of the noticeboard
+    // would make a duplicate event visible.
+    replace(draft, { ...target, pinned: true, pinnedAt: target.pinnedAt ?? event.id });
   }
+  repin(draft);
+}
 
-  if (!draft.pinned.includes(payload.target)) {
-    // Most recently pinned first: a pinned list is a noticeboard, and the new
-    // notice goes on top.
-    draft.pinned = [payload.target, ...draft.pinned];
-  }
-  replace(draft, { ...target, pinned: true });
+/**
+ * Rebuild the pinned list from the messages, newest pin first.
+ *
+ * Derived rather than maintained, so it cannot drift from `Message.pinned`, and
+ * ordered by the pin event's id so it is a fact about the log rather than about
+ * the order pages of history arrived in. Pinned lists are noticeboards — this
+ * is a handful of entries, recomputed on an event that is rare.
+ */
+function repin(draft: RoomState): void {
+  draft.pinned = draft.messages
+    .filter((m) => m.pinned && m.pinnedAt)
+    .sort((a, b) => compareIds(b.pinnedAt as string, a.pinnedAt as string))
+    .map((m) => m.id);
 }
 
 function annotate(draft: RoomState, event: LocalEvent, payload: KnownShape): void {
   const target = draft.byId.get(payload.target);
-  if (!target || target.redacted || target.purged) return;
+  if (!target) return defer(draft, payload.target, event);
+  if (target.redacted || target.purged) return;
 
   const annotation: Annotation = {
     author: event.account,
@@ -439,6 +546,41 @@ export function markFailed(state: RoomState, clientNonce: string): RoomState {
   if (!target) return state;
   const draft = clone(state);
   replace(draft, { ...target, failed: true });
+  return draft;
+}
+
+/**
+ * Mark a message as purged: the server has dropped the bytes.
+ *
+ * Not a `reduce` case, and it cannot be one. The server's tombstone
+ * broadcast carries the **same id as the event it purged** (`apps/server`
+ * sends `{ id, payload: '', purgedAt }`), so feeding it through `reduce` would
+ * hit the applied set and be discarded as a duplicate of the message it is
+ * trying to erase.
+ *
+ * Distinct from a redaction, and shown differently: a redaction is somebody
+ * deciding, a purge is the bytes being gone. Nobody chose it in the room.
+ */
+export function markPurged(state: RoomState, eventId: string, at: number): RoomState {
+  const target = state.byId.get(eventId);
+  if (!target || target.purged) return state;
+
+  const draft = clone(state);
+  replace(draft, {
+    ...target,
+    body: '',
+    attachments: undefined,
+    edits: undefined,
+    reactions: undefined,
+    annotations: undefined,
+    pinned: undefined,
+    pinnedAt: undefined,
+    purged: true,
+    purgedAt: at,
+  });
+  // Same as a redaction: what was on the noticeboard is gone, and a tombstone
+  // pinned to the top of the room is worse than an empty board.
+  repin(draft);
   return draft;
 }
 

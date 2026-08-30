@@ -18,5 +18,6 @@ export type {
   OpenOptions,
 } from './engine.js';
 export { Dispatcher } from './handlers.js';
+export { LocalCryptoEngine } from './local.js';
 export { Session } from './session.js';
 export type { WasmSource } from './wire.js';
