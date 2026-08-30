@@ -2,6 +2,7 @@
   import Avatar from './Avatar.svelte';
   import Icon from './Icon.svelte';
   import { core } from './fake/core.svelte.js';
+  import { conversation } from './fake/conversation.svelte.js';
   import { layout } from './layout.svelte.js';
 
   /**
@@ -130,11 +131,11 @@
   {/if}
 
   {#if core.replyTo && !thread}
-    {@const target = core.timeline.find((x) => x.id === core.replyTo)}
+    {@const target = conversation.find(core.replyTo)}
     {#if target}
       <div class="reply-banner">
         <Icon name="reply" size={14} />
-        <span>Replying to <b style="color: var(--face-{core.faces[target.faceId]!.colour})">{core.faces[target.faceId]!.name}</b></span>
+        <span>Replying to <b style="color: var(--face-{target.face?.colour ?? 'grey'})">{target.face?.name ?? 'someone'}</b></span>
         <span class="snip">{target.body}</span>
         <button class="x" onclick={() => (core.replyTo = null)} aria-label="Cancel reply">×</button>
       </div>

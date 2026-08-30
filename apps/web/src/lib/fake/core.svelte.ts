@@ -6,31 +6,32 @@
  * knows whether the data came from a local database or from here. Swapping the
  * implementation should not touch a single component.
  */
+
+import { untoned } from '../emoji.js';
 import {
   account,
+  type Dm,
   devices,
   dmId,
   dms,
-  faces as seedFaces,
+  type Face,
+  type FaceColour,
   keyChanges,
   language,
   lastRead,
+  type Message,
   messages,
   myFaces,
+  type NotifyLevel,
   notifications,
+  type Perm,
   privacy,
+  type Room,
   rosters,
+  faces as seedFaces,
   spaces,
   storage,
-  type Dm,
-  type Face,
-  type FaceColour,
-  type Message,
-  type NotifyLevel,
-  type Perm,
-  type Room,
 } from './data.js';
-import { untoned } from '../emoji.js';
 
 /** The account these faces belong to. Exported because 'is this face one of
     mine' is a question components ask too, and routing it through a named
@@ -653,7 +654,10 @@ class Core {
    * none of them answer "why", which is the only question anyone has. This
    * returns both.
    */
-  notifyFor(spaceId: string, roomId: string): { level: NotifyLevel; from: 'room' | 'space' | 'global' } {
+  notifyFor(
+    spaceId: string,
+    roomId: string,
+  ): { level: NotifyLevel; from: 'room' | 'space' | 'global' } {
     const room = this.spaces.find((s) => s.id === spaceId)?.rooms.find((r) => r.id === roomId);
     if (room?.notify) return { level: room.notify, from: 'room' };
     const space = this.notifications.spaces[spaceId];
@@ -693,7 +697,11 @@ class Core {
   createRoom(spaceId: string, name: string, kind: 'text' | 'voice' = 'text', category = 'General') {
     const space = this.spaces.find((s) => s.id === spaceId);
     if (!space) return;
-    const id = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const id = name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
     if (!id || space.rooms.some((r) => r.id === id)) return;
     space.rooms.push({ id, name: id, kind, category, audience: { kind: 'everyone' } });
     this.messages[id] ??= [];
@@ -712,7 +720,10 @@ class Core {
     room.topic = topic?.trim() || undefined;
   }
 
-  updateSpace(spaceId: string, patch: { name?: string; description?: string; visibility?: 'invite' | 'link' | 'public' }) {
+  updateSpace(
+    spaceId: string,
+    patch: { name?: string; description?: string; visibility?: 'invite' | 'link' | 'public' },
+  ) {
     const space = this.spaces.find((s) => s.id === spaceId);
     if (!space) return;
     if (patch.name?.trim()) {
@@ -736,7 +747,10 @@ class Core {
 
   /** Edit one of your own faces. Refuses other people's, which is not a
       security boundary here but is the shape the real core will need. */
-  updateFace(faceId: string, patch: Partial<Pick<Face, 'name' | 'pronouns' | 'note' | 'bio' | 'colour' | 'status'>>) {
+  updateFace(
+    faceId: string,
+    patch: Partial<Pick<Face, 'name' | 'pronouns' | 'note' | 'bio' | 'colour' | 'status'>>,
+  ) {
     const face = this.faces[faceId];
     if (!face || face.accountId !== MY_ACCOUNT) return;
     if (patch.name !== undefined && patch.name.trim()) face.name = patch.name.trim();
@@ -748,7 +762,10 @@ class Core {
   }
 
   addFace(name: string, colour: FaceColour = 'sky') {
-    const id = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const id = name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-');
     if (!id || this.faces[id]) return;
     this.faces[id] = { id, name: name.trim(), colour, accountId: MY_ACCOUNT, status: 'here' };
     myFaces.push(id);

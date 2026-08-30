@@ -15,8 +15,10 @@
  * conclude the message doesn't exist." Silently returning half the results is
  * the one behaviour that would make search worse than useless.
  */
+
+import type { UiMessage as Message } from '../fake/conversation.svelte.js';
+import { conversation } from '../fake/conversation.svelte.js';
 import { core } from '../fake/core.svelte.js';
-import type { Message } from '../fake/data.js';
 
 /** Where to look. Defaults to the room you are in and widens in one click. */
 export type Scope = 'room' | 'space' | 'everywhere';
@@ -81,7 +83,8 @@ function parse(raw: string): Parsed {
     const k = key!.toLowerCase();
     if (k === 'from') from = value!.toLowerCase();
     else if (k === 'in' && value!.toLowerCase() === 'thread') inThread = true;
-    else if (k === 'has' && (value === 'file' || value === 'image' || value === 'link')) has = value;
+    else if (k === 'has' && (value === 'file' || value === 'image' || value === 'link'))
+      has = value;
   }
 
   return { terms, phrase: terms.join(' '), from, has, inThread };
@@ -192,7 +195,12 @@ class Search {
             : (core.spaces.find((x) => x.id === core.currentSpaceId)?.rooms ?? [])
                 .filter((r) => r.kind !== 'voice')
                 .map((r) => ({ roomId: r.id, spaceId: core.currentSpaceId }))
-          : [{ roomId: core.currentRoomId, spaceId: core.scope === 'home' ? undefined : core.currentSpaceId }];
+          : [
+              {
+                roomId: core.currentRoomId,
+                spaceId: core.scope === 'home' ? undefined : core.currentSpaceId,
+              },
+            ];
 
     if (!this.indexing) return all;
     const done = new Set(this.ready);
@@ -234,26 +242,31 @@ class Search {
     const hits: Hit[] = [];
 
     for (const { roomId, spaceId } of this.roomsIn(this.scope)) {
-      const list = core.messages[roomId];
-      if (!list) continue;
+      // Through the seam, so search sees the same shape the timeline does.
+      const list = conversation.all(roomId);
+      if (!list.length) continue;
       const spaceName = spaceId
         ? (core.spaces.find((s) => s.id === spaceId)?.name ?? '')
         : 'Direct messages';
       const where = this.label(roomId, spaceId);
 
       for (const m of list) {
-        if (m.deleted) continue; // the text is genuinely gone
+        if (m.redacted) continue; // the text is genuinely gone
         if (m.at < cutoff) continue;
         if (q.from) {
-          const f = core.faces[m.faceId];
+          const f = m.face;
           if (!f || !f.name.toLowerCase().startsWith(q.from)) continue;
         }
         if (q.has === 'file' && !m.attachments?.length) continue;
-        if (q.has === 'image' && !m.attachments?.some((a) => a.kind === 'image' || a.kind === 'gif')) continue;
+        if (
+          q.has === 'image' &&
+          !m.attachments?.some((a) => a.kind === 'image' || a.kind === 'gif')
+        )
+          continue;
         if (q.has === 'link' && !m.link) continue;
         if (q.inThread && !m.thread) continue;
 
-        const body = m.body;
+        const body = m.text;
         const lower = body.toLowerCase();
 
         let score = 0;

@@ -21,7 +21,16 @@ const Id = z.string().regex(/^\d{1,20}$/);
 export const FaceRef = z.object({
   id: Id,
   name: z.string().min(1).max(80),
-  color: z.string().max(32).optional(),
+  /**
+   * Spelled the way the rest of the product spells it.
+   *
+   * `docs/07`, every CSS variable and every component in `apps/web` say
+   * `colour`; this field said `color`, and it is the one field where that
+   * matters permanently — a `FaceRef` is inside encrypted history, and
+   * `docs/29` §1 is blunt that encrypted history cannot be re-encrypted. A
+   * field renamed after anything has shipped is a field with two names forever.
+   */
+  colour: z.string().max(32).optional(),
   avatar: z.string().max(512).optional(),
   pronouns: z.string().max(40).optional(),
 });

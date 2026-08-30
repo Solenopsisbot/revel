@@ -1244,3 +1244,59 @@ message has to stop doing the lookup.
 
 That is the refactor `docs/33` said this exercise would either avoid or expose.
 It exposed it, which is the cheap outcome.
+
+---
+
+## 21. C2: the message list, on the real shape
+
+The timeline, thread panel, composer reply banner and search results now render
+**`packages/core`'s `Message`**, not the fixture's. The fixtures are unchanged;
+a seam translates them.
+
+### The seam, not the fixtures
+
+`asCoreMessage` maps one shape to the other, and doing it there rather than
+rewriting `data.ts` is the whole reason this was a day and not a week: the
+fixtures stay readable as fixtures, and there is exactly one function to delete
+when the source becomes `LiveCore`.
+
+Four differences it has to reconcile, each of which is a real protocol decision
+rather than a naming preference:
+
+- **`faceId` → `face`.** The fixtures store an id and look it up in a global
+  map; a real message carries a **snapshot** taken when it was sent (`docs/04`
+  §2). That is why renaming a face does not rewrite everything it ever said.
+  `MessageRow` now keeps the two apart on purpose: name and colour come from the
+  snapshot, the agent badge comes from the current roster (`docs/11`: always
+  rendered), and an avatar prefers the current face because an avatar is a fact
+  about the person now.
+- **`deleted` → `redacted`.** A redaction is an in-band act by a person; a
+  *purge* is the server dropping the bytes and nobody choosing it. Two facts,
+  two words, and the UI says different things for each.
+- **Reactions are keyed by account, not face.** A reaction is a person's; a face
+  is a presentation of one. The mapping carries both, because the protocol needs
+  the account and the hover tooltip names faces.
+- **One annotation becomes a list.** `docs/04` §2 allows one per (target,
+  author, kind), so a translation and a transcript can coexist.
+
+### The mapping had to stop reaching for a global
+
+It first read the `core` singleton, which made it untestable — and this is
+precisely the code where being untestable matters, because **a mapping that
+silently drops a field produces a perfectly well-typed message that renders as
+an anonymous grey blob, and no type checker will ever mention it.** Taking the
+face map as an argument turned that into twelve tests, one of which asserts
+every fixture message in every room comes out with a face.
+
+### What was verified, and what was not
+
+Verified: `svelte-check` at 468 files, 0 errors, 0 warnings; the production
+build; the dev server serving the app with no runtime errors; and the mapping,
+field by field, against real fixtures.
+
+**Not verified: how any of it looks.** The preview automation in this
+environment could not screenshot or evaluate against the page, and there is no
+DOM test environment installed. Type-correct is not the same as
+right-looking — a grouping rule or a reply banner can be wrong in a way only
+eyes catch. `docs/33`'s "the reference page is the visual check" is the step
+still owed here.

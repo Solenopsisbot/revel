@@ -22,7 +22,12 @@
   import { longpress, tapActions, HOLD } from './touch.svelte.js';
   import { linkToMessage } from './deeplink.js';
   import { clock, names, ago } from './format.js';
-  import type { Message } from './fake/data.js';
+  // The real shape, from `packages/core`, plus the handful of fields the
+  // fixtures exercise that the protocol has not grown yet. The fixtures are
+  // translated into it at the seam (`fake/conversation.svelte.ts`), so this
+  // component does not change again when the source does.
+  import { conversation, type UiMessage as Message } from './fake/conversation.svelte.js';
+  import type { Face } from './fake/data.js';
 
   let {
     m,
@@ -42,8 +47,31 @@
     bubble?: boolean;
   } = $props();
 
-  const face = $derived(core.faces[m.faceId]!);
-  const mine = $derived(core.mine(m));
+  /**
+   * Two different things, deliberately kept apart.
+   *
+   * `snapshot` is the face as it was **when the message was sent** — it
+   * travelled inside the ciphertext (`docs/04` §2), which is why renaming a
+   * face does not rewrite everything it ever said.
+   *
+   * `current` is that face as it is *now*, and only the things that are facts
+   * about the person rather than about the message come from it: the agent
+   * badge (`docs/11`: always rendered, from the roster) and nothing else.
+   */
+  const snapshot = $derived(m.face);
+  const current = $derived(snapshot ? core.faces[snapshot.id] : undefined);
+  const face = $derived(snapshot ?? { id: '', name: 'someone', colour: 'grey' });
+  /**
+   * What `Avatar` needs, which is a bit more than a snapshot carries.
+   *
+   * Prefers the current face when there is one — an avatar image is a fact
+   * about the person now, not about the message — and falls back to the
+   * snapshot for somebody who has since left and is no longer in the roster.
+   */
+  const avatarFace = $derived(
+    current ?? ({ ...face, colour: (face.colour ?? 'grey') as Face['colour'], accountId: m.account } as Face),
+  );
+  const mine = $derived(m.account === MY_ACCOUNT);
   const editing = $derived(core.editing === m.id);
   const confirming = $derived(core.confirmingDelete === m.id);
 
@@ -57,7 +85,7 @@
   let draft = $state('');
   let editor = $state<HTMLTextAreaElement>();
 
-  const target = $derived(m.replyTo ? core.find(m.replyTo) : undefined);
+  const target = $derived(m.replyTo ? conversation.find(m.replyTo) : undefined);
 
   /** Replies branching off this message, or null if nobody has started one. */
   const summary = $derived(core.threadSummary(m.id));
@@ -84,7 +112,7 @@
   ]);
 
   function startEdit() {
-    draft = m.body;
+    draft = m.text;
     core.editing = m.id;
     // The textarea only exists after the branch renders, hence the microtask.
     queueMicrotask(() => {
@@ -116,7 +144,7 @@
     if (id === 'react') { pickerAnchor = moreBtn; pickerOpen = true; }
     if (id === 'reply') core.replyTo = m.id;
     if (id === 'thread') core.openThread(m.id);
-    if (id === 'copy') void navigator.clipboard?.writeText(m.body);
+    if (id === 'copy') void navigator.clipboard?.writeText(m.text);
     if (id === 'link') void navigator.clipboard?.writeText(linkToMessage(core.currentRoomId, m.id));
     if (id === 'pin') core.pin(m.id);
     if (id === 'edit') startEdit();
@@ -163,7 +191,7 @@
 
   function swipeDown(e: PointerEvent) {
     if (!layout.coarse || e.pointerType === 'mouse') return;
-    if (m.deleted || editing) return;
+    if (m.redacted || editing) return;
     g = { x: e.clientX, y: e.clientY, t: performance.now(), axis: null };
   }
 
@@ -241,7 +269,7 @@
   class:grouped={grouped && !unreadAbove}
   class:pending={m.pending}
   class:editing
-  class:gone={!!m.deleted}
+  class:gone={!!m.redacted || !!m.purged}
   class:flash={core.jumpTo === m.id}
   class:swiping
   class:tapped={tapActions.id === m.id}
@@ -265,7 +293,7 @@
       <time class="stamp">{clock(m.at)}</time>
     {:else}
       <button class="avatar-btn" onclick={() => (core.profileFor = face.id)} aria-label="{face.name}'s profile">
-        <Avatar {face} size={40} />
+        <Avatar face={avatarFace} size={40} />
       </button>
     {/if}
   </div>
@@ -274,22 +302,22 @@
     {#if target}
       <button
         class="replyto"
-        style="--rc: var(--face-{core.faces[target.faceId]!.colour})"
+        style="--rc: var(--face-{target.face?.colour ?? 'grey'})"
         onclick={() => (core.jumpTo = target.id)}
       >
         <Icon name="reply" size={13} />
-        <span class="who">{core.faces[target.faceId]!.name}</span>
-        <span class="snip">{target.deleted ? 'message deleted' : target.body || 'attachment'}</span>
+        <span class="who">{target.face?.name ?? 'someone'}</span>
+        <span class="snip">{target.redacted ? 'message deleted' : target.text || 'attachment'}</span>
       </button>
     {/if}
 
     {#if !grouped || unreadAbove}
       <div class="author-line">
         <button class="author" onclick={() => (core.profileFor = face.id)}>{face.name}</button>
-        {#if face.agent}
-          <span class="badge agent" title="Software, run by {face.agent.by}">{face.agent.label}</span>
+        {#if current?.agent}
+          <span class="badge agent" title="Software, run by {current.agent.by}">{current.agent.label}</span>
         {/if}
-        {#if face.accountId === MY_ACCOUNT && face.id !== 'viola'}
+        {#if m.account === MY_ACCOUNT && face.id !== 'viola'}
           <span class="badge same">same system</span>
         {/if}
         <time class="at">{clock(m.at)}</time>
@@ -297,10 +325,10 @@
       </div>
     {/if}
 
-    {#if m.deleted}
+    {#if m.redacted}
       <p class="tomb">
         <Icon name="trash" size={14} />
-        {m.deleted.by === 'author' ? 'This message was deleted.' : 'A moderator removed this message.'}
+        {m.redacted.by === 'author' ? 'This message was deleted.' : 'A moderator removed this message.'}
       </p>
     {:else if editing}
       <div class="edit">
@@ -319,9 +347,9 @@
         </div>
       </div>
     {:else}
-      {#if m.body}
+      {#if m.text}
         <div class="text">
-          <RichText body={m.body} />
+          <RichText body={m.text} />
           {#if m.editedAt}
             <span class="edited" title="Edited at {clock(m.editedAt)}">(edited)</span>
           {/if}
@@ -342,18 +370,20 @@
         </a>
       {/if}
 
-      {#if m.annotation}
+      <!-- A list rather than one: `docs/04` §2 allows one annotation per
+           (target, author, kind), so a translation and a transcript coexist. -->
+      {#each m.annotations ?? [] as a (a.author + a.kind)}
         <div class="annot">
           <div class="who">
             <Icon name="globe" size={13} />
-            <span>Translated by {m.annotation.by} · {m.annotation.kind}</span>
+            <span>Translated by {a.author} · {a.kind}</span>
           </div>
-          <div class="body-t">{m.annotation.body}</div>
+          <div class="body-t">{a.body}</div>
         </div>
-      {/if}
+      {/each}
     {/if}
 
-    {#if summary && !m.deleted}
+    {#if summary && !m.redacted}
       <!-- The branch has to lead somewhere from the room, or a thread is a
            place messages go to be lost. Faces rather than names: at a glance
            the useful question is "is this mine to read", and three avatars
@@ -370,18 +400,18 @@
       </button>
     {/if}
 
-    {#if m.reactions?.length && !m.deleted}
+    {#if m.reactions?.length && !m.redacted}
       <div class="reactions">
         {#each m.reactions as r (r.key)}
-          {@const mineToo = r.by.includes(core.speakingAs)}
+          {@const mineToo = r.faces.includes(core.speakingAs)}
           <button
             class="rx"
             class:mine={mineToo}
             onclick={() => core.react(m.id, r.key)}
-            title={who(r.by, r.key)}
+            title={who(r.faces, r.key)}
             aria-pressed={mineToo}
           >
-            <span class="emote">{r.key}</span><span class="n">{r.by.length}</span>
+            <span class="emote">{r.key}</span><span class="n">{r.faces.length}</span>
           </button>
         {/each}
         <button
@@ -412,7 +442,7 @@
     {/if}
   </div>
 
-  {#if !m.deleted && !editing}
+  {#if !m.redacted && !editing}
     <div class="actions">
       <button
         class:on={pickerOpen}
@@ -440,7 +470,7 @@
 {#if pickerOpen}
   <Popover anchor={pickerAnchor} align="end" prefer="top" onclose={() => (pickerOpen = false)}>
     <EmojiPicker
-      chosen={(m.reactions ?? []).filter((r) => r.by.includes(core.speakingAs)).map((r) => r.key)}
+      chosen={(m.reactions ?? []).filter((r) => r.faces.includes(core.speakingAs)).map((r) => r.key)}
       onpick={(c) => { core.react(m.id, c); pickerOpen = false; }}
       onclose={() => (pickerOpen = false)}
     />

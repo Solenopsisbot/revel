@@ -14,6 +14,7 @@
   import MessageRow from './MessageRow.svelte';
   import Icon from './Icon.svelte';
   import { core } from './fake/core.svelte.js';
+  import { conversation } from './fake/conversation.svelte.js';
   import { dayLabel, newDay } from './format.js';
 
   let viewport = $state<HTMLElement>();
@@ -21,18 +22,25 @@
   /** Only counts messages that arrived while you were scrolled away. */
   let missed = $state(0);
 
+  // Through the seam (`fake/conversation.svelte.ts`), so these rows are the
+  // shape `packages/core` produces rather than the shape the fixtures store.
+  // Swapping the source later is a change to that file, not to this one.
+  const timeline = $derived(conversation.timeline(core.currentRoomId));
+
   const rows = $derived(
-    core.timeline.map((m, i) => {
-      const prev = core.timeline[i - 1];
+    timeline.map((m, i) => {
+      const prev = timeline[i - 1];
       const dayBreak = !prev || newDay(prev.at, m.at);
       const grouped =
         !!prev &&
         !dayBreak &&
-        prev.faceId === m.faceId &&
+        // By the face that spoke, which is now a snapshot on the message
+        // rather than an id looked up in a map that may since have changed.
+        prev.face?.id === m.face?.id &&
         m.at - prev.at < 5 * 60_000 &&
         !m.replyTo &&
-        !prev.deleted &&
-        !m.deleted;
+        !prev.redacted &&
+        !m.redacted;
       const unreadAbove = core.lastRead[core.currentRoomId] === prev?.id && !!prev;
       return { m, grouped, dayBreak, unreadAbove };
     }),

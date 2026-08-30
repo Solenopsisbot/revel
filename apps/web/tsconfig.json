@@ -5,5 +5,10 @@
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true,
     "moduleResolution": "bundler"
-  }
+  },
+  // Test files are checked by vitest, which brings its own (newer) vite types.
+  // Letting them into this program makes `svelte-check` resolve two versions of
+  // vite at once and report a wall of errors from inside node_modules that have
+  // nothing to do with this app.
+  "exclude": ["src/**/*.test.ts"]
 }

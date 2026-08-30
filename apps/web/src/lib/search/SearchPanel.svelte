@@ -1,85 +1,92 @@
 <script lang="ts">
-  /**
-   * The search surface (`docs/19` §Search).
-   *
-   * A panel rather than a modal, and that is the whole design. `docs/19` says
-   * "enter jumps to the message in place" — in place meaning the room behind
-   * it, with the result list still there. A modal would make you choose
-   * between reading the conversation and keeping your results, which is the
-   * choice nobody wants: half of searching is walking a list of near-misses.
-   *
-   * One layout at every width. It is `min(420px, 100vw)`, so on a phone it is
-   * the screen and on a desktop it is a column — no second arrangement to
-   * keep in step with the first.
-   */
-  import Avatar from '../Avatar.svelte';
-  import Icon from '../Icon.svelte';
-  import { core } from '../fake/core.svelte.js';
-  import { search, type Scope, type Window } from './search.svelte.js';
-  import { dayLabel, clock } from '../format.js';
+/**
+ * The search surface (`docs/19` §Search).
+ *
+ * A panel rather than a modal, and that is the whole design. `docs/19` says
+ * "enter jumps to the message in place" — in place meaning the room behind
+ * it, with the result list still there. A modal would make you choose
+ * between reading the conversation and keeping your results, which is the
+ * choice nobody wants: half of searching is walking a list of near-misses.
+ *
+ * One layout at every width. It is `min(420px, 100vw)`, so on a phone it is
+ * the screen and on a desktop it is a column — no second arrangement to
+ * keep in step with the first.
+ */
+import Avatar from '../Avatar.svelte';
+import { core } from '../fake/core.svelte.js';
+import { clock, dayLabel } from '../format.js';
+import Icon from '../Icon.svelte';
+import { type Scope, search, type Window } from './search.svelte.js';
 
-  let input = $state<HTMLInputElement>();
-  let listEl = $state<HTMLElement>();
-  let cursor = $state(0);
-  let fromOpen = $state(false);
+let input = $state<HTMLInputElement>();
+let listEl = $state<HTMLElement>();
+let cursor = $state(0);
+let fromOpen = $state(false);
 
-  const SCOPES: { id: Scope; label: string }[] = [
-    { id: 'room', label: 'This room' },
-    { id: 'space', label: core.scope === 'home' ? 'All DMs' : 'This space' },
-    { id: 'everywhere', label: 'Everywhere' },
-  ];
+const SCOPES: { id: Scope; label: string }[] = [
+  { id: 'room', label: 'This room' },
+  { id: 'space', label: core.scope === 'home' ? 'All DMs' : 'This space' },
+  { id: 'everywhere', label: 'Everywhere' },
+];
 
-  const WINDOWS: { id: Window; label: string }[] = [
-    { id: 'any', label: 'Any time' },
-    { id: 'day', label: 'Today' },
-    { id: 'week', label: 'Week' },
-    { id: 'month', label: 'Month' },
-  ];
+const WINDOWS: { id: Window; label: string }[] = [
+  { id: 'any', label: 'Any time' },
+  { id: 'day', label: 'Today' },
+  { id: 'week', label: 'Week' },
+  { id: 'month', label: 'Month' },
+];
 
-  const results = $derived(search.results);
-  const fromFace = $derived(search.token('from'));
-  const hasFile = $derived(search.token('has') === 'file');
-  const inThread = $derived(search.token('in') === 'thread');
+const results = $derived(search.results);
+const fromFace = $derived(search.token('from'));
+const hasFile = $derived(search.token('has') === 'file');
+const inThread = $derived(search.token('in') === 'thread');
 
-  /** Focus on open, and select what's there so a second ⌘F retypes rather
+/** Focus on open, and select what's there so a second ⌘F retypes rather
       than appends — the common case is a new search, not an edit. */
-  $effect(() => {
-    if (search.open) queueMicrotask(() => input?.select());
-  });
+$effect(() => {
+  if (search.open) queueMicrotask(() => input?.select());
+});
 
-  // A new result set means the old cursor position is meaningless.
-  $effect(() => {
-    results.length;
-    cursor = 0;
-  });
+// A new result set means the old cursor position is meaningless.
+$effect(() => {
+  results.length;
+  cursor = 0;
+});
 
-  function move(d: number) {
-    if (!results.length) return;
-    cursor = Math.min(results.length - 1, Math.max(0, cursor + d));
-    listEl
-      ?.querySelectorAll<HTMLElement>('.hit')
-      [cursor]?.scrollIntoView({ block: 'nearest' });
+function move(d: number) {
+  if (!results.length) return;
+  cursor = Math.min(results.length - 1, Math.max(0, cursor + d));
+  listEl?.querySelectorAll<HTMLElement>('.hit')[cursor]?.scrollIntoView({ block: 'nearest' });
+}
+
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    move(1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    move(-1);
+  } else if (e.key === 'Enter' && results[cursor]) {
+    e.preventDefault();
+    search.go(results[cursor]!);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    search.close();
   }
+}
 
-  function onKey(e: KeyboardEvent) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
-    else if (e.key === 'Enter' && results[cursor]) { e.preventDefault(); search.go(results[cursor]!); }
-    else if (e.key === 'Escape') { e.preventDefault(); search.close(); }
+/** Split an excerpt into plain and marked runs, for rendering. */
+function runs(text: string, marks: [number, number][]) {
+  const out: { t: string; hit: boolean }[] = [];
+  let at = 0;
+  for (const [a, b] of marks) {
+    if (a > at) out.push({ t: text.slice(at, a), hit: false });
+    out.push({ t: text.slice(a, b), hit: true });
+    at = b;
   }
-
-  /** Split an excerpt into plain and marked runs, for rendering. */
-  function runs(text: string, marks: [number, number][]) {
-    const out: { t: string; hit: boolean }[] = [];
-    let at = 0;
-    for (const [a, b] of marks) {
-      if (a > at) out.push({ t: text.slice(at, a), hit: false });
-      out.push({ t: text.slice(a, b), hit: true });
-      at = b;
-    }
-    if (at < text.length) out.push({ t: text.slice(at), hit: false });
-    return out;
-  }
+  if (at < text.length) out.push({ t: text.slice(at), hit: false });
+  return out;
+}
 </script>
 
 <!-- `data-no-swipe`: on a phone this panel *is* the screen, so an edge drag
@@ -203,7 +210,10 @@
         {results.length === 1 ? 'result' : 'results'}
       </p>
       {#each results as hit, i (hit.roomId + hit.message.id)}
-        {@const face = core.faces[hit.message.faceId]}
+        <!-- The current face where there is one — an avatar is a fact about the
+             person now — falling back to the snapshot the message carries. -->
+        {@const face = (hit.message.face && core.faces[hit.message.face.id]) || undefined}
+        {@const snap = hit.message.face}
         <button
           class="hit"
           class:cursor={i === cursor}
@@ -217,7 +227,7 @@
           <div class="line">
             {#if face}<Avatar {face} size={20} />{/if}
             <div class="body">
-              <span class="who" style="color: var(--face-{face?.colour ?? 'violet'})">{face?.name ?? 'Someone'}</span>
+              <span class="who" style="color: var(--face-{snap?.colour ?? 'violet'})">{snap?.name ?? 'Someone'}</span>
               <span class="excerpt">
                 {#each runs(hit.excerpt, hit.marks) as r, j (j)}{#if r.hit}<mark>{r.t}</mark>{:else}{r.t}{/if}{/each}
               </span>

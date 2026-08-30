@@ -335,11 +335,40 @@ export interface Space {
 }
 
 export const faces: Record<string, Face> = {
-  viola: { id: 'viola', name: 'Viola', colour: 'aqua', accountId: 'acct-v', status: 'here', note: 'building the thing' },
-  june: { id: 'june', name: 'June', colour: 'mint', accountId: 'acct-v', pronouns: 'she/her', status: 'here' },
+  viola: {
+    id: 'viola',
+    name: 'Viola',
+    colour: 'aqua',
+    accountId: 'acct-v',
+    status: 'here',
+    note: 'building the thing',
+  },
+  june: {
+    id: 'june',
+    name: 'June',
+    colour: 'mint',
+    accountId: 'acct-v',
+    pronouns: 'she/her',
+    status: 'here',
+  },
   ash: { id: 'ash', name: 'Ash', colour: 'lilac', accountId: 'acct-v', status: 'away' },
-  rae: { id: 'rae', name: 'Rae', colour: 'rose', accountId: 'acct-r', pronouns: 'she/her', status: 'here', note: 'shapes, mostly' },
-  emeri: { id: 'emeri', name: 'Emeri', colour: 'sky', accountId: 'acct-e', pronouns: 'they/them', status: 'busy' },
+  rae: {
+    id: 'rae',
+    name: 'Rae',
+    colour: 'rose',
+    accountId: 'acct-r',
+    pronouns: 'she/her',
+    status: 'here',
+    note: 'shapes, mostly',
+  },
+  emeri: {
+    id: 'emeri',
+    name: 'Emeri',
+    colour: 'sky',
+    accountId: 'acct-e',
+    pronouns: 'they/them',
+    status: 'busy',
+  },
   kiko: {
     id: 'kiko',
     name: 'Kiko',
@@ -384,7 +413,15 @@ export const spaces: Space[] = [
         name: 'Build',
         colour: 'sky',
         rank: 2,
-        perms: ['VIEW', 'SEND', 'SEND_MEDIA', 'MANAGE_EVENTS', 'MANAGE_ROOMS', 'MANAGE_AGENTS', 'INVITE'],
+        perms: [
+          'VIEW',
+          'SEND',
+          'SEND_MEDIA',
+          'MANAGE_EVENTS',
+          'MANAGE_ROOMS',
+          'MANAGE_AGENTS',
+          'INVITE',
+        ],
       },
       {
         id: 'design',
@@ -395,9 +432,20 @@ export const spaces: Space[] = [
       },
     ],
     members: [
-      { accountId: 'acct-v', faceId: 'viola', roles: ['Admin'], joinedAt: t(60 * 24 * 400), owner: true },
+      {
+        accountId: 'acct-v',
+        faceId: 'viola',
+        roles: ['Admin'],
+        joinedAt: t(60 * 24 * 400),
+        owner: true,
+      },
       { accountId: 'acct-r', faceId: 'rae', roles: ['Design'], joinedAt: t(60 * 24 * 310) },
-      { accountId: 'acct-e', faceId: 'emeri', roles: ['Build', 'Design'], joinedAt: t(60 * 24 * 295) },
+      {
+        accountId: 'acct-e',
+        faceId: 'emeri',
+        roles: ['Build', 'Design'],
+        joinedAt: t(60 * 24 * 295),
+      },
       { accountId: 'acct-k', faceId: 'kiko', roles: ['Build'], joinedAt: t(60 * 24 * 120) },
       { accountId: 'acct-t', faceId: 'translator', roles: [], joinedAt: t(60 * 24 * 40) },
     ],
@@ -484,13 +532,65 @@ export const spaces: Space[] = [
       },
     ],
     rooms: [
-      { id: 'general', name: 'general', kind: 'text', category: 'General', topic: 'Anything, within reason', unread: 2, audience: { kind: 'everyone' } },
-      { id: 'design', name: 'design', kind: 'text', category: 'General', topic: 'Shapes, colour, and arguing about radii', unread: 3, mention: true, audience: { kind: 'everyone' } },
-      { id: 'off-topic', name: 'off-topic', kind: 'text', category: 'General', audience: { kind: 'everyone' } },
-      { id: 'crypto-review', name: 'crypto-review', kind: 'text', category: 'Build', topic: 'Read the threat model before posting', slow: 30, streamPaging: false, audience: { kind: 'roles', roles: ['Build'] } },
-      { id: 'ci-noise', name: 'ci-noise', kind: 'text', category: 'Build', notify: 'none', audience: { kind: 'everyone' } },
-      { id: 'the-couch', name: 'the couch', kind: 'voice', category: 'Voice', inCall: ['rae', 'emeri'], audience: { kind: 'everyone' } },
-      { id: 'focus', name: 'focus', kind: 'voice', category: 'Voice', audience: { kind: 'everyone' } },
+      {
+        id: 'general',
+        name: 'general',
+        kind: 'text',
+        category: 'General',
+        topic: 'Anything, within reason',
+        unread: 2,
+        audience: { kind: 'everyone' },
+      },
+      {
+        id: 'design',
+        name: 'design',
+        kind: 'text',
+        category: 'General',
+        topic: 'Shapes, colour, and arguing about radii',
+        unread: 3,
+        mention: true,
+        audience: { kind: 'everyone' },
+      },
+      {
+        id: 'off-topic',
+        name: 'off-topic',
+        kind: 'text',
+        category: 'General',
+        audience: { kind: 'everyone' },
+      },
+      {
+        id: 'crypto-review',
+        name: 'crypto-review',
+        kind: 'text',
+        category: 'Build',
+        topic: 'Read the threat model before posting',
+        slow: 30,
+        streamPaging: false,
+        audience: { kind: 'roles', roles: ['Build'] },
+      },
+      {
+        id: 'ci-noise',
+        name: 'ci-noise',
+        kind: 'text',
+        category: 'Build',
+        notify: 'none',
+        audience: { kind: 'everyone' },
+      },
+      {
+        id: 'the-couch',
+        name: 'the couch',
+        kind: 'voice',
+        category: 'Voice',
+        inCall: ['rae', 'emeri'],
+        audience: { kind: 'everyone' },
+      },
+      {
+        id: 'focus',
+        name: 'focus',
+        kind: 'voice',
+        category: 'Voice',
+        audience: { kind: 'everyone' },
+      },
     ],
   },
   {
@@ -517,7 +617,13 @@ export const spaces: Space[] = [
     // nobody reviews. Here you are Research, and the editor has to explain
     // itself rather than grey out.
     members: [
-      { accountId: 'acct-e', faceId: 'emeri', roles: ['Admin'], joinedAt: t(60 * 24 * 200), owner: true },
+      {
+        accountId: 'acct-e',
+        faceId: 'emeri',
+        roles: ['Admin'],
+        joinedAt: t(60 * 24 * 200),
+        owner: true,
+      },
       { accountId: 'acct-v', faceId: 'viola', roles: ['Research'], joinedAt: t(60 * 24 * 180) },
       { accountId: 'acct-k', faceId: 'kiko', roles: ['Research'], joinedAt: t(60 * 24 * 90) },
     ],
@@ -535,12 +641,28 @@ export const spaces: Space[] = [
     bans: [],
     purges: [],
     rooms: [
-      { id: 'papers', name: 'papers', kind: 'text', category: 'General', language: 'Japanese', weekly: 210, audience: { kind: 'everyone' } },
-      { id: 'runs', name: 'runs', kind: 'text', category: 'General', topic: 'Loss curves and disappointment', unread: 7, weekly: 340, audience: { kind: 'everyone' } },
+      {
+        id: 'papers',
+        name: 'papers',
+        kind: 'text',
+        category: 'General',
+        language: 'Japanese',
+        weekly: 210,
+        audience: { kind: 'everyone' },
+      },
+      {
+        id: 'runs',
+        name: 'runs',
+        kind: 'text',
+        category: 'General',
+        topic: 'Loss curves and disappointment',
+        unread: 7,
+        weekly: 340,
+        audience: { kind: 'everyone' },
+      },
     ],
   },
 ];
-
 
 /** A plausible speech envelope, so the scrubber has something honest to draw. */
 const wave = (n: number, seed = 7) => {
@@ -565,27 +687,82 @@ const wave = (n: number, seed = 7) => {
  */
 const recent: Record<string, Message[]> = {
   design: [
-    { id: 'd0', faceId: 'emeri', body: 'starting the room over. everything before this is in the archive.', at: t(1700) },
+    {
+      id: 'd0',
+      faceId: 'emeri',
+      body: 'starting the room over. everything before this is in the archive.',
+      at: t(1700),
+    },
     {
       id: 'd0b',
       faceId: 'rae',
       body: 'the palette, before I ruin it',
       at: t(1690),
       attachments: [
-        { id: 'a0', kind: 'image', name: 'palette.png', size: 157_655, url: '/mock/shot-wide.png', w: 1280, h: 800, alt: 'Three candy colours bleeding into each other' },
+        {
+          id: 'a0',
+          kind: 'image',
+          name: 'palette.png',
+          size: 157_655,
+          url: '/mock/shot-wide.png',
+          w: 1280,
+          h: 800,
+          alt: 'Three candy colours bleeding into each other',
+        },
       ],
       reactions: [{ key: '🔥', by: ['viola', 'june', 'emeri'] }],
     },
-    { id: 'd1', faceId: 'rae', body: 'the buttons need to feel like you can press them. that’s the whole thing.', at: t(48) },
+    {
+      id: 'd1',
+      faceId: 'rae',
+      body: 'the buttons need to feel like you can press them. that’s the whole thing.',
+      at: t(48),
+    },
     // A thread: the tangent that would otherwise have eaten the room. These
     // carry `thread`, so they are absent from the timeline and reachable only
     // through the summary line on d1 — which is the point of a branch.
-    { id: 'd1-t1', faceId: 'emeri', body: 'is that a shadow or a border though. i can never tell from the mock', at: t(46), thread: 'd1' },
-    { id: 'd1-t2', faceId: 'rae', body: 'shadow. a border would make it a card and it is not a card', at: t(45), thread: 'd1' },
-    { id: 'd1-t3', faceId: 'emeri', body: 'ok but then it needs to move on press or the shadow is lying', at: t(44), thread: 'd1' },
-    { id: 'd1-t4', faceId: 'rae', body: 'it does move. that is the entire reason the toy easing exists', at: t(43), thread: 'd1' },
-    { id: 'd1-t5', faceId: 'june', body: 'i measured it, 2px down and the shadow goes to zero. it reads as an object', at: t(41), thread: 'd1' },
-    { id: 'd1-t6', faceId: 'emeri', body: 'fine. i withdraw the objection and i am keeping the receipt', at: t(38), thread: 'd1' },
+    {
+      id: 'd1-t1',
+      faceId: 'emeri',
+      body: 'is that a shadow or a border though. i can never tell from the mock',
+      at: t(46),
+      thread: 'd1',
+    },
+    {
+      id: 'd1-t2',
+      faceId: 'rae',
+      body: 'shadow. a border would make it a card and it is not a card',
+      at: t(45),
+      thread: 'd1',
+    },
+    {
+      id: 'd1-t3',
+      faceId: 'emeri',
+      body: 'ok but then it needs to move on press or the shadow is lying',
+      at: t(44),
+      thread: 'd1',
+    },
+    {
+      id: 'd1-t4',
+      faceId: 'rae',
+      body: 'it does move. that is the entire reason the toy easing exists',
+      at: t(43),
+      thread: 'd1',
+    },
+    {
+      id: 'd1-t5',
+      faceId: 'june',
+      body: 'i measured it, 2px down and the shadow goes to zero. it reads as an object',
+      at: t(41),
+      thread: 'd1',
+    },
+    {
+      id: 'd1-t6',
+      faceId: 'emeri',
+      body: 'fine. i withdraw the objection and i am keeping the receipt',
+      at: t(38),
+      thread: 'd1',
+    },
     {
       id: 'd2',
       faceId: 'viola',
@@ -598,7 +775,13 @@ const recent: Record<string, Message[]> = {
         { key: '👍', by: ['emeri'] },
       ],
     },
-    { id: 'd2b', faceId: 'ash', body: 'this message is gone', at: t(44), deleted: { by: 'author', at: t(43) } },
+    {
+      id: 'd2b',
+      faceId: 'ash',
+      body: 'this message is gone',
+      at: t(44),
+      deleted: { by: 'author', at: t(43) },
+    },
     { id: 'd3', faceId: 'june', body: 'she does this every single time', at: t(12) },
     {
       id: 'd3b',
@@ -606,7 +789,16 @@ const recent: Record<string, Message[]> = {
       body: '',
       at: t(11),
       attachments: [
-        { id: 'a1', kind: 'gif', name: 'loop.gif', size: 96_102, url: '/mock/loop.gif', w: 240, h: 180, alt: '' },
+        {
+          id: 'a1',
+          kind: 'gif',
+          name: 'loop.gif',
+          size: 96_102,
+          url: '/mock/loop.gif',
+          w: 240,
+          h: 180,
+          alt: '',
+        },
       ],
     },
     {
@@ -614,7 +806,11 @@ const recent: Record<string, Message[]> = {
       faceId: 'emeri',
       body: 'Ich schaffe es heute Abend nicht, mein Zug ist ausgefallen.',
       at: t(9),
-      annotation: { by: 'Translator', kind: 'German', body: 'I can’t make it tonight, my train is cancelled.' },
+      annotation: {
+        by: 'Translator',
+        kind: 'German',
+        body: 'I can’t make it tonight, my train is cancelled.',
+      },
     },
     {
       id: 'd4b',
@@ -672,7 +868,17 @@ const recent: Record<string, Message[]> = {
       body: 'ok fine. ink twins it is',
       at: t(3),
       attachments: [
-        { id: 'a4', kind: 'image', name: 'the-fix.png', size: 108_712, url: '/mock/shot-tall.png', w: 900, h: 1200, alt: 'Darkened ink values against a light ground', spoiler: true },
+        {
+          id: 'a4',
+          kind: 'image',
+          name: 'the-fix.png',
+          size: 108_712,
+          url: '/mock/shot-tall.png',
+          w: 900,
+          h: 1200,
+          alt: 'Darkened ink values against a light ground',
+          spoiler: true,
+        },
         { id: 'a5', kind: 'file', name: 'contrast-audit.csv', size: 4_812, url: '#' },
       ],
     },
@@ -684,22 +890,68 @@ const recent: Record<string, Message[]> = {
   ],
   'off-topic': [],
   'crypto-review': [
-    { id: 'c1', faceId: 'kiko', body: 'A revoked device cannot read the next epoch. 30 tests hold it down.', at: t(200), pinned: true },
-    { id: 'c1-t1', faceId: 'emeri', body: 'Including the case where the revocation and a message race each other?', at: t(196), thread: 'c1' },
-    { id: 'c1-t2', faceId: 'kiko', body: 'Yes. The message either lands before the epoch advance or it does not land at all. There is no window where it lands after and is still readable.', at: t(194), thread: 'c1' },
-    { id: 'c1-t3', faceId: 'emeri', body: 'That is the one I actually wanted to know about. Thank you.', at: t(190), thread: 'c1' },
+    {
+      id: 'c1',
+      faceId: 'kiko',
+      body: 'A revoked device cannot read the next epoch. 30 tests hold it down.',
+      at: t(200),
+      pinned: true,
+    },
+    {
+      id: 'c1-t1',
+      faceId: 'emeri',
+      body: 'Including the case where the revocation and a message race each other?',
+      at: t(196),
+      thread: 'c1',
+    },
+    {
+      id: 'c1-t2',
+      faceId: 'kiko',
+      body: 'Yes. The message either lands before the epoch advance or it does not land at all. There is no window where it lands after and is still readable.',
+      at: t(194),
+      thread: 'c1',
+    },
+    {
+      id: 'c1-t3',
+      faceId: 'emeri',
+      body: 'That is the one I actually wanted to know about. Thank you.',
+      at: t(190),
+      thread: 'c1',
+    },
   ],
   'ci-noise': [],
   'dm-acct-r~acct-v': [
     { id: 'dm1', faceId: 'rae', body: 'did you see the contrast thing kiko posted', at: t(180) },
     { id: 'dm2', faceId: 'viola', body: 'yeah. he\u2019s right and i hate it', at: t(174) },
     { id: 'dm3', faceId: 'rae', body: 'the ink twins fix is fine though. genuinely', at: t(170) },
-    { id: 'dm4', faceId: 'rae', body: 'anyway are you around later? want to argue about radii in person', at: t(12) },
-    { id: 'dm4-t1', faceId: 'viola', body: 'after seven. bring the tablet', at: t(10), thread: 'dm4' },
-    { id: 'dm4-t2', faceId: 'rae', body: 'i am always bringing the tablet, that is not a condition', at: t(9), thread: 'dm4' },
+    {
+      id: 'dm4',
+      faceId: 'rae',
+      body: 'anyway are you around later? want to argue about radii in person',
+      at: t(12),
+    },
+    {
+      id: 'dm4-t1',
+      faceId: 'viola',
+      body: 'after seven. bring the tablet',
+      at: t(10),
+      thread: 'dm4',
+    },
+    {
+      id: 'dm4-t2',
+      faceId: 'rae',
+      body: 'i am always bringing the tablet, that is not a condition',
+      at: t(9),
+      thread: 'dm4',
+    },
   ],
   'dm-acct-e~acct-v': [
-    { id: 'dm5', faceId: 'emeri', body: 'train\u2019s cancelled, so tonight is off from my end', at: t(240) },
+    {
+      id: 'dm5',
+      faceId: 'emeri',
+      body: 'train\u2019s cancelled, so tonight is off from my end',
+      at: t(240),
+    },
   ],
   'dm-group-shapes': [
     { id: 'dm6', faceId: 'emeri', body: 'making this so we stop derailing #design', at: t(400) },
@@ -758,10 +1010,40 @@ export interface Device {
 }
 
 export const devices: Device[] = [
-  { id: 'd-mac', name: 'This device', platform: 'macOS', seen: 'now', seenDays: 0, current: true, fingerprint: '4f2a 9c31 88de 05b7 · a1c4 77f0 2be9 6d13' },
-  { id: 'd-phone', name: 'Phone', platform: 'iOS', seen: '2 hours ago', seenDays: 0, fingerprint: '77b1 04ce 9a25 f3d8 · 6e02 bb47 1c90 aa35' },
-  { id: 'd-ipad', name: 'iPad', platform: 'iPadOS', seen: '94 days ago', seenDays: 94, fingerprint: '2d5f a8b0 3e71 cc94 · 90fa 15d3 6b28 e047' },
-  { id: 'd-agent', name: 'Agent host', platform: 'Linux', seen: '5 minutes ago', seenDays: 0, agent: 'Kiko', fingerprint: 'c013 6ea9 47bd 2f85 · 38c1 0d76 b5e2 9147' },
+  {
+    id: 'd-mac',
+    name: 'This device',
+    platform: 'macOS',
+    seen: 'now',
+    seenDays: 0,
+    current: true,
+    fingerprint: '4f2a 9c31 88de 05b7 · a1c4 77f0 2be9 6d13',
+  },
+  {
+    id: 'd-phone',
+    name: 'Phone',
+    platform: 'iOS',
+    seen: '2 hours ago',
+    seenDays: 0,
+    fingerprint: '77b1 04ce 9a25 f3d8 · 6e02 bb47 1c90 aa35',
+  },
+  {
+    id: 'd-ipad',
+    name: 'iPad',
+    platform: 'iPadOS',
+    seen: '94 days ago',
+    seenDays: 94,
+    fingerprint: '2d5f a8b0 3e71 cc94 · 90fa 15d3 6b28 e047',
+  },
+  {
+    id: 'd-agent',
+    name: 'Agent host',
+    platform: 'Linux',
+    seen: '5 minutes ago',
+    seenDays: 0,
+    agent: 'Kiko',
+    fingerprint: 'c013 6ea9 47bd 2f85 · 38c1 0d76 b5e2 9147',
+  },
 ];
 
 export interface Account {
@@ -936,7 +1218,14 @@ export const INTERFACE_LANGUAGES = [
 
 /** Languages the on-device models can handle, for the "languages I read" list. */
 export const READABLE_LANGUAGES = [
-  'English', 'German', 'French', 'Spanish', 'Portuguese', 'Japanese', 'Korean', 'Dutch',
+  'English',
+  'German',
+  'French',
+  'Spanish',
+  'Portuguese',
+  'Japanese',
+  'Korean',
+  'Dutch',
 ];
 
 // ---------------------------------------------------------------------------
@@ -974,5 +1263,10 @@ export interface Dm {
 export const dms: Dm[] = [
   { id: dmId('acct-v', 'acct-r'), kind: 'dm', withIds: ['rae'], unread: 2, mention: true },
   { id: dmId('acct-v', 'acct-e'), kind: 'dm', withIds: ['emeri'] },
-  { id: 'dm-group-shapes', kind: 'group', withIds: ['rae', 'emeri'], name: 'shapes and complaints' },
+  {
+    id: 'dm-group-shapes',
+    kind: 'group',
+    withIds: ['rae', 'emeri'],
+    name: 'shapes and complaints',
+  },
 ];

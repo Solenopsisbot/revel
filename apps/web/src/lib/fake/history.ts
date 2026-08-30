@@ -517,11 +517,38 @@ const VOICES: Record<string, Voice> = {
 
 /** A small pool of files, so "has a file" filters to something real. */
 const FILES: Attachment[] = [
-  { id: 'h-att-1', kind: 'image', name: 'radii-audit.png', size: 141_204, url: '/mock/shot-wide.png', w: 1280, h: 800, alt: 'Every corner radius in the app, measured' },
-  { id: 'h-att-2', kind: 'image', name: 'contrast-pass.png', size: 98_331, url: '/mock/shot-tall.png', w: 900, h: 1200, alt: 'Ink twins measured against the light ground' },
+  {
+    id: 'h-att-1',
+    kind: 'image',
+    name: 'radii-audit.png',
+    size: 141_204,
+    url: '/mock/shot-wide.png',
+    w: 1280,
+    h: 800,
+    alt: 'Every corner radius in the app, measured',
+  },
+  {
+    id: 'h-att-2',
+    kind: 'image',
+    name: 'contrast-pass.png',
+    size: 98_331,
+    url: '/mock/shot-tall.png',
+    w: 900,
+    h: 1200,
+    alt: 'Ink twins measured against the light ground',
+  },
   { id: 'h-att-3', kind: 'file', name: 'threat-model.md', size: 21_880, url: '#' },
   { id: 'h-att-4', kind: 'file', name: 'ablation-table.csv', size: 7_412, url: '#' },
-  { id: 'h-att-5', kind: 'gif', name: 'drawer.gif', size: 402_119, url: '/mock/loop.gif', w: 240, h: 180, alt: 'A drawer tracking a thumb' },
+  {
+    id: 'h-att-5',
+    kind: 'gif',
+    name: 'drawer.gif',
+    size: 402_119,
+    url: '/mock/loop.gif',
+    w: 240,
+    h: 180,
+    alt: 'A drawer tracking a thumb',
+  },
 ];
 
 /** The visual half of the pool, for messages that post several at once. */
@@ -554,7 +581,8 @@ export function withHistory(base: Record<string, Message[]>): Record<string, Mes
 
     const history: Message[] = [];
     for (let i = 0; i < voice.count; i++) {
-      const line = voice.lines[(voice.lines.length - 1 - i + voice.lines.length * 4) % voice.lines.length]!;
+      const line =
+        voice.lines[(voice.lines.length - 1 - i + voice.lines.length * 4) % voice.lines.length]!;
       const face = voice.faces[Math.floor(rand() * voice.faces.length)]!;
 
       const m: Message = {
@@ -594,9 +622,11 @@ export function withHistory(base: Record<string, Message[]>): Record<string, Mes
       // "before last month" to mean something.
       const roll = rand();
       const gap =
-        roll < 0.07 ? (1 + rand() * 4) * 24 * HOUR
-        : roll < 0.24 ? (6 + rand() * 16) * HOUR
-        : (0.4 + rand() * 2.2) * voice.beat * MIN;
+        roll < 0.07
+          ? (1 + rand() * 4) * 24 * HOUR
+          : roll < 0.24
+            ? (6 + rand() * 16) * HOUR
+            : (0.4 + rand() * 2.2) * voice.beat * MIN;
       at -= gap;
     }
 

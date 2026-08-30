@@ -25,12 +25,15 @@
   import MessageRow from '../MessageRow.svelte';
   import Composer from '../Composer.svelte';
   import { core } from '../fake/core.svelte.js';
+  import { conversation } from '../fake/conversation.svelte.js';
   import { layout } from '../layout.svelte.js';
   import { dayLabel, newDay } from '../format.js';
 
   const parentId = $derived(core.openThreadId!);
-  const parent = $derived(core.parentOf(parentId));
-  const replies = $derived(core.repliesTo(parentId));
+  // Through the seam, like the room timeline, so a thread and a room render
+  // the same shape and swapping the source touches one file.
+  const parent = $derived(conversation.find(parentId));
+  const replies = $derived(conversation.replies(parentId));
 
   /** Day dividers, the same rule the room list uses. */
   const rows = $derived(
@@ -40,7 +43,7 @@
         m,
         dayBreak: !prev || newDay(prev.at, m.at),
         // Grouped under the same author within a few minutes, as in the room.
-        grouped: !!prev && prev.faceId === m.faceId && m.at - prev.at < 5 * 60_000,
+        grouped: !!prev && prev.face?.id === m.face?.id && m.at - prev.at < 5 * 60_000,
       };
     }),
   );
