@@ -21,7 +21,10 @@ const host = process.env.REVEL_HOST ?? `localhost:${process.env.PORT ?? 8080}`;
 /** `docs/03` §2's device-key challenge-response. No passwords at Hosts, ever. */
 const authenticate = sessionAuthenticator({ store, host });
 
-const app = createApp({ store, hub, ids: new SnowflakeFactory(0), authenticate, host });
+/** The IdP this box serves handles for. Both roles in one process by default. */
+const idp = process.env.REVEL_IDP ?? host;
+
+const app = createApp({ store, hub, ids: new SnowflakeFactory(0), authenticate, host, idp });
 
 const port = Number(process.env.PORT ?? 8080);
 console.log(`revel server on :${port}`);

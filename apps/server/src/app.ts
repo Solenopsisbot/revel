@@ -8,6 +8,7 @@
 import { type Event, EventInput, type SnowflakeFactory } from '@revel/protocol';
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { mountAccounts } from './accounts.js';
 import { mountAuth } from './auth.js';
 import { mountGroups, nudgeCommitter } from './groups.js';
 import type { Hub } from './hub.js';
@@ -30,6 +31,14 @@ export interface AppDeps {
   authenticate(req: Request): Promise<{ accountId: string; devicePub: string } | null>;
   /** This Host's name, as it appears in the challenge a device signs. */
   host?: string;
+  /**
+   * This IdP's name — the part after the `@` in an address.
+   *
+   * Separate from `host` because `docs/02` splits the two roles: a Host serves
+   * rooms, an IdP serves handles, and one box can be either or both. Defaults
+   * to the Host's name, which is the "both" case.
+   */
+  idp?: string;
 }
 
 const denialStatus: Record<string, ContentfulStatusCode> = {
@@ -133,8 +142,10 @@ export function createApp(deps: AppDeps) {
     return c.body(null, 204);
   });
 
+  const idp = deps.idp ?? deps.host ?? 'localhost';
   mountAuth(app, { store: deps.store, host: deps.host ?? 'localhost' });
-  mountRooms(app, { store: deps.store, ids: deps.ids, authenticate: deps.authenticate });
+  mountAccounts(app, { store: deps.store, idp, authenticate: deps.authenticate });
+  mountRooms(app, { store: deps.store, ids: deps.ids, idp, authenticate: deps.authenticate });
 
   mountGroups(app, {
     store: deps.store,

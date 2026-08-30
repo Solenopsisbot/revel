@@ -153,6 +153,45 @@ scenarios('starting from nothing', () => {
     await world.close();
   });
 
+  it('lets one person open a DM with another by name', async () => {
+    // What somebody actually does. Before handles you could open a DM with
+    // forty-three characters of base64url and nothing else, which is a chat app
+    // only in the sense that a socket is a conversation.
+    const world = await World.create();
+    const alice = await world.join('alice');
+    const bob = await world.join('bob');
+    await world.name(alice, 'alice');
+    await world.name(bob, 'bob');
+    await bob.replenish();
+
+    const room = await world.dmByName(alice, 'bob');
+    const group = await alice.open(room);
+    await alice.invite(group, [bob.account]);
+    await world.settle();
+
+    await bob.discover();
+    await bob.sync();
+    await alice.say(room, 'found you by name');
+    await world.settle();
+
+    expect(bob.texts(room)).toEqual(['found you by name']);
+    await world.close();
+  });
+
+  it('stores the key, not the name, once it has resolved one', async () => {
+    // A handle can be given up and taken by somebody else; a key cannot. The
+    // room's membership is account ids for that reason (`docs/17`).
+    const world = await World.create();
+    const alice = await world.join('alice');
+    const bob = await world.join('bob');
+    await world.name(bob, 'bob');
+
+    const room = await world.dmByName(alice, 'bob');
+    const info = (await alice.knownRooms()).find((r) => r.id === room);
+    expect(info?.members.sort()).toEqual([alice.account, bob.account].sort());
+    await world.close();
+  });
+
   it('gives both of them the same room, opened at the same moment', async () => {
     // The id is derived from the sorted pair (`docs/03` §4), so simultaneous
     // opens converge instead of racing to make two rooms nobody can reconcile.

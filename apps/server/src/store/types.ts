@@ -79,6 +79,24 @@ export interface Device {
  * that can be replayed, and one that outlives its connection is a window for a
  * signature collected somewhere else.
  */
+/**
+ * `docs/04` §1's `accounts`, IdP role.
+ *
+ * The row is a *handle binding*, not the account: an account is a public key
+ * and exists whether or not any IdP has heard of it. What lives here is the
+ * name somebody chose and the profile they attached to it.
+ */
+export interface Account {
+  /** The account public key. Stable; outlives any handle. */
+  id: string;
+  handle: string;
+  displayName: string | null;
+  avatar: string | null;
+  status: 'active' | 'suspended';
+  createdAt: number;
+  movedTo: string | null;
+}
+
 export interface Challenge {
   devicePub: string;
   expiresAt: number;
@@ -109,6 +127,28 @@ export interface Store {
   listRoomMembers(roomId: string): Promise<Membership[]>;
   addMember(roomId: string, accountId: string, roleIds?: string[]): Promise<void>;
   removeMember(roomId: string, accountId: string): Promise<void>;
+
+  getAccount(id: string): Promise<Account | null>;
+  /**
+   * Resolve a handle. Case-folded by the caller — the store compares bytes.
+   *
+   * `Viola` and `viola` being two accounts is an impersonation vector, so
+   * folding happens once, at the edge, and everything below sees the folded
+   * form. A store that folded too would be a second place to get it wrong.
+   */
+  getAccountByHandle(handle: string): Promise<Account | null>;
+  /**
+   * Bind a handle to an account, if nobody has it.
+   *
+   * Returns the existing binding when the handle is taken — including when it
+   * is taken by the caller, which is how re-claiming your own handle is a
+   * no-op rather than an error.
+   */
+  claimHandle(account: Account): Promise<{ account: Account; claimed: boolean }>;
+  updateAccount(
+    id: string,
+    patch: Partial<Pick<Account, 'displayName' | 'avatar'>>,
+  ): Promise<Account | null>;
 
   /**
    * Whether the server has ever seen this account.

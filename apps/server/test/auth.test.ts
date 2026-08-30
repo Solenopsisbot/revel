@@ -4,45 +4,18 @@
  * Before this, `authenticate` read a device id out of a header and believed it:
  * every policy check in the codebase was correct and none of them meant
  * anything. These are the tests that make the rest of the suite worth having.
- *
- * The certificates here are issued in TypeScript rather than by the Rust core,
- * because a test needs to forge one and production must never be able to.
- * `packages/core/test/auth.test.ts` is the other half — it proves the two
- * implementations of the format agree.
  */
 import {
   authPayload,
-  DEVICE_CERT_VERSION,
   decodeDeviceCert,
-  SnowflakeFactory,
   toAccountId,
   toBase64,
   verifyDeviceCert,
 } from '@revel/protocol';
-import { createApp, Hub, MemoryStore, sessionAuthenticator } from '@revel/server';
 import { describe, expect, it } from 'vitest';
+import { authHarness, HOST_NAME as HOST } from './authHelpers.js';
 
-const HOST = 'revel.test';
 const ENC = new TextEncoder();
-
-// ---------------------------------------------------------------------------
-// Issuing certificates, which only a test may do
-// ---------------------------------------------------------------------------
-
-async function keypair() {
-  const kp = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, [
-    'sign',
-    'verify',
-  ])) as CryptoKeyPair;
-  const pub = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
-  return { ...kp, pub };
-}
-
-function u32(n: number): Uint8Array {
-  const out = new Uint8Array(4);
-  new DataView(out.buffer).setUint32(0, n, false);
-  return out;
-}
 
 const join = (...parts: Uint8Array[]) => {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
@@ -54,113 +27,6 @@ const join = (...parts: Uint8Array[]) => {
   return out;
 };
 
-/** The same bytes `crates/revel-crypto/src/device.rs` signs. */
-async function issue(
-  account: Awaited<ReturnType<typeof keypair>>,
-  devicePub: Uint8Array,
-  label: string,
-) {
-  const payload = join(
-    ENC.encode('revel/device-cert/v1'),
-    account.pub,
-    u32(devicePub.length),
-    devicePub,
-    u32(ENC.encode(label).length),
-    ENC.encode(label),
-  );
-  const signature = new Uint8Array(
-    await crypto.subtle.sign({ name: 'Ed25519' }, account.privateKey, payload),
-  );
-  return join(
-    new Uint8Array([DEVICE_CERT_VERSION]),
-    account.pub,
-    signature,
-    u32(devicePub.length),
-    devicePub,
-    ENC.encode(label),
-  );
-}
-
-// ---------------------------------------------------------------------------
-
-function host() {
-  const store = new MemoryStore();
-  const app = createApp({
-    store,
-    hub: new Hub(),
-    ids: new SnowflakeFactory(1),
-    host: HOST,
-    authenticate: sessionAuthenticator({ store, host: HOST }),
-  });
-
-  const post = (path: string, body: unknown, token?: string) =>
-    app.request(path, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(body),
-    });
-
-  const get = (path: string, token?: string) =>
-    app.request(path, { headers: token ? { authorization: `Bearer ${token}` } : {} });
-
-  const del = (path: string, token?: string) =>
-    app.request(path, {
-      method: 'DELETE',
-      headers: token ? { authorization: `Bearer ${token}` } : {},
-    });
-
-  /** A whole person: account key, device key, certificate, registered. */
-  async function person(label = 'laptop', account?: Awaited<ReturnType<typeof keypair>>) {
-    const acct = account ?? (await keypair());
-    const dev = await keypair();
-    const certificate = await issue(acct, dev.pub, label);
-    const res = await post('/idp/devices', { certificate: toBase64(certificate) });
-
-    return {
-      account: acct,
-      device: dev,
-      devicePub: toAccountId(dev.pub),
-      accountId: toAccountId(acct.pub),
-      certificate,
-      registration: res,
-      /** Sign in properly: challenge, sign, token. */
-      async signIn(over: { host?: string; nonce?: string } = {}) {
-        const challenge = (await (
-          await post('/auth/challenge', { device: toAccountId(dev.pub) })
-        ).json()) as any;
-        const nonce = over.nonce ?? challenge.nonce;
-        const payload = authPayload(
-          over.host ?? challenge.host,
-          Uint8Array.from(atob(nonce), (c) => c.charCodeAt(0)),
-          dev.pub,
-        );
-        const signature = new Uint8Array(
-          await crypto.subtle.sign(
-            { name: 'Ed25519' },
-            dev.privateKey,
-            join(ENC.encode('revel/device-auth/v1'), payload),
-          ),
-        );
-        return post('/auth/session', {
-          device: toAccountId(dev.pub),
-          nonce: challenge.nonce,
-          signature: toBase64(signature),
-        });
-      },
-      async token() {
-        const res = await this.signIn();
-        if (res.status !== 201) throw new Error(`sign-in failed: ${res.status}`);
-        return ((await res.json()) as any).token as string;
-      },
-    };
-  }
-
-  return { store, app, post, get, del, person, keypair, issue };
-}
-
 // ---------------------------------------------------------------------------
 
 describe('registering a device', () => {
@@ -168,7 +34,7 @@ describe('registering a device', () => {
     // Self-certifying: the account key is inside it and signs the rest. That is
     // what makes `docs/17`'s "your account works at a Host you have never met"
     // true rather than aspirational.
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     expect(alice.registration.status).toBe(201);
 
@@ -182,14 +48,14 @@ describe('registering a device', () => {
   it('makes the device pub and the MLS signature key one identifier', async () => {
     // `docs/31` §8's recorded gap, closed. The Host used to know a device by
     // one name and the group by another, with nothing relating them.
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     const cert = decodeDeviceCert(alice.certificate)!;
     expect(alice.devicePub).toBe(toAccountId(cert.devicePub));
   });
 
   it('is idempotent, so a retry is not a conflict', async () => {
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     const again = await h.post('/idp/devices', { certificate: toBase64(alice.certificate) });
     expect(again.status).toBe(200);
@@ -198,7 +64,7 @@ describe('registering a device', () => {
 
   it('refuses a certificate whose signature does not check out', async () => {
     // The attack: pairing your device key with somebody else's account id.
-    const h = host();
+    const h = await authHarness();
     const victim = await h.keypair();
     const attacker = await h.keypair();
     const forged = await h.issue(attacker, attacker.pub, 'laptop');
@@ -211,7 +77,7 @@ describe('registering a device', () => {
   });
 
   it('refuses bytes that are not a certificate at all', async () => {
-    const h = host();
+    const h = await authHarness();
     expect(
       (await h.post('/idp/devices', { certificate: toBase64(new Uint8Array([1, 2, 3])) })).status,
     ).toBe(400);
@@ -220,7 +86,7 @@ describe('registering a device', () => {
   });
 
   it('refuses a version this build does not know', async () => {
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     const future = Uint8Array.from(alice.certificate);
     future[0] = 42;
@@ -230,7 +96,7 @@ describe('registering a device', () => {
 
 describe('signing in', () => {
   it('is a nonce, a signature and a token — no password anywhere', async () => {
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     const res = await alice.signIn();
     expect(res.status).toBe(201);
@@ -243,7 +109,7 @@ describe('signing in', () => {
   });
 
   it('opens the rest of the server', async () => {
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     expect((await h.get('/rooms')).status).toBe(401);
     expect((await h.get('/rooms', await alice.token())).status).toBe(200);
@@ -252,7 +118,7 @@ describe('signing in', () => {
   it('refuses a nonce that has already been spent', async () => {
     // Single-use. A nonce that can be spent twice is a signature that can be
     // replayed, which is the whole thing this protocol exists to prevent.
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
 
     const challenge = (await (
@@ -279,7 +145,7 @@ describe('signing in', () => {
   it('refuses a signature made for a different Host', async () => {
     // An account is expected to be used at Hosts it has never met, so a
     // signature collected by one must be worthless at another.
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     const res = await alice.signIn({ host: 'evil.example' });
     expect(res.status).toBe(401);
@@ -287,7 +153,7 @@ describe('signing in', () => {
   });
 
   it('refuses a device that was never registered', async () => {
-    const h = host();
+    const h = await authHarness();
     const stranger = await h.keypair();
     const res = await h.post('/auth/session', {
       device: toAccountId(stranger.pub),
@@ -301,7 +167,7 @@ describe('signing in', () => {
     // Answering differently would turn this into a way to ask whether somebody
     // has an account here. The signature check is where an unknown device
     // fails, and it fails the same way as a bad one.
-    const h = host();
+    const h = await authHarness();
     const stranger = await h.keypair();
     const known = await h.person();
 
@@ -314,7 +180,7 @@ describe('signing in', () => {
   });
 
   it('refuses a challenge issued to another device', async () => {
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     const bob = await h.person('phone');
 
@@ -339,7 +205,7 @@ describe('signing in', () => {
   });
 
   it('rejects a malformed request', async () => {
-    const h = host();
+    const h = await authHarness();
     expect((await h.post('/auth/challenge', {})).status).toBe(400);
     expect((await h.post('/auth/session', { device: 'x' })).status).toBe(400);
   });
@@ -348,7 +214,7 @@ describe('signing in', () => {
 describe('a token', () => {
   it('is not stored in a form anybody could spend', async () => {
     // A database that leaks should not be a bag of usable sessions.
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     const token = await alice.token();
     expect([...h.store.sessions.keys()]).not.toContain(token);
@@ -356,7 +222,7 @@ describe('a token', () => {
   });
 
   it('is refused once it has been signed out', async () => {
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     const token = await alice.token();
 
@@ -365,7 +231,7 @@ describe('a token', () => {
   });
 
   it('is refused when it has expired', async () => {
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     const token = await alice.token();
     for (const [hash, session] of h.store.sessions) {
@@ -375,7 +241,7 @@ describe('a token', () => {
   });
 
   it('is refused without the `Bearer` scheme', async () => {
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     const token = await alice.token();
     const res = await h.app.request('/rooms', { headers: { authorization: token } });
@@ -388,7 +254,7 @@ describe('signing a device out', () => {
     // `docs/03` §3: revocation "invalidates its Host sessions immediately". A
     // revocation that waited for a token to expire would be a lie in the one
     // place it matters most — the lost phone.
-    const h = host();
+    const h = await authHarness();
     const laptop = await h.person('laptop');
     const phone = await h.person('phone', laptop.account);
 
@@ -402,7 +268,7 @@ describe('signing a device out', () => {
   });
 
   it('stops the device signing back in', async () => {
-    const h = host();
+    const h = await authHarness();
     const laptop = await h.person('laptop');
     const phone = await h.person('phone', laptop.account);
     await h.del(`/idp/devices/${phone.devicePub}`, await laptop.token());
@@ -415,7 +281,7 @@ describe('signing a device out', () => {
   it('stops it re-registering its way back in', async () => {
     // Otherwise "sign out this device" lasts exactly as long as it takes to
     // press the button again on the device you were signing out.
-    const h = host();
+    const h = await authHarness();
     const laptop = await h.person('laptop');
     const phone = await h.person('phone', laptop.account);
     await h.del(`/idp/devices/${phone.devicePub}`, await laptop.token());
@@ -426,7 +292,7 @@ describe('signing a device out', () => {
   });
 
   it('cannot be done to somebody else‘s device', async () => {
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     const mallory = await h.person('mallory');
 
@@ -438,7 +304,7 @@ describe('signing a device out', () => {
   });
 
   it('leaves the account‘s other devices alone', async () => {
-    const h = host();
+    const h = await authHarness();
     const laptop = await h.person('laptop');
     const phone = await h.person('phone', laptop.account);
     await h.del(`/idp/devices/${phone.devicePub}`, await laptop.token());
@@ -452,7 +318,7 @@ describe('signing a device out', () => {
 
 describe('the devices screen', () => {
   it('lists this account‘s devices and nobody else‘s', async () => {
-    const h = host();
+    const h = await authHarness();
     const laptop = await h.person('laptop');
     await h.person('phone', laptop.account);
     const stranger = await h.person('stranger');
@@ -465,14 +331,14 @@ describe('the devices screen', () => {
   });
 
   it('needs a session', async () => {
-    const h = host();
+    const h = await authHarness();
     expect((await h.get('/idp/devices')).status).toBe(401);
   });
 });
 
 describe('the certificates these tests forge', () => {
   it('are the real format, or none of the above proves anything', async () => {
-    const h = host();
+    const h = await authHarness();
     const alice = await h.person();
     expect(await verifyDeviceCert(decodeDeviceCert(alice.certificate)!)).toBe(true);
   });

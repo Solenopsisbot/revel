@@ -43,10 +43,24 @@ export const RoomInfo = z.object({
 export type RoomInfo = z.infer<typeof RoomInfo>;
 
 /**
- * Open a DM with somebody. Idempotent: the id is derived from the pair, so
- * asking twice — or both people asking at once — yields the same room.
+ * Open a DM with somebody, by key or by name.
+ *
+ * Idempotent: the id is derived from the pair, so asking twice — or both people
+ * asking at once — yields the same room.
+ *
+ * Both forms, because they are for different callers. A person types a name; a
+ * client that already holds a roster has the key, and should use it — a handle
+ * can be given up and taken by somebody else, and a key cannot (`docs/17`).
  */
-export const CreateDm = z.object({ account: AccountId });
+export const CreateDm = z
+  .object({
+    account: AccountId.optional(),
+    /** `viola` or `viola@revel.chat`. Bare resolves at the Host's own IdP. */
+    address: z.string().min(2).max(290).optional(),
+  })
+  .refine((v) => (v.account === undefined) !== (v.address === undefined), {
+    message: 'give exactly one of account or address',
+  });
 export type CreateDm = z.infer<typeof CreateDm>;
 
 /**

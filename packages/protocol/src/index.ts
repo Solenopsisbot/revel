@@ -5,6 +5,7 @@
  * Changing a schema here is a protocol change; see `docs/29` §1 for the rules
  * that make one safe, given encrypted history can never be rewritten.
  */
+export * from './accounts.js';
 export * from './base64.js';
 export * from './envelope.js';
 export * from './events.js';

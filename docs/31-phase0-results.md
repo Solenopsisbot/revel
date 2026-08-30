@@ -803,3 +803,68 @@ invitee's console.
 
 The harness runs on real auth now, which is the point: a harness that shortcut
 sign-in would be testing a server nobody deploys.
+
+---
+
+## 12. Handles, and one decision that is not mine to make
+
+`docs/03` §2: an account *is* a public key; a handle is a human name for it,
+registered at an IdP, and the full address is email-shaped. Until this you could
+open a DM with forty-three characters of base64url and not with a name.
+
+The rule most of the implementation is defending is `docs/17`'s:
+
+> **Handles are not unique across IdPs.** Two different people can both be
+> `viola`. So the *full address* is the identifier everywhere it matters. The
+> bare handle is a display convenience, never a key.
+
+Three things follow, and each has a test:
+
+- **Case is folded once, at the edge.** `Viola` and `viola` being two accounts
+  is an impersonation vector. Input is lenient (a person typing `Viola` into a
+  sign-up box should not get a validation error) and storage is canonical, with
+  exactly one function between them.
+- **A foreign address is refused, not resolved locally.** Treating
+  `viola@elsewhere` as the local `viola` delivers a message to the wrong person
+  with the right name. `docs/03` §2 resolves foreign handles by fetching
+  `/.well-known/uca/handles/<handle>` and verifying transparency-log inclusion;
+  neither exists, so this answers 501 and says which IdP it could not reach.
+- **Rooms store the key, never the name.** A handle can be given up and taken by
+  somebody else; a key cannot.
+
+### The account id encoding — doc and code disagree
+
+`docs/03` §2 says:
+
+> `account_id` = the account public key (encoded as a **52-char base32 string,
+> prefixed for legibility**).
+
+The code has always used **base64url, 43 characters, unprefixed** (`toAccountId`).
+Nobody decided that; it was the first thing written and it stuck.
+
+**This is Viola's call, not mine.** The arguments:
+
+| | base32, prefixed (`docs/03`) | base64url (the code) |
+| --- | --- | --- |
+| Length | 52 + prefix | 43 |
+| Case | insensitive — survives being lowercased by a URL, an email client, or a person saying it aloud | sensitive |
+| Reading it aloud | plausible | no |
+| Telling it apart from a device id or a snowflake | the prefix does it | nothing does |
+
+The reason it is worth deciding *now* rather than later is that account ids are
+about to become user-visible — invite links, deep links, the "verify this
+person" screen — and not because it is expensive to change. It is not:
+**account ids do not appear inside encrypted history.** Attribution comes from
+the MLS leaf, not from a stored id, so there is no sealed format to migrate.
+The cost is a couple of hours of fixtures either way.
+
+Recorded here so the divergence is a decision rather than an accident.
+
+### Still missing from phase 1
+
+OPAQUE registration, the key backup and its three wraps, second factors, and the
+transparency log. Claiming a handle currently proves you hold a device whose
+certificate is signed by the account key — which is what a session already
+proves. That is enough to bind a name to a key and is *not* what OPAQUE is for:
+OPAQUE protects the key **backup**, so that a new device can sign in with a
+password. Different thing, same phase.

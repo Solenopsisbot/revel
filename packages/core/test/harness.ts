@@ -127,6 +127,22 @@ export class World {
   }
 
   /**
+   * Give somebody a name, so scenarios can address them like a person does.
+   *
+   * Optional on purpose: an account is a key and works perfectly well without a
+   * handle. Anything that only works once a handle exists is a bug, and a
+   * harness that always claimed one would hide it.
+   */
+  async name(client: Client, handle: string): Promise<void> {
+    await client.transport.claimHandle(handle);
+  }
+
+  /** Open a DM by name rather than by key — what a person actually does. */
+  async dmByName(from: Client, handle: string): Promise<string> {
+    return (await from.transport.createDmWith(handle)).id;
+  }
+
+  /**
    * Start a DM the way a person does: through the server, no store poking.
    *
    * `room()` below is the shortcut for scenarios that are about something else

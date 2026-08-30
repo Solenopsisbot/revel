@@ -11,7 +11,7 @@
  * Neither of them knows what an event *means*. They move opaque payloads, which
  * is the same thing the server does, for the same reason.
  */
-import type { Event, EventInput, RoomInfo } from '@revel/protocol';
+import type { AccountProfile, Event, EventInput, RoomInfo, UpdateProfile } from '@revel/protocol';
 
 export interface FetchOptions {
   /** Page backwards: only events older than this id. */
@@ -62,12 +62,28 @@ export interface Transport {
    * room.
    */
   createDm(account: string): Promise<RoomInfo>;
+  /** By name — `viola` or `viola@revel.chat`. The point of handles existing. */
+  createDmWith(address: string): Promise<RoomInfo>;
   /** Open a group DM. Not idempotent; a second one is a second conversation. */
   createGroupRoom(accounts: string[]): Promise<RoomInfo>;
 
   addMembers(roomId: string, accounts: string[]): Promise<RoomInfo>;
   /** Yourself only. Does not remove your MLS leaf — a member has to commit that. */
   leaveRoom(roomId: string): Promise<void>;
+
+  // -- identity --------------------------------------------------------------
+
+  /** This account's profile, or `{ handle: null }` before one is claimed. */
+  me(): Promise<AccountProfile | { id: string; handle: null }>;
+  claimHandle(handle: string): Promise<AccountProfile>;
+  updateProfile(patch: UpdateProfile): Promise<AccountProfile>;
+  /**
+   * Resolve an address to an account.
+   *
+   * Store the id it returns, never the handle: a handle can be given up and
+   * taken by somebody else, and a key cannot (`docs/17`).
+   */
+  resolveAddress(address: string): Promise<AccountProfile>;
 }
 
 /** Live events, once something is delivering them. */
@@ -161,6 +177,29 @@ export class HttpTransport implements Transport {
 
   createDm(account: string): Promise<RoomInfo> {
     return this.#json('/rooms/dm', { method: 'POST', body: JSON.stringify({ account }) });
+  }
+
+  createDmWith(address: string): Promise<RoomInfo> {
+    return this.#json('/rooms/dm', { method: 'POST', body: JSON.stringify({ address }) });
+  }
+
+  me(): Promise<AccountProfile | { id: string; handle: null }> {
+    return this.#json('/idp/accounts/me', { method: 'GET' });
+  }
+
+  claimHandle(handle: string): Promise<AccountProfile> {
+    return this.#json('/idp/accounts/me/handle', {
+      method: 'POST',
+      body: JSON.stringify({ handle }),
+    });
+  }
+
+  updateProfile(patch: UpdateProfile): Promise<AccountProfile> {
+    return this.#json('/idp/accounts/me', { method: 'PATCH', body: JSON.stringify(patch) });
+  }
+
+  resolveAddress(address: string): Promise<AccountProfile> {
+    return this.#json(`/idp/accounts/${encodeURIComponent(address)}`, { method: 'GET' });
   }
 
   createGroupRoom(accounts: string[]): Promise<RoomInfo> {

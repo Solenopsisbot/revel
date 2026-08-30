@@ -22,12 +22,15 @@ import {
   type SnowflakeFactory,
 } from '@revel/protocol';
 import type { Hono } from 'hono';
+import { resolveAddress } from './accounts.js';
 import { type Actor, canRead } from './policy.js';
 import type { Room, Store } from './store/types.js';
 
 export interface RoomDeps {
   store: Store;
   ids: SnowflakeFactory;
+  /** For resolving a handle in `POST /rooms/dm`. */
+  idp: string;
   authenticate(req: Request): Promise<Actor | null>;
 }
 
@@ -76,7 +79,20 @@ export function mountRooms(app: Hono, deps: RoomDeps): void {
 
     const parsed = CreateDm.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
-    const other = parsed.data.account;
+
+    // By key or by name. The name is the point of handles existing, and the key
+    // stays available because a handle can be given up and taken by somebody
+    // else while a key cannot (`docs/17`).
+    let other: string;
+    if (parsed.data.account) {
+      other = parsed.data.account;
+    } else {
+      const resolved = await resolveAddress(deps, parsed.data.address as string);
+      if ('error' in resolved) {
+        return c.json({ error: resolved.error }, resolved.error === 'foreign_idp' ? 501 : 404);
+      }
+      other = resolved.id;
+    }
 
     // A DM with yourself is a note to self, which is a real feature and not
     // this one: it would be a room with a single-account audience and a

@@ -2,6 +2,7 @@
 import type { Event, HandshakeRecord, KeyPackageSupply, KeyPackageUpload } from '@revel/protocol';
 import { compareIds } from '@revel/protocol';
 import type {
+  Account,
   Challenge,
   ClaimedPackage,
   Device,
@@ -74,6 +75,43 @@ export class MemoryStore implements Store {
 
   async removeMember(roomId: string, accountId: string) {
     this.memberships.delete(`${roomId}:${accountId}`);
+  }
+
+  accounts = new Map<string, Account>();
+  /** handle (folded) -> account id. The uniqueness constraint, made explicit. */
+  handles = new Map<string, string>();
+
+  async getAccount(id: string) {
+    return this.accounts.get(id) ?? null;
+  }
+
+  async getAccountByHandle(handle: string) {
+    const id = this.handles.get(handle);
+    return id ? (this.accounts.get(id) ?? null) : null;
+  }
+
+  async claimHandle(account: Account) {
+    const holder = this.handles.get(account.handle);
+    if (holder) return { account: this.accounts.get(holder) as Account, claimed: false };
+
+    // Releasing the old handle in the same step. Two handles pointing at one
+    // account would make `getAccountByHandle` and `getAccount` disagree about
+    // what somebody is called.
+    const previous = this.accounts.get(account.id);
+    if (previous) this.handles.delete(previous.handle);
+
+    const merged: Account = { ...(previous ?? account), handle: account.handle };
+    this.accounts.set(account.id, merged);
+    this.handles.set(account.handle, account.id);
+    return { account: merged, claimed: true };
+  }
+
+  async updateAccount(id: string, patch: Partial<Pick<Account, 'displayName' | 'avatar'>>) {
+    const account = this.accounts.get(id);
+    if (!account) return null;
+    const updated = { ...account, ...patch };
+    this.accounts.set(id, updated);
+    return updated;
   }
 
   async accountExists(accountId: string) {
