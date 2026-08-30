@@ -40,6 +40,7 @@ export const BlobRef = z.object({
   alt: z.string().max(2000).optional(),
   thumb: z.string().min(1).max(128).optional(),
 });
+export type BlobRef = z.infer<typeof BlobRef>;
 
 /** Rendered as a node tree, never as raw HTML. */
 export const RichText: z.ZodType<unknown> = z.lazy(() =>

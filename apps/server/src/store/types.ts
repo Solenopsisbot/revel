@@ -97,6 +97,24 @@ export interface Account {
   movedTo: string | null;
 }
 
+/**
+ * `docs/04` §1's `blobs`. Ciphertext, and metadata that is not a lie.
+ *
+ * No name, no MIME type, no dimensions: the server has never seen the
+ * plaintext. `docs/22`'s "the blob store holds ciphertext with no filename or
+ * type" is this row.
+ */
+export interface Blob {
+  id: string;
+  roomId: string;
+  uploader: string;
+  size: number;
+  /** SHA-256 of the ciphertext. Integrity at rest, not end-to-end. */
+  hash: string;
+  createdAt: number;
+  purgedAt: number | null;
+}
+
 export interface Challenge {
   devicePub: string;
   expiresAt: number;
@@ -200,6 +218,24 @@ export interface Store {
   listEvents(roomId: string, opts?: { before?: string; limit?: number }): Promise<Event[]>;
   /** Delete the bytes, keep the tombstone so clients can drop their copies. */
   purgeEvent(roomId: string, eventId: string): Promise<boolean>;
+
+  // -------------------------------------------------------------------------
+  // Blobs (`docs/04` §1)
+  // -------------------------------------------------------------------------
+
+  /** Store ciphertext. The bytes and the row go together or neither does. */
+  putBlob(blob: Blob, bytes: Uint8Array): Promise<Blob>;
+  getBlob(id: string): Promise<Blob | null>;
+  /** Null when the row exists and the bytes are gone — a purge, not a 404. */
+  readBlob(id: string): Promise<Uint8Array | null>;
+  /**
+   * Drop the bytes, keep the row.
+   *
+   * Same shape as an event purge and for the same reason: a client that has
+   * the ciphertext cached needs to be told it is gone, and a missing row
+   * cannot tell it anything.
+   */
+  purgeBlob(id: string, at: number): Promise<boolean>;
 
   // -------------------------------------------------------------------------
   // The handshake surface (`docs/04` §1, Host role)

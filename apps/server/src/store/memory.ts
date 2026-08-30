@@ -3,6 +3,7 @@ import type { Event, HandshakeRecord, KeyPackageSupply, KeyPackageUpload } from 
 import { compareIds } from '@revel/protocol';
 import type {
   Account,
+  Blob,
   Challenge,
   ClaimedPackage,
   Device,
@@ -136,6 +137,35 @@ export class MemoryStore implements Store {
   }
   async getDevice(pub: string) {
     return this.devices.get(pub) ?? null;
+  }
+
+  blobs = new Map<string, Blob>();
+  #blobBytes = new Map<string, Uint8Array>();
+
+  async putBlob(blob: Blob, bytes: Uint8Array) {
+    // One step, because a row without bytes is a broken attachment and bytes
+    // without a row are storage nobody will ever collect. In Postgres the row
+    // is written after the object store confirms.
+    this.#blobBytes.set(blob.id, bytes);
+    this.blobs.set(blob.id, blob);
+    return blob;
+  }
+
+  async getBlob(id: string) {
+    return this.blobs.get(id) ?? null;
+  }
+
+  async readBlob(id: string) {
+    return this.#blobBytes.get(id) ?? null;
+  }
+
+  async purgeBlob(id: string, at: number) {
+    const blob = this.blobs.get(id);
+    if (!blob || blob.purgedAt) return false;
+    this.#blobBytes.delete(id);
+    blob.purgedAt = at;
+    blob.size = 0;
+    return true;
   }
 
   challenges = new Map<string, Challenge>();

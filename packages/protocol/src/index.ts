@@ -7,6 +7,7 @@
  */
 export * from './accounts.js';
 export * from './base64.js';
+export * from './blobs.js';
 export * from './envelope.js';
 export * from './events.js';
 export * from './groups.js';

@@ -11,7 +11,14 @@
  * Neither of them knows what an event *means*. They move opaque payloads, which
  * is the same thing the server does, for the same reason.
  */
-import type { AccountProfile, Event, EventInput, RoomInfo, UpdateProfile } from '@revel/protocol';
+import type {
+  AccountProfile,
+  BlobInfo,
+  Event,
+  EventInput,
+  RoomInfo,
+  UpdateProfile,
+} from '@revel/protocol';
 
 export interface FetchOptions {
   /** Page backwards: only events older than this id. */
@@ -84,6 +91,16 @@ export interface Transport {
    * taken by somebody else, and a key cannot (`docs/17`).
    */
   resolveAddress(address: string): Promise<AccountProfile>;
+
+  // -- blobs -----------------------------------------------------------------
+  //
+  // Ciphertext in, ciphertext out. Sealing and opening are `blobs/seal.ts`; the
+  // transport never sees a key and never sees a filename.
+
+  uploadBlob(roomId: string, ciphertext: Uint8Array): Promise<BlobInfo>;
+  downloadBlob(blobId: string): Promise<Uint8Array>;
+  /** Remove the bytes. The uploader may; anybody else needs `MANAGE_EVENTS`. */
+  purgeBlob(blobId: string): Promise<void>;
 }
 
 /** Live events, once something is delivering them. */
@@ -202,6 +219,29 @@ export class HttpTransport implements Transport {
     return this.#json(`/idp/accounts/${encodeURIComponent(address)}`, { method: 'GET' });
   }
 
+  async uploadBlob(roomId: string, ciphertext: Uint8Array): Promise<BlobInfo> {
+    // Raw bytes, not base64 in JSON: a third more over the wire and a whole
+    // extra copy at both ends, on the one request measured in megabytes.
+    const body = await this.#json<{ blob: BlobInfo }>(
+      `/rooms/${encodeURIComponent(roomId)}/blobs`,
+      {
+        method: 'POST',
+        body: ciphertext as unknown as BodyInit,
+        headers: { 'content-type': 'application/octet-stream' },
+      },
+    );
+    return body.blob;
+  }
+
+  async downloadBlob(blobId: string): Promise<Uint8Array> {
+    const response = await this.#request(`/blobs/${encodeURIComponent(blobId)}`, { method: 'GET' });
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  async purgeBlob(blobId: string): Promise<void> {
+    await this.#request(`/blobs/${encodeURIComponent(blobId)}`, { method: 'DELETE' });
+  }
+
   createGroupRoom(accounts: string[]): Promise<RoomInfo> {
     return this.#json('/rooms/group', { method: 'POST', body: JSON.stringify({ accounts }) });
   }
@@ -225,6 +265,9 @@ export class HttpTransport implements Transport {
     const response = await this.#fetch(`${this.#baseUrl}${path}`, {
       ...init,
       headers: {
+        // The default, overridable by `init.headers` — which is how a blob
+        // upload declares itself as bytes. Ordering matters here and is easy to
+        // reverse by accident.
         'content-type': 'application/json',
         ...(await this.#headers()),
         ...init.headers,

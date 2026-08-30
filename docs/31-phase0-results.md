@@ -868,3 +868,64 @@ certificate is signed by the account key — which is what a session already
 proves. That is enough to bind a name to a key and is *not* what OPAQUE is for:
 OPAQUE protects the key **backup**, so that a new device can sign in with a
 password. Different thing, same phase.
+
+---
+
+## 13. Attachments, and one deliberate departure from `docs/26`
+
+`docs/22`: "Files are sealed client-side with a per-file key that travels inside
+the encrypted event, so the blob store holds ciphertext with no filename or
+type." That is now true rather than planned. Sealing, upload, download, purge,
+and thumbnails as their own sealed blobs.
+
+The server-side file is almost empty, and the almost-emptiness is the feature:
+hold these bytes, hand them back to people who may read the room. The row has a
+length, a room, an uploader and a hash of the *ciphertext*, and there is no name
+column, no MIME column and no dimensions, because there is nothing to put in
+them.
+
+Three consequences fall out and each has a test:
+
+- **No hotlinking.** A URL pasted elsewhere is meaningless bytes: the key was
+  never in the URL, a header, or anything the server touched.
+- **No thumbnails from the server.** It cannot see the image. A thumbnail is its
+  own sealed blob under its own key, made on the sender's device.
+- **No link previews from the server.** Same reason plus a better one — fetching
+  a URL on a reader's behalf would tell the linked site that the link was read.
+
+### Sealing is in TypeScript, not Rust, and that is a departure
+
+`docs/26` Option C puts "MLS, device keys and **envelope encryption**" in the
+Rust core. A strict reading puts blob sealing there too. It is in
+`packages/core/src/blobs/seal.ts` instead. The reasons, recorded so this is a
+decision rather than drift:
+
+- **Size.** wasm has its own linear memory. Sealing a 100 MB file in Rust means
+  copying it in and copying the result out — 200 MB of heap for one photo, in a
+  tab that also has to render a room.
+- **Hardware.** WebCrypto's AES-GCM is hardware-accelerated everywhere; the wasm
+  build is not and cannot be.
+- **The argument is small enough to check by reading it.** A fresh 256-bit key
+  per blob, used exactly once, with a fresh random nonce.
+
+That last one is the real reason. What makes MLS state need the discipline of
+the Rust core is that getting the *sequencing* wrong silently reuses a nonce —
+the bug in §7 above. Here there is no sequence: the key is new every time, so
+there is nothing to restore behind and nothing to reuse. A property test asserts
+twenty seals produce twenty distinct keys and twenty distinct nonces.
+
+### Two hashes that are not the same hash
+
+`BlobRef.hash` is over the **plaintext** and is checked after decrypt.
+`BlobInfo.hash` is over the **ciphertext** and is all the server can compute.
+Neither is a security control — GCM's tag already makes tampering impossible
+without the key — and the plaintext one earns its place by catching a *sender*
+whose client built the ref wrong, which would otherwise surface as a corrupt
+image with no explanation.
+
+### The size cap is a placeholder
+
+100 MB, and no doc gives a number. It is a hosting decision that depends on what
+storage costs and what a self-hoster is willing to pay; `docs/27` §2 is the
+discussion and it is unresolved. Configurable per Host, so the placeholder is
+not load-bearing.

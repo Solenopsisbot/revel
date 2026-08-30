@@ -8,6 +8,9 @@
  * The reducer is `docs/04` §3; the store is `docs/02`'s "one `Store` interface"
  * with two implementations behind it. The sync engine is next; see the README.
  */
+
+export { Attachments, type AttachmentsOptions } from './blobs/attachments.js';
+export { openBlob, type SealedBlob, type SealOptions, sealBlob } from './blobs/seal.js';
 export {
   addPending,
   dropPending,

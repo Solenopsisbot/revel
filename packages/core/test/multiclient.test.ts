@@ -711,6 +711,69 @@ scenarios('offline and reconnect', () => {
 
 // ---------------------------------------------------------------------------
 
+scenarios('attachments', () => {
+  const ENC = new TextEncoder();
+  const DEC = new TextDecoder();
+  const PHOTO = ENC.encode('a photograph of a very good dog, allegedly');
+
+  it('crosses between two people, and the server never sees any of it', async () => {
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    await host.sendFile(room, PHOTO, { mime: 'image/png', name: 'dog.png', alt: 'a dog' });
+    await world.settle();
+
+    const [opened] = await bob.openAttachments(room);
+    expect(DEC.decode(opened as Uint8Array)).toBe(DEC.decode(PHOTO));
+
+    // Not the bytes, not the name, not the type, not the key. The blob row has
+    // a length, a room and an uploader, and that is the entire list.
+    const stored = JSON.stringify([...world.store.blobs.values()]);
+    for (const secret of ['dog.png', 'image/png', 'very good dog']) {
+      expect(stored).not.toContain(secret);
+    }
+    const events = JSON.stringify(world.store.events.get(room));
+    for (const secret of ['dog.png', 'image/png', 'attachments']) {
+      expect(events).not.toContain(secret);
+    }
+    await world.close();
+  });
+
+  it('is unreadable to somebody who was not in the room when it was sent', async () => {
+    // The key is in the event, and the event is sealed to the epoch. Carol can
+    // fetch the ciphertext — she is in the room now — and it is noise.
+    const { world, room, host, guests, group } = await conversation(['alice', 'bob']);
+    void guests;
+    await host.sendFile(room, PHOTO, { mime: 'image/png', name: 'dog.png' });
+    await world.settle();
+
+    const carol = await world.join('carol');
+    await carol.replenish();
+    await host.invite(group, [carol.account]);
+    await world.settle();
+    await carol.sync();
+
+    expect(await carol.openAttachments(room)).toEqual([]);
+    await world.close();
+  });
+
+  it('is gone from the server after a purge, and says so', async () => {
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    const ref = await host.sendFile(room, PHOTO, { mime: 'image/png', name: 'dog.png' });
+    await world.settle();
+    await host.transport.purgeBlob(ref.id);
+
+    // 410, not 404: a client with a cached copy has to be able to tell "was
+    // removed" from "never existed".
+    await expect(bob.transport.downloadBlob(ref.id)).rejects.toThrow(/purged/);
+    await world.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 scenarios('the ratchet tree, out of band', () => {
   it('keeps the Welcome small while the group grows', async () => {
     // The whole reason `docs/03` §5 rejects the `ratchet_tree` extension.

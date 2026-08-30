@@ -11,12 +11,14 @@
 export { type AccountDeps, mountAccounts, resolveAddress } from './accounts.js';
 export { type AppDeps, createApp } from './app.js';
 export { type AuthDeps, mountAuth, sessionAuthenticator } from './auth.js';
+export { type BlobDeps, mountBlobs } from './blobs.js';
 export { type Connection, Hub } from './hub.js';
 export { mountRooms, type RoomDeps } from './rooms.js';
 export { type Actor, type SocketDeps, SocketSession } from './socket.js';
 export { MemoryStore } from './store/memory.js';
 export type {
   Account,
+  Blob,
   Challenge,
   Device,
   Group,

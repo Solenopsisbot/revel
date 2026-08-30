@@ -41,6 +41,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { LocalCryptoEngine } from '@revel/crypto';
 import init from '@revel/crypto-wasm';
+import type { BlobRef } from '@revel/protocol';
 import {
   DEFAULT_EVERYONE,
   Permission,
@@ -57,6 +58,7 @@ import {
   sessionAuthenticator,
 } from '@revel/server';
 import {
+  Attachments,
   GroupSync,
   HostSession,
   HttpGroupTransport,
@@ -305,6 +307,7 @@ export class Client {
   session!: HostSession;
   transport!: HttpTransport;
   groupTransport!: HttpGroupTransport;
+  files!: Attachments;
   ws!: WebSocketStream;
 
   /** Groups this device has discovered it is no longer in. */
@@ -353,6 +356,7 @@ export class Client {
     const groupTransport = new HttpGroupTransport({ baseUrl: 'http://host', fetch, headers });
     client.transport = transport;
     client.groupTransport = groupTransport;
+    client.files = new Attachments({ transport });
 
     client.ws = new WebSocketStream({
       connect: () => client.#pipe(),
@@ -569,6 +573,33 @@ export class Client {
 
   async say(roomId: string, text: string) {
     return this.rooms.send(roomId, { type: 'm.message', body: text });
+  }
+
+  /**
+   * Send a file: seal, upload, put the ref in the message, send.
+   *
+   * The ref carries the key, so it has to be inside the encrypted event — which
+   * is why the upload happens before the send rather than after.
+   */
+  async sendFile(
+    roomId: string,
+    bytes: Uint8Array,
+    options: { mime: string; name: string; alt?: string },
+  ) {
+    const ref = await this.files.upload(roomId, bytes, options);
+    await this.rooms.send(roomId, { type: 'm.message', body: '', attachments: [ref] });
+    return ref;
+  }
+
+  /** Every attachment this client can see in a room, opened. */
+  async openAttachments(roomId: string): Promise<Uint8Array[]> {
+    const out: Uint8Array[] = [];
+    for (const message of this.messages(roomId)) {
+      for (const ref of (message.attachments ?? []) as BlobRef[]) {
+        out.push(await this.files.open(ref));
+      }
+    }
+    return out;
   }
 
   async pull(roomId: string) {

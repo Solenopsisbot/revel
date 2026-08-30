@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { mountAccounts } from './accounts.js';
 import { mountAuth } from './auth.js';
+import { mountBlobs } from './blobs.js';
 import { mountGroups, nudgeCommitter } from './groups.js';
 import type { Hub } from './hub.js';
 import { canPurge, canRead, canSend } from './policy.js';
@@ -39,6 +40,8 @@ export interface AppDeps {
    * to the Host's name, which is the "both" case.
    */
   idp?: string;
+  /** Largest attachment ciphertext this Host will hold. See `blobs.ts`. */
+  maxBlobBytes?: number;
 }
 
 const denialStatus: Record<string, ContentfulStatusCode> = {
@@ -145,6 +148,12 @@ export function createApp(deps: AppDeps) {
   const idp = deps.idp ?? deps.host ?? 'localhost';
   mountAuth(app, { store: deps.store, host: deps.host ?? 'localhost' });
   mountAccounts(app, { store: deps.store, idp, authenticate: deps.authenticate });
+  mountBlobs(app, {
+    store: deps.store,
+    newId: () => deps.ids.next(),
+    authenticate: deps.authenticate,
+    ...(deps.maxBlobBytes === undefined ? {} : { maxBytes: deps.maxBlobBytes }),
+  });
   mountRooms(app, { store: deps.store, ids: deps.ids, idp, authenticate: deps.authenticate });
 
   mountGroups(app, {
