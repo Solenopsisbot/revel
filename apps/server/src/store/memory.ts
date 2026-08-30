@@ -18,6 +18,7 @@ import type {
   Room,
   Session,
   Store,
+  StoredPushSubscription,
   StoredWelcome,
 } from './types.js';
 
@@ -168,6 +169,20 @@ export class MemoryStore implements Store {
     return true;
   }
 
+  pushSubscriptions = new Map<string, StoredPushSubscription>();
+
+  async putPushSubscription(subscription: StoredPushSubscription) {
+    this.pushSubscriptions.set(subscription.devicePub, subscription);
+  }
+
+  async getPushSubscription(devicePub: string) {
+    return this.pushSubscriptions.get(devicePub) ?? null;
+  }
+
+  async deletePushSubscription(devicePub: string) {
+    this.pushSubscriptions.delete(devicePub);
+  }
+
   challenges = new Map<string, Challenge>();
   sessions = new Map<string, Session>();
 
@@ -186,6 +201,11 @@ export class MemoryStore implements Store {
     if (!device || device.revokedAt) return false;
     device.revokedAt = at;
     await this.deleteDeviceSessions(pub);
+    // And its push channel. A revoked device's endpoint is a live line to a
+    // phone somebody has just signed out; keeping it would mean the one action
+    // whose entire purpose is "stop talking to that device" leaves the loudest
+    // channel open.
+    await this.deletePushSubscription(pub);
     return true;
   }
 

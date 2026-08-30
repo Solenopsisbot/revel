@@ -428,16 +428,16 @@ impl Device {
     /// passed in rather than held so that there is one copy of the account
     /// secret in a session rather than one per device.
     #[wasm_bindgen(js_name = exportGroup)]
-    pub fn export_group(&self, group_id: &[u8], account: &Account) -> Result<Vec<u8>, JsError> {
+    pub fn export_group(&self, group_id: &[u8]) -> Result<Vec<u8>, JsError> {
         self.store
-            .export(group_id, &account.key.to_bytes())
+            .export(group_id, &self.secret)
             .map_err(js)
     }
 
     /// Put a sealed group back. Returns the group id it turned out to be.
     #[wasm_bindgen(js_name = importGroup)]
-    pub fn import_group(&self, sealed: &[u8], account: &Account) -> Result<Vec<u8>, JsError> {
-        self.store.import(sealed, &account.key.to_bytes()).map_err(js)
+    pub fn import_group(&self, sealed: &[u8]) -> Result<Vec<u8>, JsError> {
+        self.store.import(sealed, &self.secret).map_err(js)
     }
 
     /// Drop a group's stored state. Local only — nothing on the server changes
@@ -466,8 +466,8 @@ impl Device {
     /// invite, they are small, and their ids are mls-rs internals that nothing
     /// outside this crate can interpret.
     #[wasm_bindgen(js_name = exportKeyPackages)]
-    pub fn export_key_packages(&self, account: &Account) -> Result<Vec<u8>, JsError> {
-        self.packages.export(&account.key.to_bytes()).map_err(js)
+    pub fn export_key_packages(&self) -> Result<Vec<u8>, JsError> {
+        self.packages.export(&self.secret).map_err(js)
     }
 
     /// Put them back, **replacing** whatever is here. Returns how many.
@@ -477,10 +477,8 @@ impl Device {
     /// join has already consumed, and a key package used twice costs the joiner
     /// forward secrecy for the epoch they joined at.
     #[wasm_bindgen(js_name = importKeyPackages)]
-    pub fn import_key_packages(&self, sealed: &[u8], account: &Account) -> Result<usize, JsError> {
-        self.packages
-            .import(sealed, &account.key.to_bytes())
-            .map_err(js)
+    pub fn import_key_packages(&self, sealed: &[u8]) -> Result<usize, JsError> {
+        self.packages.import(sealed, &self.secret).map_err(js)
     }
 }
 

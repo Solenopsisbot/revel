@@ -27,16 +27,34 @@
 //!
 //! ## Sealed with what
 //!
-//! A key derived from the account secret, domain-separated, HKDF-SHA256 then
-//! AES-256-GCM. Two honest notes about that:
+//! A key derived from **this device's** secret, domain-separated, HKDF-SHA256
+//! then AES-256-GCM.
 //!
-//! - The bytes leaving here are *ciphertext*, so the local store never holds
-//!   MLS key material in the clear. That is the property `docs/04` asks for.
-//! - `docs/03` §1 wants the sealing key to be the **device** key — a
-//!   non-extractable `CryptoKey` in IndexedDB — so that a compromised account
-//!   backup does not also open local state. That needs a WebCrypto path that
-//!   does not exist yet. Deriving from the account is the interim, and it is
-//!   only the derivation in [`state_key`] that has to change.
+//! It used to be derived from the *account* secret, and the difference is the
+//! whole point of `docs/03` §1 asking for the device key. The account secret is
+//! the thing that is backed up and wrapped for recovery (`docs/03` §3), so
+//! sealing local state under it means **anybody who recovers the account can
+//! open a stolen disk image of any device that account ever used** — including
+//! devices signed out years earlier. Sealed under the device key, a local store
+//! is worth exactly as much as the device it came from, and losing that costs a
+//! resync rather than a history.
+//!
+//! HKDF over the Ed25519 seed with its own `info` string, which is standard and
+//! is what keeps the derived AES key independent of anything the signature
+//! scheme does with the same bytes.
+//!
+//! ## The half of `docs/03` §1 that is not here
+//!
+//! It also wants a **non-extractable `CryptoKey`**, so a compromised page could
+//! use the key without being able to copy it. That is not reachable from here
+//! and the reason is structural: a non-extractable WebCrypto key cannot be
+//! handed to wasm, so having one would mean moving the sealing into TypeScript
+//! — which would put decrypted MLS state on the JavaScript heap on every
+//! export, and that is a straight trade of one exposure for another.
+//!
+//! Both sides of that trade are outside the threat model (`docs/03` §10 does
+//! not defend against an attacker who already controls the device), so it is
+//! recorded rather than resolved.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -54,16 +72,21 @@ use zeroize::Zeroizing;
 /// Domain separation for the key that seals local state. Changing this string
 /// makes every stored group unreadable, which is the correct behaviour if the
 /// format under it ever changes incompatibly.
-const STATE_KEY_INFO: &[u8] = b"revel/group-state/v1";
+/// Bumped from `v1` when the derivation moved from the account key to the
+/// device key. The magic below moved with it, so a blob from before the change
+/// is refused by name rather than failing to authenticate — which is the
+/// difference between "this is from an older build" and "your crypto is
+/// broken".
+const STATE_KEY_INFO: &[u8] = b"revel/group-state/v2";
 
 /// Magic and version on every sealed blob, so a stored group from a future
 /// build is refused rather than misparsed.
-const SEAL_MAGIC: &[u8; 8] = b"REVELGS\x01";
+const SEAL_MAGIC: &[u8; 8] = b"REVELGS\x02";
 
 /// The same, for the key package store. A different magic so that handing one
 /// kind of blob to the other's importer fails immediately instead of
 /// half-parsing into nonsense.
-const KP_MAGIC: &[u8; 8] = b"REVELKP\x01";
+const KP_MAGIC: &[u8; 8] = b"REVELKP\x02";
 
 /// How many prior epochs to keep, matching mls-rs's own default.
 ///
@@ -80,7 +103,7 @@ pub enum StoreError {
     Malformed,
     #[error("sealed group state is from an incompatible version")]
     WrongVersion,
-    #[error("sealed group state could not be opened with this account's key")]
+    #[error("sealed group state could not be opened with this device's key")]
     NotOurs,
     #[error("no state stored for that group")]
     NoSuchGroup,
@@ -106,12 +129,16 @@ struct GroupData {
     epochs: BTreeMap<u64, Vec<u8>>,
 }
 
-/// The 32 bytes that seal local state for this account.
-fn state_key(account_secret: &[u8]) -> Zeroizing<[u8; 32]> {
+/// The 32 bytes that seal local state for this device.
+fn state_key(device_secret: &[u8]) -> Zeroizing<[u8; 32]> {
     let mut key = Zeroizing::new([0u8; 32]);
     // No salt: the input is already a uniformly random 32-byte secret, and a
     // salt we would have to store alongside the ciphertext buys nothing here.
-    Hkdf::<Sha256>::new(None, account_secret)
+    // The seed only. mls-rs hands back the expanded form — 32-byte seed then
+    // 32-byte public key — and feeding the public half into a key derivation
+    // would be mixing a public value into a secret one for no reason.
+    let seed = device_secret.get(..32).unwrap_or(device_secret);
+    Hkdf::<Sha256>::new(None, seed)
         .expand(STATE_KEY_INFO, key.as_mut())
         .expect("32 bytes is a valid HKDF output length");
     key
@@ -150,7 +177,7 @@ impl LocalGroupStore {
     /// Clears the group's dirty flag: what comes back is a complete snapshot,
     /// so once the caller has it there is nothing outstanding. If the write
     /// fails on their side they can simply ask again — the state is still here.
-    pub fn export(&self, group_id: &[u8], account_secret: &[u8]) -> Result<Vec<u8>, StoreError> {
+    pub fn export(&self, group_id: &[u8], device_secret: &[u8]) -> Result<Vec<u8>, StoreError> {
         let data = self
             .groups
             .lock()?
@@ -158,7 +185,7 @@ impl LocalGroupStore {
             .cloned()
             .ok_or(StoreError::NoSuchGroup)?;
 
-        let sealed = seal(&encode(group_id, &data), account_secret)?;
+        let sealed = seal(&encode(group_id, &data), device_secret)?;
         self.dirty.lock()?.remove(group_id);
         Ok(sealed)
     }
@@ -166,8 +193,8 @@ impl LocalGroupStore {
     /// Put a sealed group back, returning its group id.
     ///
     /// Does not mark it dirty: it came from storage, so storage already has it.
-    pub fn import(&self, sealed: &[u8], account_secret: &[u8]) -> Result<Vec<u8>, StoreError> {
-        let plain = open(sealed, account_secret)?;
+    pub fn import(&self, sealed: &[u8], device_secret: &[u8]) -> Result<Vec<u8>, StoreError> {
+        let plain = open(sealed, device_secret)?;
         let (group_id, data) = decode(&plain)?;
         self.groups.lock()?.insert(group_id.clone(), data);
         Ok(group_id)
@@ -319,13 +346,13 @@ impl<'a> Reader<'a> {
 // Sealing
 // ---------------------------------------------------------------------------
 
-/// `nonce | ciphertext`, AES-256-GCM under the account's state key.
+/// `nonce | ciphertext`, AES-256-GCM under this device's state key.
 ///
 /// A fresh random nonce per seal. Group state is re-sealed on every change, so
 /// a counter would have to be persisted alongside it and would be the thing
 /// that breaks after a restore — 96 random bits per seal is the safer trade.
-fn seal(plain: &[u8], account_secret: &[u8]) -> Result<Vec<u8>, StoreError> {
-    let key = state_key(account_secret);
+fn seal(plain: &[u8], device_secret: &[u8]) -> Result<Vec<u8>, StoreError> {
+    let key = state_key(device_secret);
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key.as_ref()));
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
@@ -334,13 +361,13 @@ fn seal(plain: &[u8], account_secret: &[u8]) -> Result<Vec<u8>, StoreError> {
     Ok(out)
 }
 
-fn open(sealed: &[u8], account_secret: &[u8]) -> Result<Zeroizing<Vec<u8>>, StoreError> {
+fn open(sealed: &[u8], device_secret: &[u8]) -> Result<Zeroizing<Vec<u8>>, StoreError> {
     if sealed.len() < 12 {
         return Err(StoreError::Malformed);
     }
     let (nonce, ciphertext) = sealed.split_at(12);
 
-    let key = state_key(account_secret);
+    let key = state_key(device_secret);
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key.as_ref()));
 
     cipher
@@ -398,9 +425,9 @@ impl LocalKeyPackageStore {
     }
 
     /// Seal the whole store, and clear the dirty flag.
-    pub fn export(&self, account_secret: &[u8]) -> Result<Vec<u8>, StoreError> {
+    pub fn export(&self, device_secret: &[u8]) -> Result<Vec<u8>, StoreError> {
         let plain = encode_map(KP_MAGIC, &*self.packages.lock()?);
-        let sealed = seal(&plain, account_secret)?;
+        let sealed = seal(&plain, device_secret)?;
         *self.dirty.lock()? = false;
         Ok(sealed)
     }
@@ -410,8 +437,8 @@ impl LocalKeyPackageStore {
     /// Replacing rather than merging: the stored copy is the authority on which
     /// key packages are still unused, and merging would bring deleted ones back
     /// from the dead.
-    pub fn import(&self, sealed: &[u8], account_secret: &[u8]) -> Result<usize, StoreError> {
-        let plain = open(sealed, account_secret)?;
+    pub fn import(&self, sealed: &[u8], device_secret: &[u8]) -> Result<usize, StoreError> {
+        let plain = open(sealed, device_secret)?;
         let map = decode_map(KP_MAGIC, &plain)?;
         let n = map.len();
         *self.packages.lock()? = map;

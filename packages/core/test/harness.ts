@@ -258,11 +258,28 @@ export class World {
   offline = false;
 
   /**
+   * The clients' clock.
+   *
+   * Owned by the test so anything with a timeout — typing notices, session
+   * refresh — can be aged without waiting. Real timers stay real; this is only
+   * what `RoomSync` asks for the time.
+   */
+  time = Date.now();
+
+  advance(ms: number): void {
+    this.time += ms;
+  }
+
+  /** How many events have been POSTed, for asserting that a throttle throttles. */
+  eventPosts = 0;
+
+  /**
    * In-process fetch. No port, no listener, the real routing — and no
    * credentials, because the client supplies its own bearer token now.
    */
   fetch: typeof globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     if (this.offline) return Promise.reject(new TypeError('fetch failed'));
+    if (init?.method === 'POST' && String(input).endsWith('/events')) this.eventPosts += 1;
     return this.app.fetch(new Request(String(input), init));
   }) as typeof globalThis.fetch;
 
@@ -393,6 +410,7 @@ export class Client {
       stream: client.ws,
       account: client.account,
       nonce: () => `${label}-${++client.#counter}-nonce`,
+      now: () => world.time,
     });
 
     client.groups = new GroupSync({
@@ -600,6 +618,32 @@ export class Client {
     const ref = await this.files.upload(roomId, bytes, options);
     await this.rooms.send(roomId, { type: 'm.message', body: '', attachments: [ref] });
     return ref;
+  }
+
+  /** Say this device is typing. Throttled inside `RoomSync`. */
+  async startTyping(roomId: string) {
+    return this.rooms.setTyping(roomId);
+  }
+
+  async stopTyping(roomId: string) {
+    return this.rooms.stopTyping(roomId);
+  }
+
+  /** Who this client thinks is typing, by label rather than key. */
+  typing(roomId: string): string[] {
+    return this.rooms
+      .typing(roomId)
+      .map(
+        (who) => this.world.clients.find((c) => c.account === who.account)?.label ?? who.account,
+      );
+  }
+
+  async markRead(roomId: string, upTo?: string) {
+    return this.rooms.markRead(roomId, upTo);
+  }
+
+  unread(roomId: string): number {
+    return this.rooms.unread(roomId);
   }
 
   /** Every attachment this client can see in a room, opened. */

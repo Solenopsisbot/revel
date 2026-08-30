@@ -18,6 +18,7 @@ export {
 } from './auth.js';
 export { type BlobDeps, mountBlobs } from './blobs.js';
 export { type Connection, Hub } from './hub.js';
+export { mountPush, notify, type PushDeps, type PushRouteDeps, type PushSender } from './push.js';
 export {
   type Bucket,
   classify,
@@ -44,5 +45,6 @@ export type {
   Room,
   Session,
   Store,
+  StoredPushSubscription,
 } from './store/types.js';
 export { mountWellKnown, type SecurityContact, type WellKnownDeps } from './wellknown.js';

@@ -50,7 +50,13 @@ export type {
   SealedKind,
   SealedRecord,
 } from './store/types.js';
-export { type RoomListener, RoomSync, type RoomSyncOptions, toAccountId } from './sync/engine.js';
+export {
+  type RoomListener,
+  RoomSync,
+  type RoomSyncOptions,
+  type TypingPerson,
+  toAccountId,
+} from './sync/engine.js';
 export {
   GroupSync,
   type GroupSyncOptions,

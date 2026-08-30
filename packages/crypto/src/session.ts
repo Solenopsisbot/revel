@@ -192,12 +192,12 @@ export class Session {
 
   exportGroup(groupId: string): Uint8Array {
     this.#alive();
-    return this.#device.exportGroup(ENC.encode(groupId), this.#account);
+    return this.#device.exportGroup(ENC.encode(groupId));
   }
 
   importGroup(sealed: Uint8Array): string {
     this.#alive();
-    return DEC.decode(this.#device.importGroup(sealed, this.#account));
+    return DEC.decode(this.#device.importGroup(sealed));
   }
 
   keyPackagesDirty(): boolean {
@@ -212,12 +212,12 @@ export class Session {
 
   exportKeyPackages(): Uint8Array {
     this.#alive();
-    return this.#device.exportKeyPackages(this.#account);
+    return this.#device.exportKeyPackages();
   }
 
   importKeyPackages(sealed: Uint8Array): number {
     this.#alive();
-    return this.#device.importKeyPackages(sealed, this.#account);
+    return this.#device.importKeyPackages(sealed);
   }
 
   loadGroup(groupId: string): GroupState {

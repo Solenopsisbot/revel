@@ -290,7 +290,7 @@ fn a_group_survives_a_reload() {
     // `restoring_behind_the_last_send_is_refused_by_the_far_side`.
     let account_secret = account.secret_key();
     let device_secret = laptop.secret_key();
-    let sealed = laptop.export_group(b"g-general", &account).ok().unwrap();
+    let sealed = laptop.export_group(b"g-general").ok().unwrap();
 
     // The page goes away.
     drop(group);
@@ -300,7 +300,7 @@ fn a_group_survives_a_reload() {
     let account = Account::from_secret(&account_secret).ok().unwrap();
     let laptop = Device::restore(&account, "laptop", &device_secret).ok().unwrap();
     assert_eq!(
-        laptop.import_group(&sealed, &account).ok().unwrap(),
+        laptop.import_group(&sealed).ok().unwrap(),
         b"g-general",
         "importing should report the group id it restored"
     );
@@ -329,12 +329,12 @@ fn another_account_cannot_open_a_sealed_group() {
     let account = Account::new();
     let laptop = Device::new(&account, "laptop").ok().unwrap();
     laptop.create_group(b"g-secret", None).ok().unwrap();
-    let sealed = laptop.export_group(b"g-secret", &account).ok().unwrap();
+    let sealed = laptop.export_group(b"g-secret").ok().unwrap();
 
     let stranger = Account::new();
     let theirs = Device::new(&stranger, "laptop").ok().unwrap();
     assert!(
-        theirs.import_group(&sealed, &stranger).is_err(),
+        theirs.import_group(&sealed).is_err(),
         "a sealed group opened under the wrong account"
     );
 }
@@ -351,7 +351,7 @@ fn the_store_tracks_what_still_needs_writing() {
     let mut group = laptop.create_group(b"g-dirty", None).ok().unwrap();
     assert_eq!(laptop.dirty_groups().ok().unwrap().length(), 1);
 
-    laptop.export_group(b"g-dirty", &account).ok().unwrap();
+    laptop.export_group(b"g-dirty").ok().unwrap();
     assert_eq!(laptop.dirty_groups().ok().unwrap().length(), 0);
 
     // A commit is an epoch change, so it must come back dirty.
@@ -360,7 +360,7 @@ fn the_store_tracks_what_still_needs_writing() {
     group.apply_pending().ok().unwrap();
     assert_eq!(laptop.dirty_groups().ok().unwrap().length(), 1);
 
-    laptop.export_group(b"g-dirty", &account).ok().unwrap();
+    laptop.export_group(b"g-dirty").ok().unwrap();
     assert_eq!(laptop.dirty_groups().ok().unwrap().length(), 0);
     assert_eq!(laptop.stored_groups().ok().unwrap().length(), 1);
 
@@ -410,7 +410,7 @@ fn restoring_behind_the_last_send_is_refused_by_the_far_side() {
     let mut theirs = phone.join_group(&out.welcome().unwrap(), &out.tree()).ok().unwrap();
 
     // Saved here, deliberately too early.
-    let stale = laptop.export_group(b"g-rewind", &account).ok().unwrap();
+    let stale = laptop.export_group(b"g-rewind").ok().unwrap();
     let account_secret = account.secret_key();
     let device_secret = laptop.secret_key();
 
@@ -425,7 +425,7 @@ fn restoring_behind_the_last_send_is_refused_by_the_far_side() {
 
     let account = Account::from_secret(&account_secret).ok().unwrap();
     let laptop = Device::restore(&account, "laptop", &device_secret).ok().unwrap();
-    laptop.import_group(&stale, &account).ok().unwrap();
+    laptop.import_group(&stale).ok().unwrap();
     let mut group = laptop.load_group(b"g-rewind").ok().unwrap();
 
     // It looks fine from here — same epoch, same leaf, encrypts happily.
@@ -459,7 +459,7 @@ fn a_pending_invite_survives_a_reload() {
     assert_eq!(laptop.pending_key_packages().ok().unwrap(), 1);
     let account_secret = account.secret_key();
     let device_secret = laptop.secret_key();
-    let sealed_packages = laptop.export_key_packages(&account).ok().unwrap();
+    let sealed_packages = laptop.export_key_packages().ok().unwrap();
     assert!(!laptop.key_packages_dirty().ok().unwrap());
 
     // The tab closes.
@@ -475,7 +475,7 @@ fn a_pending_invite_survives_a_reload() {
     let account = Account::from_secret(&account_secret).ok().unwrap();
     let laptop = Device::restore(&account, "laptop", &device_secret).ok().unwrap();
     assert_eq!(
-        laptop.import_key_packages(&sealed_packages, &account).ok().unwrap(),
+        laptop.import_key_packages(&sealed_packages).ok().unwrap(),
         1
     );
 
@@ -601,4 +601,60 @@ fn a_tree_from_the_wrong_epoch_is_refused() {
         tablet.join_group(&second.welcome().unwrap(), &second.tree()).is_ok(),
         "the matching tree was refused"
     );
+}
+
+/// Local state is sealed under the **device** key, not the account key.
+///
+/// `docs/03` §1 asks for this and the reason is not subtle: the account secret
+/// is the thing that gets backed up and wrapped for recovery (`docs/03` §3), so
+/// sealing local state under it means anybody who recovers an account can open
+/// a stolen disk image from any device that account ever used — including ones
+/// signed out years earlier.
+///
+/// Sealed under the device key, a local store is worth exactly as much as the
+/// device it came from.
+#[wasm_bindgen_test]
+fn local_state_is_sealed_to_the_device_not_the_account() {
+    let account = Account::new();
+    let laptop = Device::new(&account, "laptop").ok().unwrap();
+    let phone = Device::new(&account, "phone").ok().unwrap();
+
+    let mut group = laptop.create_group(b"g-sealed", None).ok().unwrap();
+    group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
+    let out = group.commit().ok().unwrap();
+    group.apply_pending().ok().unwrap();
+
+    let sealed = laptop.export_group(b"g-sealed").ok().unwrap();
+
+    // The same account, a different device. Same account key, and it is no
+    // help — which is the entire property.
+    assert!(
+        phone.import_group(&sealed).is_err(),
+        "another device of the same account opened this device's local state"
+    );
+
+    // And the device that sealed it still can.
+    let restored = Device::restore(&account, "laptop", &laptop.secret_key()).ok().unwrap();
+    assert!(restored.import_group(&sealed).is_ok(), "the sealing device could not reopen it");
+
+    let _ = out;
+}
+
+/// A blob from before the derivation changed is refused by name.
+///
+/// The magic moved with the key (`REVELGS\x01` → `\x02`), so an older blob
+/// fails as "not our format" rather than as an authentication failure — the
+/// difference between "this is from an older build" and "your crypto is
+/// broken", at exactly the moment somebody is trying to work out which.
+#[wasm_bindgen_test]
+fn a_blob_from_the_previous_format_is_refused_clearly() {
+    let account = Account::new();
+    let laptop = Device::new(&account, "laptop").ok().unwrap();
+    let mut group = laptop.create_group(b"g-old", None).ok().unwrap();
+    group.encrypt(b"anything").ok().unwrap();
+
+    let mut sealed = laptop.export_group(b"g-old").ok().unwrap();
+    sealed[7] = 1; // the version byte inside the magic
+
+    assert!(laptop.import_group(&sealed).is_err(), "a v1 blob was accepted");
 }

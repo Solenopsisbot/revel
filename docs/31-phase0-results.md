@@ -1075,3 +1075,106 @@ Two items from `docs/29` §6 remain unbuilt and are named there: the signed
 is that the researcher holds something that does not depend on us still
 existing), and publishing the **threat model** — already written as `docs/03`
 §10, and needing a page rather than code.
+
+---
+
+## 17. Typing, receipts, and one bug the wiring found
+
+The reducer has handled `m.typing` and `m.receipt` since `docs/04` §3 was
+implemented, and nothing sent either. Wiring the send side found two things.
+
+**`send` was building an optimistic message for a typing notice.** Every send
+went through one path — optimistic row, encrypt, persist, transport, apply the
+echo — and an ephemeral event has none of those needs. A typing notice
+therefore put a blank pending message in the timeline. Ephemeral now branches
+early: encrypt, persist, send, stop. No optimistic row, no outbox entry, no echo
+applied, because there is nothing that will ever be stored to reconcile against.
+
+**`receive` was about to persist ephemeral events.** They reached `putEvents`
+like anything else. `docs/03` §7 says not stored, dropped if nobody is
+listening, meaningless a second later — persisting one means writing a row to
+disk to say somebody might be about to type, and replaying it later as though
+they still were. They are now partitioned out before the store and before the
+reducer, which already refused them for the same reason.
+
+Typing state lives only in memory and expires when somebody asks rather than on
+a timer: a timer per room is a resource, and nobody asks about typing except a
+room somebody is looking at. The send side is throttled *inside* `RoomSync`, so
+the obvious call site — one per keystroke — is correct.
+
+`unread` never counts your own messages. Sending something is the strongest
+possible signal you have seen it, and a room showing one unread because you
+spoke in it is a badge nobody trusts.
+
+## 18. The local store is sealed to the device now, not the account
+
+`docs/03` §1 asked for this and `store.rs` carried a note saying only the
+derivation had to change. It has.
+
+The difference is not subtle. **The account secret is the thing that gets backed
+up and wrapped for recovery** (`docs/03` §3), so sealing local state under it
+means anybody who recovers an account can open a stolen disk image from any
+device that account ever used — including devices signed out years earlier.
+Sealed under the device key, a local store is worth exactly as much as the
+device it came from, and losing that costs a resync rather than a history.
+
+The sealing magic moved with the derivation (`REVELGS\x01` → `\x02`), so a blob
+from the previous format is refused by name rather than failing to authenticate
+— the difference between "this is from an older build" and "your crypto is
+broken", at exactly the moment somebody is trying to work out which.
+
+`Device::exportGroup` no longer takes an `Account` at all. The thing that seals
+is the thing that holds the key, which is a smaller API and a harder one to
+misuse.
+
+### The half of `docs/03` §1 that is still not there
+
+It also wants a **non-extractable `CryptoKey`**, so a compromised page could use
+the sealing key without being able to copy it. That is structurally unreachable
+from here: a non-extractable WebCrypto key cannot be handed to wasm, so having
+one would mean moving the sealing into TypeScript — which would put decrypted
+MLS state on the JavaScript heap on every export. That is a straight trade of
+one exposure for another, and **both sides of it are outside the threat model**
+(`docs/03` §10 does not defend against an attacker who already controls the
+device). Recorded rather than resolved.
+
+## 19. Content-free push
+
+`docs/04` §5's rule, and the sentence that makes it safe to keep thin:
+"**Reconcile-on-open means a missed push never means a missed message.**" A push
+is a nudge, not a delivery — it carries nothing, it is allowed to be lost, and
+everything it would have said is already fetchable. So the design question is
+never what to put in it, but **who gets woken and what waking them reveals**.
+
+Four rules, all tested, and the tests are almost entirely about who does *not*
+get woken:
+
+1. **Only `normal` events.** A `silent` event never notifies by definition — a
+   read receipt that woke a phone would be the most annoying feature ever
+   shipped, and a reaction that did would be the second.
+2. **Only devices with no live socket.** A connected device already has it.
+3. **Never the sender's own account.** This is an account-level rule and writing
+   it at the device level is how a laptop ends up buzzing about a message you
+   just sent from your phone — which is exactly what the first implementation
+   did, and what the test caught.
+4. **A revoked device gets nothing**, and its subscription is dropped at
+   revocation. The one action whose entire purpose is "stop talking to that
+   device" must not leave the loudest channel open.
+
+Also: a deduplicated retry does not push twice. A dropped response is not a
+second message and must not be a second buzz.
+
+**Default payload: nothing at all.** That is the strongest reading of
+content-free — a push with no body needs no RFC 8291 payload encryption and
+tells the push service nothing beyond "this endpoint had something happen". The
+`{room}` hint is opt-in per deployment and costs a room id handed to a service
+that had none.
+
+### What is a seam
+
+Putting a push on the wire is a `PushSender` dependency and the default does
+nothing. VAPID (RFC 8292) is a signing scheme against a service this codebase
+cannot reach from a test, and a subtly wrong implementation of it fails
+silently, per device, in production — which is worse than an absent one. The
+part that is Revel's (who, when, what may be said) is here and tested; the part
+that is a protocol against somebody else's server is a deployment's to supply.

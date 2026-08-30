@@ -115,6 +115,15 @@ export interface Blob {
   purgedAt: number | null;
 }
 
+/** `docs/04` §1's `push_subscriptions`. One per device; a new one replaces. */
+export interface StoredPushSubscription {
+  devicePub: string;
+  kind: 'webpush' | 'apns' | 'fcm';
+  endpoint: string;
+  keys?: { p256dh: string; auth: string };
+  createdAt: number;
+}
+
 export interface Challenge {
   devicePub: string;
   expiresAt: number;
@@ -202,6 +211,16 @@ export interface Store {
   putChallenge(nonceHash: string, challenge: Challenge): Promise<void>;
   /** Spend it. Single-use — this deletes as it reads (Kith's `DELETE … RETURNING`). */
   takeChallenge(nonceHash: string): Promise<Challenge | null>;
+
+  /**
+   * Store a device's push subscription, replacing any it had.
+   *
+   * One per device rather than a list: a device has one push channel, and
+   * keeping stale ones means waking a browser profile somebody deleted.
+   */
+  putPushSubscription(subscription: StoredPushSubscription): Promise<void>;
+  getPushSubscription(devicePub: string): Promise<StoredPushSubscription | null>;
+  deletePushSubscription(devicePub: string): Promise<void>;
 
   putSession(tokenHash: string, session: Session): Promise<void>;
   getSession(tokenHash: string): Promise<Session | null>;

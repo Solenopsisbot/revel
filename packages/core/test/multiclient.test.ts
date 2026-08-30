@@ -754,6 +754,153 @@ scenarios('the Host as an external sender', () => {
 
 // ---------------------------------------------------------------------------
 
+scenarios('typing', () => {
+  it('shows up on the other side and is never written down', async () => {
+    // `docs/03` §7: ephemeral. Not stored, dropped if nobody is listening,
+    // meaningless a second later. The reducer refuses it on purpose, so this
+    // state lives only in memory.
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    await host.startTyping(room);
+    await world.settle();
+
+    expect(bob.typing(room)).toEqual(['alice']);
+    // Not on the server, and not in bob's local store either.
+    expect(world.store.events.get(room) ?? []).toEqual([]);
+    expect(await bob.store.listEvents(room)).toEqual([]);
+    await world.close();
+  });
+
+  it('does not show you yourself typing', async () => {
+    const { world, room, host } = await conversation(['alice', 'bob']);
+    await host.startTyping(room);
+    await world.settle();
+    expect(host.typing(room)).toEqual([]);
+    await world.close();
+  });
+
+  it('stops when they say so', async () => {
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    await host.startTyping(room);
+    await world.settle();
+    await host.stopTyping(room);
+    await world.settle();
+
+    expect(bob.typing(room)).toEqual([]);
+    await world.close();
+  });
+
+  it('is throttled, so a keystroke handler can call it', async () => {
+    // An ephemeral event per keystroke is absurd, and the only way to be sure
+    // nobody does it is to make the obvious call site correct.
+    const { world, room, host } = await conversation(['alice', 'bob']);
+    const before = world.eventPosts;
+    for (let i = 0; i < 20; i++) await host.startTyping(room);
+    await world.settle();
+
+    expect(world.eventPosts - before).toBe(1);
+
+    // And it resends once the notice would have gone stale, or somebody typing
+    // steadily would flicker out on the other side.
+    world.advance(5000);
+    await host.startTyping(room);
+    expect(world.eventPosts - before).toBe(2);
+    await world.close();
+  });
+
+  it('expires on its own, so a client that dies mid-sentence stops claiming to type', async () => {
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    await host.startTyping(room);
+    await world.settle();
+    expect(bob.typing(room)).toEqual(['alice']);
+
+    // No timer and no cleanup pass: the entry is dropped when somebody asks.
+    world.advance(10_000);
+    expect(bob.typing(room)).toEqual([]);
+    await world.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+scenarios('read state', () => {
+  it('counts what somebody else said and not what you did', async () => {
+    // Sending something is the strongest possible signal you have seen it. A
+    // room showing one unread because you spoke in it is a badge nobody trusts.
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    await host.say(room, 'one');
+    await host.say(room, 'two');
+    await bob.say(room, 'mine');
+    await world.settle();
+
+    expect(bob.unread(room)).toBe(2);
+    expect(host.unread(room)).toBe(1);
+    await world.close();
+  });
+
+  it('clears when marked, and survives to the other device', async () => {
+    // `silent`, so it is stored and reaches the account's other devices, and
+    // never notifies — a read receipt that woke a phone would be the most
+    // annoying feature ever shipped.
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    await host.say(room, 'one');
+    await world.settle();
+    expect(bob.unread(room)).toBe(1);
+
+    await bob.markRead(room);
+    await world.settle();
+    expect(bob.unread(room)).toBe(0);
+    // And alice can see how far bob has read.
+    expect(host.rooms.state(room).receipts.get(bob.account)).toBeTruthy();
+    await world.close();
+  });
+
+  it('never goes backwards', async () => {
+    // Out-of-order delivery would otherwise un-read messages and make the
+    // count flicker.
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    await host.say(room, 'one');
+    await host.say(room, 'two');
+    await world.settle();
+
+    const first = bob.messages(room)[0]?.id as string;
+    await bob.markRead(room);
+    await world.settle();
+    await bob.markRead(room, first);
+    await world.settle();
+
+    expect(bob.unread(room)).toBe(0);
+    await world.close();
+  });
+
+  it('survives a reload, because a receipt is a stored event', async () => {
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    await host.say(room, 'one');
+    await world.settle();
+    await bob.markRead(room);
+    await world.settle();
+
+    const reloaded = await bob.reload();
+    expect(reloaded.unread(room)).toBe(0);
+    await world.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 scenarios('attachments', () => {
   const ENC = new TextEncoder();
   const DEC = new TextDecoder();

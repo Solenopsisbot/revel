@@ -27,6 +27,7 @@ import type { CryptoEngine } from '@revel/crypto';
 import {
   type Event,
   encodePayload,
+  type FaceRef,
   parseEncrypted,
   payloadBytes,
   toAccountId,
@@ -61,6 +62,12 @@ export interface RoomSyncOptions {
 }
 
 export type RoomListener = (state: RoomState) => void;
+
+/** Somebody currently typing, and the face they are typing as. */
+export interface TypingPerson {
+  account: string;
+  face?: FaceRef;
+}
 
 /**
  * One room's worth of syncing, and the state it produces.
@@ -232,8 +239,19 @@ export class RoomSync {
 
     const decrypted: LocalEvent[] = [];
     const purges: Event[] = [];
+    let typingMoved = false;
 
     for (const event of batch) {
+      // Ephemeral events never touch the store and never reach the reducer.
+      // `docs/03` §7: not stored, dropped if nobody is listening, meaningless a
+      // second later. Persisting one would mean writing a row to disk to say
+      // somebody might be about to type, and replaying it later as though they
+      // still were.
+      if (event.class === 'ephemeral') {
+        const local = await this.#decrypt(roomId, event).catch(() => null);
+        if (local && this.#applyEphemeral(roomId, local)) typingMoved = true;
+        continue;
+      }
       // A purge tombstone carries the id of the event it erased and no payload
       // — there is nothing to decrypt, and feeding it through the reducer would
       // hit the applied set as a duplicate of its own victim.
@@ -259,8 +277,169 @@ export class RoomSync {
     // Crypto state moved: processing anything advances the ratchet, and a
     // commit moves the epoch outright.
     await this.persistCrypto();
+    if (typingMoved) this.#notifyTyping(roomId);
     await this.#commit(roomId, state);
     return state;
+  }
+
+  // -- typing ---------------------------------------------------------------
+  //
+  // Transient, in memory, never written down. The reducer deliberately drops
+  // `m.typing` for exactly that reason, so this is the only place it lives.
+
+  /**
+   * How long a typing notice is worth believing.
+   *
+   * **Chosen, not specified.** It has to be longer than the resend interval
+   * below or somebody typing steadily flickers, and short enough that a client
+   * that dies mid-sentence stops claiming to be typing quickly. A `stop` is
+   * sent when typing ends; this is what covers the case where it never arrives.
+   */
+  static readonly TYPING_TTL_MS = 6000;
+  /** Resend while still typing. Comfortably inside the TTL. */
+  static readonly TYPING_RESEND_MS = 4000;
+
+  /** roomId → account → when their notice arrived. */
+  #typing = new Map<string, Map<string, { at: number; face?: FaceRef }>>();
+  #typingListeners = new Map<string, Set<(who: TypingPerson[]) => void>>();
+  /** When this device last told a room it was typing, so it can throttle. */
+  #typingSent = new Map<string, number>();
+
+  /** Who is currently typing in a room, excluding this device's account. */
+  typing(roomId: string): TypingPerson[] {
+    const held = this.#typing.get(roomId);
+    if (!held) return [];
+
+    const cutoff = this.#now() - RoomSync.TYPING_TTL_MS;
+    const out: TypingPerson[] = [];
+    for (const [account, entry] of held) {
+      // Expired entries are dropped as they are noticed rather than on a timer:
+      // a timer per room is a resource, and nobody asks about typing except a
+      // room somebody is looking at.
+      if (entry.at <= cutoff) held.delete(account);
+      else if (account !== this.#account)
+        out.push({ account, ...(entry.face ? { face: entry.face } : {}) });
+    }
+    return out;
+  }
+
+  /** Watch it. Returns an unsubscribe. */
+  watchTyping(roomId: string, listener: (who: TypingPerson[]) => void): () => void {
+    let set = this.#typingListeners.get(roomId);
+    if (!set) {
+      set = new Set();
+      this.#typingListeners.set(roomId, set);
+    }
+    set.add(listener);
+    return () => {
+      set.delete(listener);
+      if (set.size === 0) this.#typingListeners.delete(roomId);
+    };
+  }
+
+  /**
+   * Say this device is typing. Throttled, and safe to call per keystroke.
+   *
+   * That is the point of the throttle being here rather than in the caller: an
+   * ephemeral event per keystroke is absurd, and the only way to guarantee
+   * nobody does it is to make the obvious call site correct.
+   */
+  async setTyping(roomId: string, options: { face?: FaceRef } = {}): Promise<void> {
+    const last = this.#typingSent.get(roomId) ?? 0;
+    if (this.#now() - last < RoomSync.TYPING_RESEND_MS) return;
+    this.#typingSent.set(roomId, this.#now());
+
+    // Failing to say you are typing is not worth surfacing, and definitely not
+    // worth throwing into a keystroke handler.
+    await this.send(
+      roomId,
+      { type: 'm.typing', ...(options.face ? { face: options.face } : {}) },
+      { class: 'ephemeral' },
+    ).catch(() => {});
+  }
+
+  /** Say this device has stopped — sent when a composer empties or sends. */
+  async stopTyping(roomId: string): Promise<void> {
+    if (!this.#typingSent.delete(roomId)) return;
+    await this.send(roomId, { type: 'm.typing', stop: true }, { class: 'ephemeral' }).catch(
+      () => {},
+    );
+  }
+
+  /** Returns whether anything changed, so `receive` knows to notify once. */
+  #applyEphemeral(roomId: string, local: LocalEvent): boolean {
+    // `payload` is the discriminated parse result, not the event — reading
+    // `.type` off it gives `undefined` for everything the schema *does* know,
+    // which is a silent no-op rather than an error. Unwrap first.
+    if (!local.payload.known) return false;
+    const payload = local.payload.event as { type: string; stop?: boolean; face?: FaceRef };
+    if (payload.type !== 'm.typing') return false;
+
+    let held = this.#typing.get(roomId);
+    if (!held) {
+      held = new Map();
+      this.#typing.set(roomId, held);
+    }
+
+    if (payload.stop) return held.delete(local.account);
+    held.set(local.account, { at: this.#now(), ...(payload.face ? { face: payload.face } : {}) });
+    return true;
+  }
+
+  #notifyTyping(roomId: string): void {
+    const who = this.typing(roomId);
+    for (const listener of this.#typingListeners.get(roomId) ?? []) listener(who);
+  }
+
+  // -- read state -----------------------------------------------------------
+
+  /**
+   * Mark a room read up to an event.
+   *
+   * `silent` (`docs/04` §2): stored, so it survives a reload and reaches the
+   * account's other devices, and never notifies — a read receipt that woke a
+   * phone would be the most annoying feature ever shipped.
+   *
+   * Defaults to the newest message that is actually there. Passing an id is for
+   * "mark as read up to here", which is a real thing people do.
+   */
+  async markRead(roomId: string, upTo?: string): Promise<RoomState> {
+    const state = await this.open(roomId);
+    const target = upTo ?? [...state.messages].reverse().find((m) => !m.pending)?.id;
+    if (!target) return state;
+
+    // Monotonic on the way out as well as in the reducer. Re-sending a receipt
+    // for something already read is a stored event for no reason, on the one
+    // event type a client would otherwise emit on every scroll.
+    const current = state.receipts.get(this.#account);
+    if (current && compare(current, target) >= 0) return state;
+
+    return this.send(roomId, { type: 'm.receipt', upTo: target }, { class: 'silent' });
+  }
+
+  /** How far this account has read, or null. */
+  lastRead(roomId: string): string | null {
+    return this.state(roomId).receipts.get(this.#account) ?? null;
+  }
+
+  /**
+   * How many messages are unread.
+   *
+   * Own messages never count: sending something is the strongest possible
+   * signal that you have seen it, and a room that shows one unread because you
+   * spoke in it is a room whose badge nobody trusts.
+   */
+  unread(roomId: string): number {
+    const state = this.state(roomId);
+    const upTo = state.receipts.get(this.#account);
+    let count = 0;
+    for (const message of state.messages) {
+      if (message.pending || message.purged || message.redacted) continue;
+      if (message.account === this.#account) continue;
+      if (upTo && compare(message.id, upTo) <= 0) continue;
+      count += 1;
+    }
+    return count;
   }
 
   /**
@@ -350,6 +529,28 @@ export class RoomSync {
 
     const clientNonce = this.#nonce();
     const localId = options.localId ?? `local:${clientNonce}`;
+
+    // An ephemeral event is not a message and must not become one. It gets no
+    // optimistic row, no outbox entry and no echo applied: there is nothing to
+    // reconcile, because there is nothing that will ever be stored. Sending a
+    // typing notice through the message path put a blank pending message in the
+    // timeline, which is how this was found.
+    if (options.class === 'ephemeral') {
+      const body = { v: 1, ...payload };
+      const sealed = await this.#crypto.encrypt(
+        groupId,
+        new TextEncoder().encode(JSON.stringify(body)),
+      );
+      await this.persistCrypto();
+      const { epoch } = await this.#crypto.state(groupId);
+      await this.#transport.send(roomId, {
+        epoch,
+        class: 'ephemeral',
+        payload: encodePayload(sealed),
+        clientNonce,
+      });
+      return this.state(roomId);
+    }
 
     // 1. Show it immediately. This is the only step a person can see.
     const optimistic: Message & { clientNonce: string } = {

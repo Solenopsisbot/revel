@@ -14,5 +14,6 @@ export * from './groups.js';
 export * from './identity.js';
 export * from './ids.js';
 export * from './permissions.js';
+export * from './push.js';
 export * from './rooms.js';
 export * from './socket.js';

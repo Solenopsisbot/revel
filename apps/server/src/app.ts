@@ -14,6 +14,8 @@ import { mountBlobs } from './blobs.js';
 import { mountGroups, nudgeCommitter } from './groups.js';
 import type { Hub } from './hub.js';
 import { canPurge, canRead, canSend } from './policy.js';
+import type { PushSender } from './push.js';
+import { mountPush, notify } from './push.js';
 import { rateLimit } from './ratelimit.js';
 import { mountRooms } from './rooms.js';
 import type { Store } from './store/types.js';
@@ -63,6 +65,11 @@ export interface AppDeps {
    * address nobody reads is worse than none.
    */
   security?: SecurityContact;
+  /**
+   * Push. Absent means no device is ever woken, which is a working deployment
+   * — everything arrives on the next open — and a poor one on a phone.
+   */
+  push?: { sender?: PushSender; includeRoom?: boolean };
 }
 
 const denialStatus: Record<string, ContentfulStatusCode> = {
@@ -121,6 +128,12 @@ export function createApp(deps: AppDeps) {
     // Host "tracks this trivially", and this is the tracking. If proposals are
     // already waiting, the same send is the moment to ask for a commit: it
     // proves this device is awake, which is the only thing a nudge needs.
+    // Wake whoever is not here. Content-free, `normal` only, and never a
+    // device that already has a socket — `push.ts` holds the rules.
+    if (!deduped && deps.push) {
+      await notify({ ...deps.push, store: deps.store, hub: deps.hub }, stored);
+    }
+
     const room = await deps.store.getRoom(roomId);
     if (room?.groupId && !deduped) {
       await deps.store.touchGroupMember(room.groupId, actor.devicePub, Date.now());
@@ -180,6 +193,7 @@ export function createApp(deps: AppDeps) {
     externalSender: deps.externalSender ?? null,
     authenticate: deps.authenticate,
   });
+  mountPush(app, { store: deps.store, authenticate: deps.authenticate });
   mountBlobs(app, {
     store: deps.store,
     newId: () => deps.ids.next(),
