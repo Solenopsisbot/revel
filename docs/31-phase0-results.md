@@ -528,3 +528,86 @@ Running total for persistence: **293 → 317 kB brotli**, +8%.
 - **The store itself.** `packages/crypto` hands out sealed blobs; nothing writes
   them to IndexedDB yet. That is `packages/core`.
 - **Sealing under the device key**, as above.
+
+---
+
+## 8. The handshake surface, and three things it taught us
+
+`docs/04` §5 specifies `/groups/:id/{handshake,welcome,tree,key-packages/claim}`
+and `docs/29` §4 asks for a multi-client harness. Building the first made the
+second possible, and the second immediately found things the first got wrong.
+Recorded here because two of them are constraints rather than bugs — they will
+be true of any implementation, so they are worth knowing before rediscovering.
+
+### Being removed from a group is silent
+
+A commit that removes this device **processes without error**. mls-rs cannot
+apply a commit that takes your own leaf away, so it does not: `process` returns
+normally and the epoch simply stays where it was. Nothing throws, nothing is
+flagged, and every subsequent message is undecryptable.
+
+From a user's seat that is a room that has mysteriously stopped working, which
+is exactly the silence `docs/22` exists to prevent. The detection is cheap once
+you know to look for it:
+
+> **After processing a commit, if the epoch did not advance, this device is no
+> longer in the group.**
+
+A commit we can apply always advances us by exactly one. `GroupSync` checks it
+and calls `onRemoved`, which is where "you were removed from this room" comes
+from.
+
+### A diverged session cannot quietly rejoin
+
+Re-adding a device whose state has been lost fails with *"duplicate signature
+key, hpke key or identity found at index 1"*. MLS will not admit a leaf whose
+signature key is already in the tree, and the stale leaf is still there.
+
+So the reset is two steps and neither is optional: the group must **remove the
+old leaf** first, and only then can the device be added again. A UI offering
+"reset this room" has to be able to ask someone else to do half of it, which is
+a real constraint on how that flow can be designed.
+
+### The server's membership list has to be clearable by its own device
+
+The Host skips devices it already lists when claiming key packages — that is
+part of the authorised-claim fix (`docs/03` §5). It also means a stale row is a
+person who **can never be added back**, which is precisely the state both cases
+above leave behind.
+
+`DELETE /groups/:id/membership` is the escape hatch: self-only, and not a
+removal — the leaf stays in the tree until a member commits it away, which is
+not the server's to do. It clears the delivery list, nothing more.
+
+Note what makes this workable: **the removed device clears its own row.** The
+alternative would be for the remover to do it, and the remover cannot — it knows
+which *leaf* it removed, and the server knows which *device pub*, and nothing
+connects the two.
+
+### The leaf ↔ device-pub gap, still open
+
+A device has two identifiers that ought to be one:
+
+| Where | What | Who knows it |
+| --- | --- | --- |
+| MLS | the device signature key, inside the certificate | every group member |
+| Host | `devices.pub`, on `Event.sender` | the server |
+
+Nothing relates them. It has not mattered yet, because attribution comes from
+the MLS leaf inside the ciphertext and never from `Event.sender` (`docs/04` §2),
+and because the removed device clears its own row. But it does mean a moderator
+cannot say "remove this account's leaves *and* tell the server", and a device
+that is removed while offline leaves a stale row until it next connects.
+
+**The fix belongs in phase 1's device registration** (`docs/06`): a device
+should register its MLS signature key as its `devices.pub`, so the two are one
+identifier. Doing that later means a migration; doing it when device
+registration is first written costs nothing.
+
+### And one latent bug, found by writing the schema down
+
+`EventInput.notify` was typed as an array of snowflakes. Account ids are public
+keys (`docs/04` §1) — 43 characters of base64url — so it would have rejected
+every real one the first time anything populated it, and nothing had.
+`AccountId` and `DevicePub` now live in `ids.ts` beside the snowflake, which is
+where the next person will look before typing `z.string()`.

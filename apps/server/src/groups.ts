@@ -124,7 +124,7 @@ export function mountGroups(app: Hono, deps: GroupDeps): void {
       devicePub: actor.devicePub,
       accountId: actor.accountId,
     });
-    return c.json(await describe(deps, group.id), 201);
+    return c.json(await describe(deps, group.id, actor), 201);
   });
 
   app.get('/groups/:id', async (c) => {
@@ -135,7 +135,7 @@ export function mountGroups(app: Hono, deps: GroupDeps): void {
     const denial = await canHandshake(deps.store, groupId, actor);
     if (denial) return c.json({ error: denial }, groupDenialStatus[denial] ?? 403);
 
-    return c.json(await describe(deps, groupId));
+    return c.json(await describe(deps, groupId, actor));
   });
 
   // -------------------------------------------------------------------------
@@ -323,6 +323,26 @@ export function mountGroups(app: Hono, deps: GroupDeps): void {
   // -------------------------------------------------------------------------
 
   /**
+   * "I am not in this group."
+   *
+   * A device says this when MLS tells it so — a commit that removes you is
+   * silent, it simply stops advancing your epoch — or when it has lost its
+   * state and cannot be caught up.
+   *
+   * Self only, and not a removal: the leaf stays in the tree until a member
+   * commits it away, which this cannot do and should not be able to. What it
+   * clears is the server's delivery list, and clearing that is what makes being
+   * added back possible at all — a claim skips devices the server already
+   * lists, so a stale row is a person who can never rejoin.
+   */
+  app.delete('/groups/:id/membership', async (c) => {
+    const actor = await auth(c.req.raw);
+    if (!actor) return c.json({ error: 'unauthenticated' }, 401);
+    await deps.store.leaveGroup(c.req.param('id'), actor.devicePub);
+    return c.body(null, 204);
+  });
+
+  /**
    * Whatever is waiting for this device, as an HTTP fallback for the socket's
    * `WELCOME` frame. A client that opened cold and has no socket yet still has
    * to be able to find out it was invited.
@@ -421,14 +441,26 @@ export async function deliverWelcomes(
 async function describe(
   deps: Pick<GroupDeps, 'store' | 'hub'>,
   groupId: string,
+  actor: Actor,
 ): Promise<GroupInfo> {
   const group = await deps.store.getGroup(groupId);
   const members = await deps.store.listGroupMembers(groupId);
+
+  // Filtered by the same read check an HTTP fetch of the room would make. A
+  // group can serve rooms this member is not in — `docs/03` §4's audiences are
+  // per-visibility, not per-room — and listing those would be a directory of
+  // rooms somebody cannot open.
+  const rooms: string[] = [];
+  for (const room of await deps.store.getGroupRooms(groupId)) {
+    if (!(await canRead(deps.store, room.id, actor))) rooms.push(room.id);
+  }
+
   return {
     id: groupId,
     epoch: group?.epoch ?? 0,
     committer: await designatedCommitter(deps, groupId),
     pendingProposals: group?.pendingProposals ?? 0,
     size: members.length,
+    rooms,
   };
 }

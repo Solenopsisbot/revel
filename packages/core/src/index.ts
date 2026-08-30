@@ -49,6 +49,16 @@ export type {
 } from './store/types.js';
 export { type RoomListener, RoomSync, type RoomSyncOptions, toAccountId } from './sync/engine.js';
 export {
+  GroupSync,
+  type GroupSyncOptions,
+  type GroupTransport,
+  HttpGroupTransport,
+  type HttpGroupTransportOptions,
+  type InviteResult,
+  isEpochConflict,
+  KEY_PACKAGE_FLOOR,
+} from './sync/groups.js';
+export {
   type SocketLike,
   WebSocketStream,
   type WebSocketStreamOptions,

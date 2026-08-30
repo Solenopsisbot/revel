@@ -176,6 +176,15 @@ export const GroupInfo = z.object({
   pendingProposals: z.number().int().nonnegative(),
   /** Devices the server believes are in the group. A delivery hint. */
   size: z.number().int().nonnegative(),
+  /**
+   * Rooms this group's keys open, filtered to the ones the asker may read.
+   *
+   * The reverse of `rooms.group_id`, and a joiner cannot work without it: a
+   * Welcome carries a group id and nothing else, so without this a device that
+   * has successfully joined a group has no idea which conversation it just
+   * gained the ability to read.
+   */
+  rooms: z.array(Snowflake),
 });
 export type GroupInfo = z.infer<typeof GroupInfo>;
 

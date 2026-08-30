@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { SocketSession } from '../src/socket.js';
-import { b64, body, harness, unb64, wire } from './helpers.js';
+import { b64, body, EVERYONE, harness, unb64, wire } from './helpers.js';
 
 /** A commit built from `epoch`. */
 const commit = (epoch: number, over: Record<string, unknown> = {}) => ({
@@ -77,6 +77,50 @@ describe('opening a group', () => {
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(400);
+  });
+
+  it('names the rooms it opens, so a joiner knows what it just gained', async () => {
+    // A Welcome carries a group id and nothing else. Without this a device that
+    // has successfully joined has no idea which conversation it can now read.
+    const h = harness();
+    h.join('alice', 'dev-a');
+    const group = await h.openGroup('dev-a');
+    const info = (await (await h.groupInfo('dev-a', group)).json()) as any;
+    expect(info.rooms).toEqual(['room1']);
+  });
+
+  it('only names the rooms the asker may actually read', async () => {
+    // A group can serve rooms a given member is not in — `docs/03` §4's
+    // audiences are per-visibility, not per-room. Listing those would be a
+    // directory of rooms somebody cannot open.
+    const h = harness();
+    h.join('alice', 'dev-a');
+    h.join('bob', 'dev-b');
+    const group = await h.openGroup('dev-a');
+
+    h.store.rooms.set('room2', {
+      id: 'room2',
+      spaceId: 'space1',
+      groupId: group,
+      streamPaging: false,
+      notifyHints: false,
+    });
+    h.store.memberships.set('room2:alice', {
+      roomId: 'room2',
+      accountId: 'alice',
+      roleIds: [EVERYONE],
+    });
+
+    await h.publish('dev-b', ['kp1']);
+    await h.claim('dev-a', group, ['bob']);
+    await h.handshake('dev-a', group, {
+      ...commit(0, { added: ['dev-b'], welcome: { bytes: b64('w'), devices: ['dev-b'] } }),
+    });
+
+    const mine = (await (await h.groupInfo('dev-a', group)).json()) as any;
+    const theirs = (await (await h.groupInfo('dev-b', group)).json()) as any;
+    expect(mine.rooms.sort()).toEqual(['room1', 'room2']);
+    expect(theirs.rooms).toEqual(['room1']);
   });
 
   it('hides the group from a device that is not in it', async () => {
@@ -354,6 +398,83 @@ describe('membership, as the server tracks it for delivery', () => {
     // The removal itself is the last thing Bob is not told about: he learns he
     // is gone by failing to decrypt, which is the only signal that cannot lie.
     expect(bob.ofOp('HANDSHAKE')).toHaveLength(0);
+  });
+});
+
+describe('leaving', () => {
+  async function pairInGroup() {
+    const h = harness();
+    h.join('alice', 'dev-a');
+    h.join('bob', 'dev-b');
+    await h.publish('dev-b', ['kp1', 'kp2']);
+    const group = await h.openGroup('dev-a');
+    await h.claim('dev-a', group, ['bob']);
+    await h.handshake('dev-a', group, {
+      ...commit(0, { added: ['dev-b'], welcome: { bytes: b64('w'), devices: ['dev-b'] } }),
+    });
+    return { h, group };
+  }
+
+  const leave = (h: ReturnType<typeof harness>, device: string, group: string) =>
+    h.app.request(`/groups/${group}/membership`, {
+      method: 'DELETE',
+      headers: { 'x-revel-device': device },
+    });
+
+  it('drops the device‘s own row', async () => {
+    const { h, group } = await pairInGroup();
+    expect((await leave(h, 'dev-b', group)).status).toBe(204);
+    expect(await h.store.getGroupMember(group, 'dev-b')).toBeNull();
+  });
+
+  it('is what makes rejoining possible at all', async () => {
+    // A claim skips devices the server already lists, so a stale row is a
+    // person who can never be added back — the case a diverged session or a
+    // removal lands in.
+    const { h, group } = await pairInGroup();
+    let claimed = (await (await h.claim('dev-a', group, ['bob'])).json()) as any;
+    expect(claimed.missing).toEqual(['bob']);
+
+    await leave(h, 'dev-b', group);
+    claimed = (await (await h.claim('dev-a', group, ['bob'])).json()) as any;
+    expect(claimed.claims).toHaveLength(1);
+  });
+
+  it('is not a removal — the leaf is not the server‘s to take', async () => {
+    // The tree only ever changes through a commit signed by a member
+    // (`docs/03` §5). All this clears is the delivery list.
+    const { h, group } = await pairInGroup();
+    const before = (await (await h.groupInfo('dev-a', group)).json()) as any;
+    await leave(h, 'dev-b', group);
+    const after = (await (await h.groupInfo('dev-a', group)).json()) as any;
+    expect(after.epoch).toBe(before.epoch);
+  });
+
+  it('cannot be done on somebody else‘s behalf', async () => {
+    const { h, group } = await pairInGroup();
+    await leave(h, 'dev-a', group);
+    // Alice left her own row, not bob's.
+    expect(await h.store.getGroupMember(group, 'dev-b')).not.toBeNull();
+    expect(await h.store.getGroupMember(group, 'dev-a')).toBeNull();
+  });
+
+  it('throws away a Welcome that was still waiting', async () => {
+    const { h, group } = await pairInGroup();
+    expect(((await (await h.welcomes('dev-b')).json()) as any).welcomes).toHaveLength(1);
+    await leave(h, 'dev-b', group);
+    expect(((await (await h.welcomes('dev-b')).json()) as any).welcomes).toEqual([]);
+  });
+
+  it('is quiet about a group the device was never in', async () => {
+    const { h, group } = await pairInGroup();
+    h.join('carol', 'dev-c');
+    expect((await leave(h, 'dev-c', group)).status).toBe(204);
+  });
+
+  it('refuses an unauthenticated request', async () => {
+    const { h, group } = await pairInGroup();
+    const res = await h.app.request(`/groups/${group}/membership`, { method: 'DELETE' });
+    expect(res.status).toBe(401);
   });
 });
 

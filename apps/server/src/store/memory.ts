@@ -186,6 +186,12 @@ export class MemoryStore implements Store {
     if (member) member.lastActiveAt = at;
   }
 
+  async leaveGroup(groupId: string, devicePub: string) {
+    this.groupMembers.delete(`${groupId}:${devicePub}`);
+    this.claims.delete(`${groupId}:${devicePub}`);
+    await this.ackWelcome(devicePub, groupId);
+  }
+
   async appendHandshake(input: HandshakeAppend): Promise<HandshakeResult> {
     const group = this.groups.get(input.groupId);
     if (!group) return { accepted: false, reason: 'epoch_conflict', epoch: 0 };

@@ -296,7 +296,13 @@ function pairedToServer() {
   const ids = new SnowflakeFactory(1);
 
   for (const id of [ROOM1, ROOM2, PRIVATE]) {
-    store.rooms.set(id, { id, spaceId: 'space1', streamPaging: false, notifyHints: false });
+    store.rooms.set(id, {
+      id,
+      spaceId: 'space1',
+      groupId: null,
+      streamPaging: false,
+      notifyHints: false,
+    });
   }
   store.roles.set('role-everyone', {
     id: 'role-everyone',

@@ -122,6 +122,19 @@ export interface Store {
   touchGroupMember(groupId: string, devicePub: string, at: number): Promise<void>;
 
   /**
+   * Drop a device's own membership row.
+   *
+   * Not a removal — the leaf stays in the tree until a member commits one away,
+   * and this cannot touch that. It is a device saying "I am not in this group",
+   * which it knows because MLS told it so or because it lost its state.
+   *
+   * The reason this has to exist: the server skips devices it already lists
+   * when claiming key packages, so without a way to clear the row, a person who
+   * has been removed or whose session has diverged can never be added back.
+   */
+  leaveGroup(groupId: string, devicePub: string): Promise<void>;
+
+  /**
    * Append to the handshake log, if and only if the epoch still matches.
    *
    * The atomicity is the point, and it is why the epoch check lives here

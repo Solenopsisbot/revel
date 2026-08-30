@@ -15,7 +15,7 @@
  * `RoomSync.catchUp` is what it is for.
  */
 
-import type { Event } from '@revel/protocol';
+import type { Event, HandshakeRecord } from '@revel/protocol';
 import { parseServerFrame } from '@revel/protocol';
 import type { EventStream } from './transport.js';
 
@@ -43,6 +43,19 @@ export interface WebSocketStreamOptions {
 
   /** Called when the connection state changes, for a UI that says so. */
   onStatus?: (status: 'connecting' | 'open' | 'closed') => void;
+
+  /**
+   * Device-addressed frames, which have no room to route through.
+   *
+   * A group can serve several rooms (`docs/03` §4), and a Welcome arrives for a
+   * group whose rooms this client may not have heard of yet — so these are not
+   * subscriptions, they are things the server says to *this device*. Missing
+   * one costs a fetch: `GroupSync.catchUp` closes a handshake gap and
+   * `GroupSync.acceptWelcomes` finds a missed invitation.
+   */
+  onHandshake?: (record: HandshakeRecord) => void;
+  onCommitRequested?: (groupId: string, deadline: number) => void;
+  onWelcome?: (groupId: string, bytes: string) => void;
 
   /**
    * Backoff between attempts, in milliseconds.
@@ -154,9 +167,21 @@ export class WebSocketStream implements EventStream {
       // A frame this build does not understand is a newer server's, not an
       // error. Dropping the connection over it would make every deployment a
       // flag day.
-      if (!frame || frame.op !== 'EVENT') return;
+      if (!frame) return;
 
-      for (const listener of this.#listeners.get(frame.d.room) ?? []) listener(frame.d);
+      switch (frame.op) {
+        case 'EVENT':
+          for (const listener of this.#listeners.get(frame.d.room) ?? []) listener(frame.d);
+          return;
+        case 'HANDSHAKE':
+          return this.#options.onHandshake?.(frame.d);
+        case 'COMMIT_REQUESTED':
+          return this.#options.onCommitRequested?.(frame.d.group, frame.d.deadline);
+        case 'WELCOME':
+          return this.#options.onWelcome?.(frame.d.group, frame.d.bytes);
+        default:
+          return;
+      }
     };
 
     const fail = () => {
