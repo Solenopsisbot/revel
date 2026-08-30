@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_EVERYONE,
-  Permission as P,
   canActOnRole,
   canGrant,
+  DEFAULT_EVERYONE,
   everything,
   has,
   hasExact,
   listPermissions,
+  Permission as P,
   parse,
   resolve,
   serialize,

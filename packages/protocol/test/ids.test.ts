@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SnowflakeFactory, compareIds, isSnowflake, shardOf, timestampOf } from '../src/ids.js';
+import { compareIds, isSnowflake, SnowflakeFactory, shardOf, timestampOf } from '../src/ids.js';
 
 describe('snowflakes', () => {
   it('round-trips the timestamp', () => {

@@ -38,7 +38,10 @@ export interface LocalEvent {
  */
 export type ParsedPayload =
   | { known: true; event: KnownEvent }
-  | { known: false; type: string; raw: Record<string, unknown> };
+  /** `raw` is whatever was there — JSON, not necessarily an object. See
+   *  `parseEncrypted`: typing it as a record was a lie for a payload that is a
+   *  bare string or array, which a buggy client can genuinely send. */
+  | { known: false; type: string; raw: unknown };
 
 /** Narrowed from `@revel/protocol`'s `EncryptedEvent` at the call site. */
 // biome-ignore lint/suspicious/noExplicitAny: the protocol union is zod-inferred
@@ -127,7 +130,7 @@ export interface Message {
    * "something happened here": encrypted history cannot be re-fetched into
    * existence once a client has decided it was noise.
    */
-  unknown?: { type: string; raw: Record<string, unknown> };
+  unknown?: { type: string; raw: unknown };
 }
 
 export interface RoomState {

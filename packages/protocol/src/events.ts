@@ -147,11 +147,30 @@ export type EncryptedEvent = z.infer<typeof EncryptedEvent>;
  */
 export type ParsedEvent =
   | { known: true; event: EncryptedEvent }
-  | { known: false; type: string; raw: Record<string, unknown> };
+  | {
+      known: false;
+      type: string;
+      /**
+       * Whatever was actually there, unchanged.
+       *
+       * `unknown`, not `Record<string, unknown>`, because a payload is
+       * decrypted JSON and JSON is not always an object — a member with a buggy
+       * client can send `"hello"` or `[1,2,3]` as an entire body. This used to
+       * be typed as a record and cast, which made it a *lie* for exactly those
+       * payloads, and `docs/29` §1 rule 2 says unknown content is "preserved
+       * and re-emitted" — you cannot preserve a string into a type that cannot
+       * hold one. Found by fuzzing.
+       */
+      raw: unknown;
+    };
 
 export function parseEncrypted(json: unknown): ParsedEvent {
   const result = EncryptedEvent.safeParse(json);
   if (result.success) return { known: true, event: result.data };
-  const raw = (json ?? {}) as Record<string, unknown>;
-  return { known: false, type: typeof raw.type === 'string' ? raw.type : 'unknown', raw };
+
+  const type =
+    typeof json === 'object' && json !== null && !Array.isArray(json)
+      ? (json as Record<string, unknown>).type
+      : undefined;
+  return { known: false, type: typeof type === 'string' ? type : 'unknown', raw: json };
 }

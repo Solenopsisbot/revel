@@ -343,6 +343,8 @@ export class Client {
 
   /** Groups this device has discovered it is no longer in. */
   readonly removedFrom: string[] = [];
+  /** Handshake records MLS refused — a forged one, or a bug, or a newer build. */
+  readonly refused: { group: string; seq: number }[] = [];
 
   #session: SocketSession | null = null;
   #socket: SocketLike | null = null;
@@ -424,6 +426,9 @@ export class Client {
       persist: () => client.rooms.persistCrypto(),
       onRemoved: (groupId) => {
         client.removedFrom.push(groupId);
+      },
+      onRefused: (groupId, record) => {
+        client.refused.push({ group: groupId, seq: record.seq });
       },
     });
 

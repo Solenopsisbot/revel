@@ -1423,3 +1423,70 @@ attachment by `kind`, because that is what a renderer needs. Left alone, the
 app's search and the core's would have disagreed about what an image is — the
 kind of difference that shows up as "search says there are no images in this
 room" and takes an afternoon. The seam derives one from the other, with a test.
+
+---
+
+## 25. D1 and D2: fuzzing, and a Host that is not playing fair
+
+`docs/29` §4 asks for both by name. Each found a real bug on the first run.
+
+### The fuzzer found a decoder that lied about its own type
+
+`parseEncrypted`'s unknown branch declared `raw: Record<string, unknown>` and
+produced it by casting. A payload is decrypted JSON and **JSON is not always an
+object** — a member with a buggy client can send `"hello"` or `[1,2,3]` as an
+entire body, and the cast made the declared type false for exactly those.
+
+That matters more than a type-checker complaint, because `docs/29` §1 rule 2
+says unknown content is "preserved and re-emitted": a v1 client editing a v2
+event must round-trip what it does not understand. You cannot preserve a string
+into a type that cannot hold one, and everything downstream — the reducer's
+`unknown` field, the fallback renderer — inherited the same lie. `raw` is now
+`unknown`, which is what it always was.
+
+The property the fuzzer tests is deliberately modest: **never throw, never hang,
+never claim something is valid that is not.** A decoder that throws is one
+somebody forgets to wrap; one that hangs is a denial of service; one that is
+optimistic is a hole. Seeded, so a failure is reproducible — a fuzzer you cannot
+re-run finds a bug once and never again.
+
+### The malicious Host found two
+
+Twelve scenarios where the server does what a hostile operator plausibly would.
+The shape of every assertion is the same: the client **fails safe**. "Nobody can
+read this any more" is an acceptable outcome of an attack; "everybody reads
+something the attacker chose" is not.
+
+Two things it caught:
+
+**A forged handshake record threw out of the client.** `GroupSync.#apply` called
+`crypto.process` unguarded, so bytes a Host made up became an exception in
+whatever happened to be on the stack — a socket callback, usually. It now
+refuses and reports through `onRefused`.
+
+And the interesting part is what it does *not* do: **the cursor does not
+advance.** Skipping past a record that failed would mean a legitimate commit
+lost to a transient failure is lost permanently, leaving the device an epoch
+behind forever with no signal — the unreadable-room failure nobody can diagnose.
+Not advancing means a Host that keeps serving garbage at one sequence number
+stalls the group, which is a denial of service it could perform just as easily
+by serving nothing at all. **A capability the attacker already has is not worth
+trading a silent corruption for.**
+
+**A purge was invisible to catch-up.** A tombstone carries the *id of the event
+it erased*, so it is never "newer than the cursor" and an id-filtered catch-up
+walked straight past it. A device offline when a message was purged would keep
+its decrypted copy forever while everybody else dropped theirs — a client
+silently diverging from the room, which is the one outcome a tombstone exists to
+prevent. Tombstones now come through the filter; re-applying one is idempotent.
+
+### What the suite establishes
+
+The server cannot forge a commit, cannot add itself to a group by claiming
+somebody did, cannot make a member skip or replay one, cannot change a word of a
+message, cannot re-attribute one by rewriting `Event.sender` (attribution comes
+from the MLS leaf, never the envelope), cannot hand a stranger an unclaimed
+Welcome, and cannot make a withheld message unrecoverable.
+
+What it *can* do, and the tests say so plainly: put anybody in a room — and
+still not let them read it.

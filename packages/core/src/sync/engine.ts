@@ -216,12 +216,24 @@ export class RoomSync {
       // Hoisted so the closure sees a `string`, not a `string | null` that
       // TypeScript will not narrow across a function boundary.
       const since = cursor;
-      const fresh = since ? page.filter((e) => compare(e.id, since) > 0) : page;
+      // A purge tombstone carries the **id of the event it erased**, so it is
+      // never "newer than the cursor" and an id-filtered catch-up walks
+      // straight past it. A device that was offline when a message was purged
+      // would then keep its decrypted copy forever while everybody else
+      // dropped theirs — the client silently diverging from the room, which is
+      // the one outcome a tombstone exists to prevent. Re-applying one is
+      // idempotent, so letting them through costs nothing.
+      const fresh = since
+        ? page.filter((e) => compare(e.id, since) > 0 || e.purgedAt != null)
+        : page;
       if (fresh.length === 0) break;
 
       await this.receive(roomId, fresh);
       const newest = fresh.reduce((a, b) => (compare(a.id, b.id) >= 0 ? a : b));
-      if (newest.id === cursor) break;
+      // Only messages move the cursor. A tombstone that came through the
+      // filter above is older than the cursor by construction, and letting one
+      // set it would walk the catch-up backwards.
+      if (compare(newest.id, cursor ?? '') <= 0) break;
       cursor = newest.id;
       if (page.length < pageSize) break;
     }

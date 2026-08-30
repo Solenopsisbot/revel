@@ -263,6 +263,15 @@ export interface GroupSyncOptions {
   onEpoch?: (groupId: string, epoch: number) => void;
 
   /**
+   * Called when a handshake record could not be applied.
+   *
+   * Worth surfacing rather than swallowing: a run of these is either a Host
+   * behaving badly or a client that has fallen behind the protocol, and both
+   * are things somebody should be able to see.
+   */
+  onRefused?: (groupId: string, record: HandshakeRecord, error: unknown) => void;
+
+  /**
    * Called when this device turns out not to be in a group any more.
    *
    * Worth a UI: `docs/22` should be able to say "you were removed from this
@@ -300,6 +309,7 @@ export class GroupSync {
   #persist: () => Promise<void>;
   #onEpoch: ((groupId: string, epoch: number) => void) | undefined;
   #onRemoved: ((groupId: string) => void) | undefined;
+  #onRefused: ((groupId: string, record: HandshakeRecord, error: unknown) => void) | undefined;
   #cursors = new Map<string, number>();
 
   constructor(options: GroupSyncOptions) {
@@ -310,6 +320,7 @@ export class GroupSync {
     this.#persist = options.persist;
     this.#onEpoch = options.onEpoch;
     this.#onRemoved = options.onRemoved;
+    this.#onRefused = options.onRefused;
   }
 
   // -- key packages ---------------------------------------------------------
@@ -665,7 +676,25 @@ export class GroupSync {
     const mine = record.sender === this.#device;
 
     if (!stale && !mine) {
-      await this.#crypto.process(groupId, fromBase64(record.bytes));
+      try {
+        await this.#crypto.process(groupId, fromBase64(record.bytes));
+      } catch (error) {
+        // A record MLS refuses. The realistic causes are a Host appending
+        // bytes it made up, a client with a bug, and a version of the protocol
+        // that does not exist yet — and none of them may throw out of a socket
+        // callback into whatever happened to be on the stack.
+        //
+        // **The cursor does not advance.** Skipping past it would mean that a
+        // legitimate commit we failed to process for some transient reason is
+        // lost permanently, leaving this device an epoch behind forever with no
+        // signal — the unreadable-room failure nobody can diagnose. Not
+        // advancing means a Host that keeps serving garbage at one sequence
+        // number stalls the group, which is a denial of service it could
+        // perform just as easily by serving nothing at all. A capability the
+        // attacker already has is not one worth trading a silent corruption for.
+        this.#onRefused?.(groupId, record, error);
+        return;
+      }
       await this.#persist();
       const after = await this.#crypto.state(groupId);
 
