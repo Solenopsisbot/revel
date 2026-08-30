@@ -440,6 +440,20 @@ export class RoomSync {
 
   // -- live delivery --------------------------------------------------------
 
+  /**
+   * Catch up on every room this engine has open.
+   *
+   * What a reconnect needs. The socket cannot replay what it missed while it
+   * was down, so the gap is closed here or not at all.
+   */
+  async catchUpAll(rooms: string[] = [...this.#rooms.keys()]): Promise<void> {
+    for (const roomId of rooms) {
+      // One room failing to catch up must not stop the others: a room whose
+      // membership was revoked while we were offline will refuse forever.
+      await this.catchUp(roomId).catch(() => {});
+    }
+  }
+
   /** Subscribe to live events for a room, if a stream was provided. */
   listen(roomId: string): void {
     if (!this.#stream || this.#unsubscribes.has(roomId)) return;

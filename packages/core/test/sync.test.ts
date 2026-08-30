@@ -513,6 +513,72 @@ describeIfBuilt('RoomSync', () => {
     });
   });
 
+  describe('catching up everything at once', () => {
+    it('catches up every room it has open', async () => {
+      const host = new FakeHost();
+      const { alice, bob } = await pair(host);
+      await bob.sync.open(ROOM);
+
+      await alice.sync.send(ROOM, { type: 'm.message', body: 'while away' });
+      await bob.sync.catchUpAll();
+
+      expect(bob.sync.state(ROOM).messages.map(bodyOf)).toEqual(['while away']);
+    });
+
+    it('does not let one room stop the others', async () => {
+      // A room whose membership was revoked while we were offline refuses
+      // forever; it must not take the rest of the app down with it.
+      const host = new FakeHost();
+      const { alice, bob } = await pair(host);
+      await bob.sync.open(ROOM);
+      await alice.sync.send(ROOM, { type: 'm.message', body: 'still works' });
+
+      const failing = 'room-gone';
+      await bob.sync.bind(failing, 'group-gone');
+      await bob.sync.open(failing);
+      const original = host.fetchEvents.bind(host);
+      host.fetchEvents = async (roomId, options) => {
+        if (roomId === failing) throw new TransportError(403, 'not_a_member');
+        return original(roomId, options);
+      };
+
+      await expect(bob.sync.catchUpAll()).resolves.toBeUndefined();
+      expect(bob.sync.state(ROOM).messages.map(bodyOf)).toEqual(['still works']);
+    });
+  });
+
+  describe('a socket that dropped', () => {
+    it('closes the gap it could not deliver', async () => {
+      // The whole reason `onReconnect` exists. A socket cannot replay, so a
+      // client that reconnects and says nothing loses everything that arrived
+      // while it was down — and the room looks fine, which is worse.
+      const host = new FakeHost();
+      const { alice, bob } = await pair(host);
+      const stop = host.subscribe(ROOM, (event) => {
+        void bob.sync.receive(ROOM, event);
+      });
+      await bob.sync.open(ROOM);
+
+      await alice.sync.send(ROOM, { type: 'm.message', body: 'delivered' });
+      await new Promise((r) => setTimeout(r, 10));
+      expect(bob.sync.state(ROOM).messages).toHaveLength(1);
+
+      // The socket goes away, and two messages arrive that nobody delivers.
+      stop();
+      await alice.sync.send(ROOM, { type: 'm.message', body: 'missed one' });
+      await alice.sync.send(ROOM, { type: 'm.message', body: 'missed two' });
+      expect(bob.sync.state(ROOM).messages).toHaveLength(1);
+
+      // Which is exactly what a reconnect has to do about it.
+      await bob.sync.catchUpAll();
+      expect(bob.sync.state(ROOM).messages.map(bodyOf)).toEqual([
+        'delivered',
+        'missed one',
+        'missed two',
+      ]);
+    });
+  });
+
   describe('watching', () => {
     it('notifies and then stops when unsubscribed', async () => {
       const host = new FakeHost();

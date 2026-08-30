@@ -60,11 +60,26 @@ persisting brings the device back at the old position, and the next message
 reuses both. `send` persists between encrypting and sending, and if the persist
 fails it does not send. There is a test that asserts the order.
 
+## The socket
+
+`WebSocketStream` is an `EventStream` with reconnection, talking to
+`SocketSession` on the server. Both sides use the frames in `@revel/protocol`,
+and there is a test that wires one directly to the other — a socket protocol
+tested from one side is a description of what that side believes.
+
+The one thing it must never do is go quiet. A socket cannot replay what it
+missed, so a reconnect that silently resubscribes leaves a permanent hole in
+the room and everything *looks* fine:
+
+```ts
+const stream = new WebSocketStream({
+  connect: () => new WebSocket(url),
+  onReconnect: (rooms) => void sync.catchUpAll(rooms),
+});
+```
+
 ## What is not here yet
 
 - **Search**, and the notification rules.
-- **A socket.** `apps/server` has the fan-out (`Hub`) but no route wired to it,
-  so `EventStream` is an interface with no shipped implementation. `Transport`
-  is real and tested against the server.
 - **Spaces, rooms and membership** as anything other than ids. The engine syncs
   a room it has been told about; nothing yet tells it.

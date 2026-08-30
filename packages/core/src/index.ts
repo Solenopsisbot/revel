@@ -39,6 +39,11 @@ export type {
 } from './store/types.js';
 export { type RoomListener, RoomSync, type RoomSyncOptions, toAccountId } from './sync/engine.js';
 export {
+  type SocketLike,
+  WebSocketStream,
+  type WebSocketStreamOptions,
+} from './sync/socket.js';
+export {
   type EventStream,
   type FetchOptions,
   HttpTransport,

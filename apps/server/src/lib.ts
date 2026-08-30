@@ -10,5 +10,6 @@
  */
 export { type AppDeps, createApp } from './app.js';
 export { type Connection, Hub } from './hub.js';
+export { type Actor, SocketSession, type SocketDeps } from './socket.js';
 export { MemoryStore } from './store/memory.js';
 export type { Device, Membership, Override, Role, Room, Store } from './store/types.js';
