@@ -1178,3 +1178,69 @@ cannot reach from a test, and a subtly wrong implementation of it fails
 silently, per device, in production — which is worse than an absent one. The
 part that is Revel's (who, when, what may be said) is here and tested; the part
 that is a protocol against somebody else's server is a deployment's to supply.
+
+---
+
+## 20. C1: the interface was wrong, and here is the measurement
+
+`docs/33` set the test: "When the real core lands, the work is swapping the fake
+core for the real one **behind the same interface**. If that turns out to be a
+large change, the interface was wrong — and finding that out costs one refactor
+rather than a rewrite."
+
+It is a large change. The reason is not that the real core is missing things —
+though it is missing some — but that **there was never an interface**. The thing
+`apps/web` was built against is one object with **94 members**, and they belong
+to at least six unrelated concerns:
+
+| Members | What they are | Can `RevelCore` back them? |
+| ---: | --- | --- |
+| **27** | Conversation, directory, identity | **Yes, today.** |
+| 7 | Thread helpers (`repliesTo`, `threadSummary`, …) | The data is there; these are view-level derivations over it. |
+| 20 | Spaces, roles, invites, moderation | No — phase 3, and the server has none of it. |
+| 13 | Settings (notification rules, privacy, storage, emoji) | No. Notification rules are skipped by decision; the rest is unbuilt. |
+| 14 | View state (`replyTo`, `editing`, `membersOpen`, …) | **No, and never.** |
+| 7 | Faces and plurality | No — specified in `docs/11`, unbuilt. |
+| 6 | Identity flows (key changes, recovery, passkeys) | No — phase 1's remaining half. |
+
+That last row of "no" is the interesting one: **14 of the 94 must not move into
+the core at all.** `replyTo`, `editing`, `membersOpen`, `profileFor` are per
+window, they die with the tab, and a headless agent host (`docs/06` phase 4) has
+no opinion about whether a member list is open. A core that held them would be a
+core one platform could use.
+
+### What C1 built
+
+`packages/core/src/app/` — four interfaces rather than one object:
+
+- **`ConversationCore`** — messages, sending, editing, redacting, reacting,
+  pinning, attachments, typing, read state, local search.
+- **`DirectoryCore`** — which rooms exist, opening a DM by name or key, group
+  rooms, membership, and the MLS roster (which is *not* the membership list).
+- **`IdentityCore`** — this account, its handle, its profile, its devices.
+- **`ConnectionCore`** — whether the socket is up.
+
+Plus `LiveCore`, the real implementation over `RoomSync`/`GroupSync`/
+`Attachments`/`HttpTransport`, and **19 tests that drive nothing but the
+interface**. If a scenario needs to reach past `core` into `RoomSync`, the
+interface has a hole; none of them do.
+
+Two places `LiveCore` deliberately does more than the transport underneath:
+
+- **`directory.addMembers` also commits.** Adding somebody to a room is
+  delivery; the commit is access. A caller that had to remember both would
+  eventually forget, and the failure mode is a room full of people who cannot
+  read it.
+- **`conversation.send` stops typing.** Sending is the end of typing, and saying
+  so beats waiting for the notice to time out on the other side.
+
+### What C2 has to do first
+
+The shapes differ where it matters. The fake's `Message` has `faceId: string`
+and looks the face up in a global map; the real one carries `face?: FaceRef`, a
+snapshot taken when the message was sent — which is `docs/04` §2's rule, and the
+reason renaming a face does not rewrite history. Every component that renders a
+message has to stop doing the lookup.
+
+That is the refactor `docs/33` said this exercise would either avoid or expose.
+It exposed it, which is the cheap outcome.

@@ -9,6 +9,17 @@
  * with two implementations behind it. The sync engine is next; see the README.
  */
 
+export type {
+  AttachMeta,
+  ConnectionCore,
+  ConnectionState,
+  ConversationCore,
+  DirectoryCore,
+  IdentityCore,
+  RevelCore,
+  SendOptions,
+} from './app/core.js';
+export { LiveCore, type LiveCoreOptions } from './app/live.js';
 export { Attachments, type AttachmentsOptions } from './blobs/attachments.js';
 export { openBlob, type SealedBlob, type SealOptions, sealBlob } from './blobs/seal.js';
 export {

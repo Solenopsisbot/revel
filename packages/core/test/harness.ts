@@ -64,6 +64,7 @@ import {
   HostSession,
   HttpGroupTransport,
   HttpTransport,
+  LiveCore,
   MemoryStore,
   type Message,
   RoomSync,
@@ -336,6 +337,8 @@ export class Client {
   transport!: HttpTransport;
   groupTransport!: HttpGroupTransport;
   files!: Attachments;
+  /** The app-facing surface, over the same engines everything else uses. */
+  core!: LiveCore;
   ws!: WebSocketStream;
 
   /** Groups this device has discovered it is no longer in. */
@@ -422,6 +425,16 @@ export class Client {
       onRemoved: (groupId) => {
         client.removedFrom.push(groupId);
       },
+    });
+
+    // After the engines it wraps, because it holds them rather than making them.
+    client.core = new LiveCore({
+      rooms: client.rooms,
+      groups: client.groups,
+      crypto: client.crypto,
+      transport,
+      stream: client.ws,
+      attachments: client.files,
     });
 
     return client;

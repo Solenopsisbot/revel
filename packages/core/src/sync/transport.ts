@@ -14,6 +14,7 @@
 import type {
   AccountProfile,
   BlobInfo,
+  DeviceInfo,
   Event,
   EventInput,
   RoomInfo,
@@ -91,6 +92,11 @@ export interface Transport {
    * taken by somebody else, and a key cannot (`docs/17`).
    */
   resolveAddress(address: string): Promise<AccountProfile>;
+
+  /** This account's devices, including the ones it has signed out. */
+  listDevices(): Promise<DeviceInfo[]>;
+  /** Sign one out. Its sessions and push channel die with it (`docs/03` §3). */
+  revokeDevice(devicePub: string): Promise<void>;
 
   // -- blobs -----------------------------------------------------------------
   //
@@ -217,6 +223,15 @@ export class HttpTransport implements Transport {
 
   resolveAddress(address: string): Promise<AccountProfile> {
     return this.#json(`/idp/accounts/${encodeURIComponent(address)}`, { method: 'GET' });
+  }
+
+  async listDevices(): Promise<DeviceInfo[]> {
+    const body = await this.#json<{ devices: DeviceInfo[] }>('/idp/devices', { method: 'GET' });
+    return body.devices;
+  }
+
+  async revokeDevice(devicePub: string): Promise<void> {
+    await this.#request(`/idp/devices/${encodeURIComponent(devicePub)}`, { method: 'DELETE' });
   }
 
   async uploadBlob(roomId: string, ciphertext: Uint8Array): Promise<BlobInfo> {

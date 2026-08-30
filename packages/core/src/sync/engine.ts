@@ -142,6 +142,17 @@ export class RoomSync {
     return stored;
   }
 
+  /**
+   * Every room this engine currently holds.
+   *
+   * What local search runs over: `docs/03` makes the server the search
+   * adversary, so "searchable" means "already decrypted here", and this is that
+   * set.
+   */
+  openRooms(): RoomState[] {
+    return [...this.#rooms.values()];
+  }
+
   /** The room as it stands, without touching the network. */
   state(roomId: string): RoomState {
     return this.#rooms.get(roomId) ?? emptyRoom(roomId);
