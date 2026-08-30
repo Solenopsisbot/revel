@@ -11,6 +11,7 @@
  */
 import { z } from 'zod';
 import { fromBase64, toBase64 } from './base64.js';
+import { AccountId, DevicePub, Snowflake } from './ids.js';
 
 /**
  * Delivery class. Exists so a typing indicator can't wake a phone and a read
@@ -25,8 +26,6 @@ export const EventClass = z.enum([
   'normal',
 ]);
 export type EventClass = z.infer<typeof EventClass>;
-
-const Snowflake = z.string().regex(/^\d{1,20}$/, 'not a snowflake');
 
 /** What a client sends. The server assigns the rest. */
 export const EventInput = z.object({
@@ -44,8 +43,12 @@ export const EventInput = z.object({
   /**
    * Accounts to wake. Only when the room enables notify hints; trades "who was
    * mentioned" for battery on busy rooms. Off by default.
+   *
+   * Account ids, not snowflakes — `docs/04` §1 makes an account id its public
+   * key. This was typed as a snowflake and would have rejected every real one;
+   * nothing had populated it yet, which is the only reason it was cheap to fix.
    */
-  notify: z.array(Snowflake).max(256).optional(),
+  notify: z.array(AccountId).max(256).optional(),
   /** Idempotency key so a retry after a dropped response can't duplicate. */
   clientNonce: z.string().min(8).max(64),
 });
@@ -57,7 +60,7 @@ export const Event = EventInput.extend({
   room: Snowflake,
   /** The device that sent it — not the account. Attribution to a person, and
    *  to which of their faces, is inside the ciphertext. */
-  sender: z.string().min(1).max(128),
+  sender: DevicePub,
   size: z.number().int().nonnegative(),
   createdAt: z.number().int(),
   /** Set when the bytes have been purged; the tombstone survives so clients

@@ -1,7 +1,33 @@
 /** In-memory Store. Used by the tests and by `revel dev`. */
-import type { Event } from '@revel/protocol';
+import type { Event, HandshakeRecord, KeyPackageSupply, KeyPackageUpload } from '@revel/protocol';
 import { compareIds } from '@revel/protocol';
-import type { Device, Membership, Override, Role, Room, Store } from './types.js';
+import type {
+  ClaimedPackage,
+  Device,
+  Group,
+  GroupMember,
+  GroupMemberInput,
+  HandshakeAppend,
+  HandshakeResult,
+  Membership,
+  Override,
+  Role,
+  Room,
+  Store,
+  StoredWelcome,
+} from './types.js';
+
+/** One device's key package shelf. */
+interface Shelf {
+  packages: string[];
+  lastResort: string | null;
+}
+
+/** An outstanding claim: a package taken for a group but not yet used by a commit. */
+interface OutstandingClaim extends ClaimedPackage {
+  groupId: string;
+  devicePub: string;
+}
 
 export class MemoryStore implements Store {
   rooms = new Map<string, Room>();
@@ -63,5 +89,210 @@ export class MemoryStore implements Store {
     found.size = 0;
     found.purgedAt = Date.now();
     return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // The handshake surface
+  // -------------------------------------------------------------------------
+
+  groups = new Map<string, Group>();
+  groupMembers = new Map<string, GroupMember>();
+  handshake = new Map<string, HandshakeRecord[]>();
+  welcomes = new Map<string, StoredWelcome[]>();
+  trees = new Map<string, { epoch: number; tree: string }>();
+  shelves = new Map<string, Shelf>();
+  claims = new Map<string, OutstandingClaim>();
+
+  async listAccountDevices(accountId: string) {
+    return [...this.devices.values()].filter((d) => d.accountId === accountId && !d.revokedAt);
+  }
+
+  async publishKeyPackages(devicePub: string, upload: KeyPackageUpload) {
+    // Replace rather than append. A device that has just restored from backup
+    // holds different private halves than whatever is on the shelf, and adding
+    // to a stale shelf means handing out packages nobody can open.
+    const shelf: Shelf = {
+      packages: [...upload.packages],
+      lastResort: upload.lastResort ?? this.shelves.get(devicePub)?.lastResort ?? null,
+    };
+    this.shelves.set(devicePub, shelf);
+    return this.keyPackageSupply(devicePub);
+  }
+
+  async keyPackageSupply(devicePub: string): Promise<KeyPackageSupply> {
+    const shelf = this.shelves.get(devicePub);
+    return { available: shelf?.packages.length ?? 0, lastResort: !!shelf?.lastResort };
+  }
+
+  async claimKeyPackage(devicePub: string, groupId: string): Promise<ClaimedPackage | null> {
+    const key = `${groupId}:${devicePub}`;
+    const outstanding = this.claims.get(key);
+    if (outstanding)
+      return { keyPackage: outstanding.keyPackage, lastResort: outstanding.lastResort };
+
+    const shelf = this.shelves.get(devicePub);
+    if (!shelf) return null;
+
+    // `shift`, not `pop`: oldest first, so a package that has been sitting
+    // around is spent before a fresh one and the shelf's age stays bounded.
+    const one = shelf.packages.shift();
+    const claim: ClaimedPackage | null = one
+      ? { keyPackage: one, lastResort: false }
+      : shelf.lastResort
+        ? { keyPackage: shelf.lastResort, lastResort: true }
+        : null;
+    if (!claim) return null;
+
+    this.claims.set(key, { ...claim, groupId, devicePub });
+    return claim;
+  }
+
+  async hasClaim(groupId: string, devicePub: string) {
+    return this.claims.has(`${groupId}:${devicePub}`);
+  }
+
+  async getGroup(id: string) {
+    return this.groups.get(id) ?? null;
+  }
+
+  async createGroup(id: string, roomId: string, creator: GroupMemberInput) {
+    const group: Group = { id, epoch: 0, pendingProposals: 0 };
+    this.groups.set(id, group);
+    const room = this.rooms.get(roomId);
+    if (room) room.groupId = id;
+    this.groupMembers.set(`${id}:${creator.devicePub}`, {
+      ...creator,
+      groupId: id,
+      addedEpoch: 0,
+      lastActiveAt: Date.now(),
+    });
+    return group;
+  }
+
+  async getGroupRooms(groupId: string) {
+    return [...this.rooms.values()].filter((r) => r.groupId === groupId);
+  }
+
+  async listGroupMembers(groupId: string) {
+    return [...this.groupMembers.values()].filter((m) => m.groupId === groupId);
+  }
+
+  async getGroupMember(groupId: string, devicePub: string) {
+    return this.groupMembers.get(`${groupId}:${devicePub}`) ?? null;
+  }
+
+  async touchGroupMember(groupId: string, devicePub: string, at: number) {
+    const member = this.groupMembers.get(`${groupId}:${devicePub}`);
+    if (member) member.lastActiveAt = at;
+  }
+
+  async appendHandshake(input: HandshakeAppend): Promise<HandshakeResult> {
+    const group = this.groups.get(input.groupId);
+    if (!group) return { accepted: false, reason: 'epoch_conflict', epoch: 0 };
+
+    // Everything below this line is one transaction in Postgres. Nothing may
+    // observe a half-applied commit: a log entry without the epoch bump lets a
+    // second commit in at the same epoch, and an epoch bump without the log
+    // entry strands every other member one epoch behind forever.
+    if (input.epoch !== group.epoch) {
+      return { accepted: false, reason: 'epoch_conflict', epoch: group.epoch };
+    }
+
+    if (input.welcome) {
+      const unclaimed = input.welcome.devices.filter((d) => !this.claims.has(`${group.id}:${d}`));
+      if (unclaimed.length) {
+        return {
+          accepted: false,
+          reason: 'unclaimed_welcome',
+          epoch: group.epoch,
+          devices: unclaimed,
+        };
+      }
+    }
+
+    const log = this.handshake.get(group.id) ?? [];
+    const record: HandshakeRecord = {
+      group: group.id,
+      seq: log.length,
+      kind: input.kind,
+      epoch: input.epoch,
+      sender: input.sender,
+      bytes: input.bytes,
+      createdAt: input.at,
+    };
+    log.push(record);
+    this.handshake.set(group.id, log);
+
+    if (input.kind === 'proposal') {
+      group.pendingProposals += 1;
+      return { accepted: true, record, epoch: group.epoch };
+    }
+
+    // A commit sweeps up every proposal that was waiting, whether or not it
+    // included them — the ones it missed are stale at the new epoch anyway.
+    group.epoch += 1;
+    group.pendingProposals = 0;
+
+    for (const member of input.added ?? []) {
+      this.groupMembers.set(`${group.id}:${member.devicePub}`, {
+        ...member,
+        groupId: group.id,
+        addedEpoch: group.epoch,
+        lastActiveAt: input.at,
+      });
+    }
+    for (const devicePub of input.removed ?? []) {
+      this.groupMembers.delete(`${group.id}:${devicePub}`);
+      // Drop this group's queued Welcome for a device that is no longer in it.
+      // One still sitting there would let a removed device walk back in — and
+      // only this group's: the device may be legitimately joining others.
+      const queue = this.welcomes.get(devicePub)?.filter((w) => w.groupId !== group.id) ?? [];
+      if (queue.length) this.welcomes.set(devicePub, queue);
+      else this.welcomes.delete(devicePub);
+    }
+
+    if (input.welcome) {
+      for (const devicePub of input.welcome.devices) {
+        // One row per device holding the same bytes (`docs/04` §1's
+        // `group_welcomes`), replacing any earlier unacked one for this group:
+        // only the newest can still be opened at the current epoch.
+        const queue = this.welcomes.get(devicePub)?.filter((w) => w.groupId !== group.id) ?? [];
+        queue.push({ groupId: group.id, bytes: input.welcome.bytes, createdAt: input.at });
+        this.welcomes.set(devicePub, queue);
+        this.claims.delete(`${group.id}:${devicePub}`);
+      }
+    }
+
+    return { accepted: true, record, epoch: group.epoch };
+  }
+
+  async listHandshake(groupId: string, opts: { since?: number; limit?: number } = {}) {
+    const log = this.handshake.get(groupId) ?? [];
+    const since = opts.since ?? -1;
+    return log.filter((r) => r.seq > since).slice(0, opts.limit ?? 200);
+  }
+
+  async listWelcomes(devicePub: string, groupId?: string) {
+    const queue = this.welcomes.get(devicePub) ?? [];
+    return groupId ? queue.filter((w) => w.groupId === groupId) : [...queue];
+  }
+
+  async ackWelcome(devicePub: string, groupId: string) {
+    const queue = this.welcomes.get(devicePub)?.filter((w) => w.groupId !== groupId) ?? [];
+    if (queue.length) this.welcomes.set(devicePub, queue);
+    else this.welcomes.delete(devicePub);
+  }
+
+  async putTree(groupId: string, epoch: number, tree: string) {
+    const current = this.trees.get(groupId);
+    // Never go backwards. Handshake records can be retried and a late write of
+    // an older tree would hand joiners a tree that does not match the epoch
+    // their Welcome is for.
+    if (current && current.epoch > epoch) return;
+    this.trees.set(groupId, { epoch, tree });
+  }
+
+  async getTree(groupId: string) {
+    return this.trees.get(groupId) ?? null;
   }
 }

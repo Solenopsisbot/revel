@@ -4,7 +4,7 @@
  * It never asks "what does this say", because it cannot. Every check here is
  * about membership, roles and shape.
  */
-import { Permission, has, parse, resolve } from '@revel/protocol';
+import { has, Permission, parse, resolve } from '@revel/protocol';
 import type { Store } from './store/types.js';
 
 export type Denial =
@@ -29,7 +29,8 @@ export async function permissionsFor(store: Store, roomId: string, accountId: st
 
   // A DM has no space, so no roles and no overrides — membership IS the
   // permission. Roles only exist inside a space.
-  if (!room.spaceId) return { room, bits: Permission.VIEW | Permission.SEND | Permission.SEND_MEDIA };
+  if (!room.spaceId)
+    return { room, bits: Permission.VIEW | Permission.SEND | Permission.SEND_MEDIA };
 
   const [roles, overrides, owner] = await Promise.all([
     store.getRoles(room.spaceId, membership.roleIds),
@@ -86,4 +87,52 @@ export async function canPurge(store: Store, roomId: string, actor: Actor): Prom
   const resolved = await permissionsFor(store, roomId, actor.accountId);
   if (!resolved) return 'not_a_member';
   return has(resolved.bits, Permission.MANAGE_EVENTS) ? null : 'missing_permission';
+}
+
+// ---------------------------------------------------------------------------
+// Groups
+// ---------------------------------------------------------------------------
+
+export type GroupDenial = 'no_such_group' | 'not_in_group' | 'not_entitled';
+
+/**
+ * May this account legitimately hold this group's keys?
+ *
+ * Derived from the rooms the group serves, never stored: a group exists to
+ * decrypt some set of rooms, so the people entitled to it are exactly the
+ * people who may read one of them. Room → group is many-to-one (`docs/03` §4),
+ * hence the union rather than a single lookup.
+ *
+ * This is the "authorised claim" check from Kith's audit (`docs/03` §5). It is
+ * what stops someone claiming a stranger's one-time key packages: you may only
+ * spend a package on a person who is already allowed in the group.
+ */
+export async function entitledToGroup(
+  store: Store,
+  groupId: string,
+  accountId: string,
+): Promise<boolean> {
+  for (const room of await store.getGroupRooms(groupId)) {
+    const resolved = await permissionsFor(store, room.id, accountId);
+    if (resolved && has(resolved.bits, Permission.VIEW)) return true;
+  }
+  return false;
+}
+
+/**
+ * May this device append to the group's handshake log?
+ *
+ * Membership of the *group*, not entitlement to it — being allowed to join is
+ * not the same as having joined, and only a device with a leaf can produce a
+ * commit MLS will accept. The server checking this saves everyone else the
+ * work of rejecting garbage; it is not what makes forgery impossible. That is
+ * the client-side validation in `docs/03` §5.
+ */
+export async function canHandshake(
+  store: Store,
+  groupId: string,
+  actor: Actor,
+): Promise<GroupDenial | null> {
+  if (!(await store.getGroup(groupId))) return 'no_such_group';
+  return (await store.getGroupMember(groupId, actor.devicePub)) ? null : 'not_in_group';
 }

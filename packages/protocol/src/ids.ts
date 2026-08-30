@@ -11,6 +11,8 @@
  *   10 bits  sequence   (1024 ids per ms per shard)
  */
 
+import { z } from 'zod';
+
 /** 2026-01-01T00:00:00Z. Later than Unix epoch so the timestamp field is smaller. */
 export const REVEL_EPOCH = 1767225600000;
 
@@ -84,3 +86,34 @@ export function compareIds(a: string, b: string): number {
 export function isSnowflake(v: string): boolean {
   return /^\d{1,20}$/.test(v) && BigInt(v) < 1n << 64n;
 }
+
+// ---------------------------------------------------------------------------
+// The other two kinds of identifier
+// ---------------------------------------------------------------------------
+
+/**
+ * An account id: base64url of the account's public key, unpadded.
+ *
+ * **Not a snowflake.** `docs/04` §1 makes `accounts.id` the account pubkey and
+ * the client produces it with `toAccountId` in `packages/core` — 43 characters
+ * for a 32-byte key. Anywhere that types an account id as a snowflake rejects
+ * every real one.
+ *
+ * Character set and length only. It deliberately does not check that the
+ * base64url decodes to a valid key: that is the crypto's job, it would have to
+ * change for `docs/03` §12's post-quantum keys, and a schema that half-checks
+ * a signature is a schema people trust further than it deserves.
+ */
+export const AccountId = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'not an account id');
+
+/**
+ * A device public key, as it appears on an event's `sender`.
+ *
+ * Same encoding as an account id, and a separate type on purpose: they are
+ * different keys, and confusing them is how you get a permission check that
+ * passes for the wrong subject.
+ */
+export const DevicePub = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'not a device key');
+
+/** A snowflake, for schemas. `isSnowflake` is the runtime check. */
+export const Snowflake = z.string().regex(/^\d{1,20}$/, 'not a snowflake');

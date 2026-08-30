@@ -8,6 +8,7 @@
 export * from './base64.js';
 export * from './envelope.js';
 export * from './events.js';
+export * from './groups.js';
 export * from './ids.js';
 export * from './permissions.js';
 export * from './socket.js';

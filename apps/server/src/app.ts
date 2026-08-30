@@ -5,10 +5,11 @@
  * opaque bytes, fan out. If this file ever needs to know what an event *means*,
  * something has gone wrong (`docs/02` principle 3).
  */
-import { EventInput, SnowflakeFactory, type Event } from '@revel/protocol';
+import { type Event, EventInput, type SnowflakeFactory } from '@revel/protocol';
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { Hub } from './hub.js';
+import { mountGroups, nudgeCommitter } from './groups.js';
+import type { Hub } from './hub.js';
 import { canPurge, canRead, canSend } from './policy.js';
 import type { Store } from './store/types.js';
 
@@ -70,6 +71,17 @@ export function createApp(deps: AppDeps) {
     // A deduped retry must not fan out twice, or every dropped response would
     // show the room a duplicate message.
     if (!deduped) deps.hub.broadcast(roomId, stored);
+
+    // Sending is what makes you the designated committer (`docs/03` §5) — the
+    // Host "tracks this trivially", and this is the tracking. If proposals are
+    // already waiting, the same send is the moment to ask for a commit: it
+    // proves this device is awake, which is the only thing a nudge needs.
+    const room = await deps.store.getRoom(roomId);
+    if (room?.groupId && !deduped) {
+      await deps.store.touchGroupMember(room.groupId, actor.devicePub, Date.now());
+      await nudgeCommitter(deps, room.groupId);
+    }
+
     return c.json({ event: stored, stored: true, deduped }, deduped ? 200 : 201);
   });
 
@@ -111,6 +123,13 @@ export function createApp(deps: AppDeps) {
       clientNonce: `purge-${c.req.param('id')}`,
     });
     return c.body(null, 204);
+  });
+
+  mountGroups(app, {
+    store: deps.store,
+    hub: deps.hub,
+    newId: () => deps.ids.next(),
+    authenticate: deps.authenticate,
   });
 
   return app;

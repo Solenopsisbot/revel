@@ -15,8 +15,8 @@
  */
 import { z } from 'zod';
 import { Event } from './envelope.js';
-
-const Snowflake = z.string().regex(/^\d{1,20}$/);
+import { HandshakeRecord } from './groups.js';
+import { Snowflake } from './ids.js';
 
 /** What a client sends up. */
 export const ClientFrame = z.discriminatedUnion('op', [
@@ -50,6 +50,40 @@ export const ServerFrame = z.discriminatedUnion('op', [
   z.object({ op: z.literal('SUBSCRIBED'), d: z.object({ rooms: z.array(Snowflake) }) }),
   z.object({ op: z.literal('ERROR'), d: z.object({ reason: z.string() }) }),
   z.object({ op: z.literal('PONG') }),
+
+  /**
+   * One handshake record, pushed to a device the server believes is a member.
+   *
+   * Addressed per device rather than per room because a group can serve
+   * several rooms (`docs/03` §4) and a device can be in a group whose rooms it
+   * is not currently subscribed to. Missing one costs nothing: the log is
+   * sequenced, and `GET /groups/:id/handshake?since=` is the catch-up.
+   */
+  z.object({ op: z.literal('HANDSHAKE'), d: HandshakeRecord }),
+
+  /**
+   * "You are the designated committer and proposals are waiting."
+   *
+   * `docs/03` §5: the nudge, with the 10-second deadline after which it moves
+   * to the next most recently active online device. Advisory — a client that
+   * ignores it is not broken, it is just slow, and any device that wants to
+   * send while proposals are pending has to commit first anyway.
+   */
+  z.object({
+    op: z.literal('COMMIT_REQUESTED'),
+    d: z.object({ group: Snowflake, deadline: z.number().int() }),
+  }),
+
+  /**
+   * A Welcome that was waiting for this device.
+   *
+   * Sent unprompted on connect, which is the whole point: being added to a
+   * group while offline must not be a thing you have to go looking for.
+   */
+  z.object({
+    op: z.literal('WELCOME'),
+    d: z.object({ group: Snowflake, bytes: z.string().base64() }),
+  }),
 ]);
 export type ServerFrame = z.infer<typeof ServerFrame>;
 

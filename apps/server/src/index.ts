@@ -46,9 +46,14 @@ export default {
   },
   websocket: {
     open(ws: { data: { actor: Actor }; send(data: string): void }) {
-      sessions.set(ws, new SocketSession({ store, hub }, ws.data.actor, (frame) =>
+      const session = new SocketSession({ store, hub }, ws.data.actor, (frame) =>
         ws.send(JSON.stringify(frame)),
-      ));
+      );
+      sessions.set(ws, session);
+      // READY has already gone out synchronously; this is the part that can
+      // touch the database. Floating on purpose — a failure here must not take
+      // the socket down, and a Welcome that misses this pass is still queued.
+      void session.start().catch((err) => console.error('socket start failed', err));
     },
     async message(ws: object, message: string | Uint8Array) {
       await sessions.get(ws)?.receive(typeof message === 'string' ? message : String(message));

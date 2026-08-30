@@ -8,11 +8,24 @@
  * Note what is absent — there is no `content` column anywhere. The server
  * stores opaque bytes and policy, nothing else (`docs/04` §1).
  */
-import type { Event } from '@revel/protocol';
+import type {
+  Event,
+  HandshakeKind,
+  HandshakeRecord,
+  KeyPackageSupply,
+  KeyPackageUpload,
+} from '@revel/protocol';
 
 export interface Room {
   id: string;
   spaceId: string | null;
+  /**
+   * The MLS group whose keys open this room's events, or null before one
+   * exists. Many-to-one: `docs/03` §4 gives a space one implicit "everyone"
+   * audience and therefore one group shared by every room with that
+   * visibility, and only a narrower room gets its own.
+   */
+  groupId: string | null;
   /** Whether a `stream` hint may be attached to events here (`docs/03` §7). */
   streamPaging: boolean;
   /** Whether a `notify` hint may be attached. */
@@ -65,4 +78,139 @@ export interface Store {
   listEvents(roomId: string, opts?: { before?: string; limit?: number }): Promise<Event[]>;
   /** Delete the bytes, keep the tombstone so clients can drop their copies. */
   purgeEvent(roomId: string, eventId: string): Promise<boolean>;
+
+  // -------------------------------------------------------------------------
+  // The handshake surface (`docs/04` §1, Host role)
+  // -------------------------------------------------------------------------
+
+  /** Every device enrolled to an account, so a claim can cover all their leaves. */
+  listAccountDevices(accountId: string): Promise<Device[]>;
+
+  /** Replace this device's shelf. Returns what it now holds. */
+  publishKeyPackages(devicePub: string, upload: KeyPackageUpload): Promise<KeyPackageSupply>;
+  keyPackageSupply(devicePub: string): Promise<KeyPackageSupply>;
+
+  /**
+   * Take one key package for `devicePub`, on behalf of `groupId`.
+   *
+   * **One store call on purpose.** Selecting a package and then deleting it in
+   * two round trips is a race in which two concurrent adds hand out the same
+   * one-time package, and a one-time package used twice is the forward secrecy
+   * it exists to provide, gone. Postgres does this as a single
+   * `DELETE … RETURNING` — Kith's pattern, already cited in `docs/04` §1 for
+   * single-use tokens.
+   *
+   * Reuses an outstanding unconsumed claim rather than burning a second
+   * package: a commit refused for an epoch conflict is retried, and a retry
+   * loop that ate a package per attempt would be a way to drain somebody's
+   * shelf (`docs/03` §5, the authorised-claim fix).
+   */
+  claimKeyPackage(devicePub: string, groupId: string): Promise<ClaimedPackage | null>;
+
+  /** Groups this device currently has an unconsumed claim in. */
+  hasClaim(groupId: string, devicePub: string): Promise<boolean>;
+
+  getGroup(id: string): Promise<Group | null>;
+  /** Create the group and bind `roomId` to it, atomically. */
+  createGroup(id: string, roomId: string, creator: GroupMemberInput): Promise<Group>;
+  /** Every room whose events this group's keys open. Group policy derives from these. */
+  getGroupRooms(groupId: string): Promise<Room[]>;
+
+  listGroupMembers(groupId: string): Promise<GroupMember[]>;
+  getGroupMember(groupId: string, devicePub: string): Promise<GroupMember | null>;
+  /** Record that a device did something, for the designated-committer ordering. */
+  touchGroupMember(groupId: string, devicePub: string, at: number): Promise<void>;
+
+  /**
+   * Append to the handshake log, if and only if the epoch still matches.
+   *
+   * The atomicity is the point, and it is why the epoch check lives here
+   * rather than in the route. Read-then-write across two calls is exactly the
+   * commit race: both devices read epoch 4, both are told to go ahead, and the
+   * group forks in a way that cannot be repaired — everyone after the fork
+   * fails to decrypt, sender included.
+   */
+  appendHandshake(input: HandshakeAppend): Promise<HandshakeResult>;
+  listHandshake(
+    groupId: string,
+    opts?: { since?: number; limit?: number },
+  ): Promise<HandshakeRecord[]>;
+
+  /**
+   * This device's pending Welcomes, without consuming them.
+   *
+   * At-least-once, acknowledged, rather than take-and-clear. A Welcome removed
+   * the moment it is handed to a socket is a Welcome lost if that socket dies
+   * a millisecond later — and the failure is silent and permanent: the invited
+   * device never learns it was invited, and the inviter's client believes it
+   * succeeded. Re-delivering one that was already used costs nothing, because
+   * a client that is already in the group just acks it.
+   */
+  listWelcomes(devicePub: string, groupId?: string): Promise<StoredWelcome[]>;
+  ackWelcome(devicePub: string, groupId: string): Promise<void>;
+
+  /** The public ratchet tree, kept out of band so Welcomes stay small. */
+  putTree(groupId: string, epoch: number, tree: string): Promise<void>;
+  getTree(groupId: string): Promise<{ epoch: number; tree: string } | null>;
 }
+
+/**
+ * A group, as the server knows it.
+ *
+ * `docs/04` §1 sketches a `designated_committer_device` column; there isn't
+ * one, because the designated committer is "the online device that most
+ * recently sent" (`docs/03` §5) and online-ness lives in the Hub, not the
+ * database. Deriving it from `lastActiveAt` at read time cannot go stale;
+ * a stored column can, and a nudge sent to a device that logged out an hour
+ * ago is a group that quietly stops committing.
+ */
+export interface Group {
+  id: string;
+  epoch: number;
+  pendingProposals: number;
+}
+
+export interface GroupMemberInput {
+  devicePub: string;
+  accountId: string;
+}
+
+export interface GroupMember extends GroupMemberInput {
+  groupId: string;
+  addedEpoch: number;
+  /** Last event sent or handshake appended. Orders the committer fallback. */
+  lastActiveAt: number;
+}
+
+export interface ClaimedPackage {
+  keyPackage: string;
+  lastResort: boolean;
+}
+
+export interface StoredWelcome {
+  groupId: string;
+  bytes: string;
+  createdAt: number;
+}
+
+export interface HandshakeAppend {
+  groupId: string;
+  /** A member's device pub, or `server` for an external-sender proposal. */
+  sender: string;
+  kind: HandshakeKind;
+  /** The epoch this was built from. Must equal the group's current epoch. */
+  epoch: number;
+  bytes: string;
+  /** Rowed per device, and only for devices with an unconsumed claim. */
+  welcome?: { bytes: string; devices: string[] };
+  added?: GroupMemberInput[];
+  removed?: string[];
+  at: number;
+}
+
+export type HandshakeResult =
+  | { accepted: true; record: HandshakeRecord; epoch: number }
+  /** The epoch moved under this commit. `epoch` is where the group actually is. */
+  | { accepted: false; reason: 'epoch_conflict'; epoch: number }
+  /** A Welcome aimed at a device nobody claimed a key package for. */
+  | { accepted: false; reason: 'unclaimed_welcome'; epoch: number; devices: string[] };

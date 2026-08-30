@@ -1,6 +1,12 @@
-import { DEFAULT_EVERYONE, Permission, SnowflakeFactory, encodePayload, serialize } from '@revel/protocol';
+import {
+  DEFAULT_EVERYONE,
+  encodePayload,
+  Permission,
+  SnowflakeFactory,
+  serialize,
+} from '@revel/protocol';
 import { createApp } from '../src/app.js';
-import { Hub } from '../src/hub.js';
+import { type Connection, Hub } from '../src/hub.js';
 import { MemoryStore } from '../src/store/memory.js';
 
 export const EVERYONE = 'role-everyone';
@@ -14,6 +20,7 @@ export function harness(opts: { streamPaging?: boolean; notifyHints?: boolean } 
   store.rooms.set('room1', {
     id: 'room1',
     spaceId: 'space1',
+    groupId: null,
     streamPaging: opts.streamPaging ?? false,
     notifyHints: opts.notifyHints ?? false,
   });
@@ -71,7 +78,108 @@ export function harness(opts: { streamPaging?: boolean; notifyHints?: boolean } 
       headers: { 'x-revel-device': device },
     });
 
-  return { store, hub, app, join, stranger, role, send, list, purge, Permission };
+  // -------------------------------------------------------------------------
+  // The handshake surface
+  // -------------------------------------------------------------------------
+
+  const json = (device: string, method: string, path: string, body?: unknown) =>
+    app.request(path, {
+      method,
+      headers: { 'content-type': 'application/json', 'x-revel-device': device },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  const get = (device: string, path: string) =>
+    app.request(path, { headers: { 'x-revel-device': device } });
+
+  /** Fill a device's shelf. Contents are opaque to the server, so these are labels. */
+  const publish = (device: string, packages: string[], lastResort?: string) =>
+    json(device, 'PUT', `/idp/devices/${device}/key-packages`, {
+      packages: packages.map(b64),
+      ...(lastResort ? { lastResort: b64(lastResort) } : {}),
+    });
+
+  const supply = (device: string, of = device) => get(device, `/idp/devices/${of}/key-packages`);
+
+  const createGroup = (device: string, roomId = 'room1') =>
+    json(device, 'POST', '/groups', { roomId });
+
+  const groupInfo = (device: string, groupId: string) => get(device, `/groups/${groupId}`);
+
+  const claim = (device: string, groupId: string, accounts: string[]) =>
+    json(device, 'POST', `/groups/${groupId}/key-packages/claim`, { accounts });
+
+  const handshake = (device: string, groupId: string, body: unknown) =>
+    json(device, 'POST', `/groups/${groupId}/handshake`, body);
+
+  const handshakeLog = (device: string, groupId: string, qs = '') =>
+    get(device, `/groups/${groupId}/handshake${qs}`);
+
+  const putTree = (device: string, groupId: string, epoch: number, tree: string) =>
+    json(device, 'PUT', `/groups/${groupId}/tree`, { epoch, tree: b64(tree) });
+
+  const getTree = (device: string, groupId: string) => get(device, `/groups/${groupId}/tree`);
+
+  const welcomes = (device: string) => get(device, '/welcomes');
+
+  const ackWelcome = (device: string, groupId: string) =>
+    json(device, 'DELETE', `/groups/${groupId}/welcome`);
+
+  /** Open a group with `device` as its only leaf, and return the id. */
+  async function openGroup(device: string, roomId = 'room1'): Promise<string> {
+    const res = await createGroup(device, roomId);
+    if (res.status !== 201) throw new Error(`createGroup failed: ${res.status}`);
+    return ((await res.json()) as { id: string }).id;
+  }
+
+  return {
+    store,
+    hub,
+    app,
+    join,
+    stranger,
+    role,
+    send,
+    list,
+    purge,
+    Permission,
+    publish,
+    supply,
+    createGroup,
+    openGroup,
+    groupInfo,
+    claim,
+    handshake,
+    handshakeLog,
+    putTree,
+    getTree,
+    welcomes,
+    ackWelcome,
+  };
+}
+
+/** The server never looks inside these, so the tests use readable labels. */
+export function b64(label: string): string {
+  return Buffer.from(label, 'utf8').toString('base64');
+}
+
+export function unb64(s: string): string {
+  return Buffer.from(s, 'base64').toString('utf8');
+}
+
+/**
+ * A fake live connection, so a test can assert what the server pushed at a
+ * device without opening a socket.
+ */
+export function wire(hub: { register(c: Connection): void }, devicePub: string, accountId: string) {
+  const frames: any[] = [];
+  const conn: Connection = { devicePub, accountId, send: (f) => frames.push(f) };
+  hub.register(conn);
+  return {
+    conn,
+    frames,
+    ofOp: (op: string) => frames.filter((f) => f.op === op),
+  };
 }
 
 let n = 0;

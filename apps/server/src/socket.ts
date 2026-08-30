@@ -51,7 +51,27 @@ export class SocketSession {
       accountId: actor.accountId,
       send: send as (frame: unknown) => void,
     };
+    // Registered before READY goes out, so anything the server wants to push
+    // at this device has somewhere to go from the first millisecond.
+    deps.hub.register(this.#connection);
     send({ op: 'READY', d: { device: actor.devicePub } });
+  }
+
+  /**
+   * The asynchronous half of opening: hand over anything that was waiting.
+   *
+   * Separate from the constructor because READY has to be the first frame and
+   * must not wait on a database. Only Welcomes are pushed here — a device
+   * invited to a group while it was offline has no way to discover that
+   * otherwise (`docs/03` §5, "served on that device's next connect"), whereas
+   * missed *handshake* records are just a `GET /groups/:id/handshake?since=`
+   * away and the client knows which groups to ask about.
+   */
+  async start(): Promise<void> {
+    if (this.#closed) return;
+    for (const welcome of await this.#deps.store.listWelcomes(this.#actor.devicePub)) {
+      this.#send({ op: 'WELCOME', d: { group: welcome.groupId, bytes: welcome.bytes } });
+    }
   }
 
   /** Rooms this connection is currently receiving. */
