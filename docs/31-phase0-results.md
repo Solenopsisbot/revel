@@ -1340,3 +1340,50 @@ Unchanged from §21. `svelte-check` at 470 files / 0 / 0, the production build,
 and 21 tests across the two seams — but the preview automation in this
 environment cannot screenshot or evaluate the page, and no DOM test environment
 is installed. Type-correct is not right-looking, and that check is still owed.
+
+---
+
+## 23. What the face-linking control can and cannot promise
+
+`docs/11`'s "Linking faces" is off by default and says: *"each face appears as
+an independent person. Nothing in the UI connects them."* It then explains why
+this is a real control rather than a display preference — *"with linking off,
+the server never learns the connection either, since it never sees faces at
+all."*
+
+That is true, and it is **not the whole threat.** Building the directory seam
+made the gap concrete, so it belongs written down next to the promise.
+
+### The server cannot tell. Another member can count.
+
+Faces live inside the ciphertext, so a Host sees accounts and never faces.
+But every member of a room holds the MLS roster, and `DirectoryCore.roster`
+hands it over — that is not a leak, it is what a client needs to know whose keys
+open the room. So a member can see:
+
+- **How many accounts** are in the group (the roster).
+- **How many faces** have spoken (the messages).
+
+If four faces speak in a room with three accounts, somebody in that room is
+plural, and narrowing which one is a matter of watching who posts when. No UI
+change fixes this: the counts are both things a client legitimately needs.
+
+### Which means the honest statement is narrower than it reads
+
+Linking off protects against **the server**, and against a client that
+carelessly renders two faces as one person — which is a real failure and one
+this codebase committed and then fixed. It does **not** protect against a
+member of the same room who is paying attention.
+
+For somebody who needs that stronger property, the answer is already in the
+design and is a different feature: `docs/17`'s **multiple accounts**, which are
+*cryptographically* unlinkable — separate device keys, separate sessions,
+separate push subscriptions, and nothing in the protocol connecting them. That
+is the tool for "nobody may know these are the same person"; faces are the tool
+for "I present differently in different places".
+
+**`docs/11` should say so.** As written, somebody reading only the linking
+section could reasonably conclude that faces are unlinkable to everyone, and
+that is the kind of misunderstanding that gets somebody outed. Recorded here
+rather than edited into `docs/11` because it changes what that document
+promises, which is Viola's call and not a footnote.
