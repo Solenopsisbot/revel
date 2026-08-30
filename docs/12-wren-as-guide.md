@@ -140,7 +140,9 @@ a rung ceiling — the highest rung it is ever allowed to reach.
 It reads as state (counts, recency) but is one abstraction step from "we noticed
 you're not engaging", which is where every bad notification system ends up.
 Lurking is not a problem to solve. Muting stays a normal feature you can reach
-in one click; Wren just doesn't bring it up.
+in one click; Wren just doesn't bring it up. The copy outlived this decision in
+`13-wren-notices.md` for a while; it now sits there under *"things she must
+never say"*, which is the only place a cut notice is safe to keep.
 
 New heuristics get a ceiling at review time. **A heuristic without a declared
 ceiling doesn't ship** — that's the mechanism that keeps rung 4 from silting up.

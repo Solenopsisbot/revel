@@ -858,7 +858,19 @@ person" screen — and not because it is expensive to change. It is not:
 the MLS leaf, not from a stored id, so there is no sealed format to migrate.
 The cost is a couple of hours of fixtures either way.
 
-Recorded here so the divergence is a decision rather than an accident.
+**Decided (2026-08-31): base64url, and `docs/03` now says so.**
+
+The argument that settled it is the one the table above does not have a row
+for: **an account id is not something a person handles.** Humans use handles
+(`viola@idp.example`); the raw key shows up in an invite link you copy whole
+and in a verification screen you compare rather than transcribe. base32's
+case-insensitivity is a real property, but it pays off only in the cases —
+saying it aloud, retyping it, surviving a mail client that lowercases — that
+the design already routes around. The prefix and the nine extra characters are
+paid on every id, everywhere, forever.
+
+Recorded here so the divergence was a decision rather than an accident, and so
+the reasoning survives the next person who notices `docs/03` used to disagree.
 
 ### Still missing from phase 1
 
@@ -1382,11 +1394,17 @@ separate push subscriptions, and nothing in the protocol connecting them. That
 is the tool for "nobody may know these are the same person"; faces are the tool
 for "I present differently in different places".
 
-**`docs/11` should say so.** As written, somebody reading only the linking
+**`docs/11` should say so** — as written, somebody reading only the linking
 section could reasonably conclude that faces are unlinkable to everyone, and
-that is the kind of misunderstanding that gets somebody outed. Recorded here
-rather than edited into `docs/11` because it changes what that document
-promises, which is Viola's call and not a footnote.
+that is the kind of misunderstanding that gets somebody outed.
+
+**Decided (2026-08-31): it now does.** `docs/11`'s linking section carries the
+limit inline, under *"what linking-off does not protect against"*, and points at
+`docs/17`'s multiple accounts as the tool for the stronger property. It was
+raised here rather than edited straight in because narrowing a privacy promise
+is Viola's call and not a footnote — but the narrowing does not weaken anything
+real. It describes the system that was always being built; only the sentence
+describing it was too generous.
 
 ---
 

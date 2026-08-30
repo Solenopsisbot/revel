@@ -59,6 +59,34 @@ Because faces live inside the ciphertext (`03-identity-and-crypto.md` §7), this
 is genuinely a privacy control and not a display preference: with linking off,
 the server never learns the connection either, since it never sees faces at all.
 
+#### What linking-off does not protect against
+
+The sentence above is true and it is not the whole picture, so the limit belongs
+next to the promise rather than in a results doc somebody has to go and find.
+
+**The server cannot tell. Another member can count.** Every member of a room
+holds the MLS roster — that is not a leak, it is what a client needs in order to
+know whose keys open the room. So somebody in the room can see **how many
+accounts** are in the group, and **how many faces** have spoken. If four faces
+speak in a room with three accounts, somebody there is plural, and narrowing
+*which* somebody is a matter of watching who posts when. No UI change fixes
+this: both counts are things a client legitimately needs.
+
+So the honest statement is narrower than it reads. Linking off protects against
+**the server**, and against a client that carelessly renders two faces as one
+person — a real failure mode, and one this codebase committed and then fixed
+(`31` §23). It does **not** protect against a member of the same room who is
+paying attention.
+
+For anyone who needs the stronger property, the answer is already in the design
+and it is a different feature: `17-identity-ux.md`'s **multiple accounts**,
+which are *cryptographically* unlinkable — separate device keys, separate
+sessions, separate push subscriptions, and nothing in the protocol connecting
+them. That is the tool for "nobody may know these are the same person". Faces
+are the tool for "I present differently in different places". Presenting the
+weaker one as if it were the stronger one is how somebody gets outed by a
+feature that promised not to do that.
+
 ### The profile card — "system information should be good"
 
 Clicking any face opens one card, and it's the same card everywhere:

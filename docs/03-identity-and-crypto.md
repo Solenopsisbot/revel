@@ -59,8 +59,18 @@ KeyPackage supply is per-device, and Welcome fan-out is larger. Acceptable.
 
 ## 2. Accounts, handles, identity providers
 
-- `account_id` = the account public key (encoded as a 52-char base32 string,
-  prefixed for legibility). Globally unique with no registry.
+- `account_id` = the account public key, encoded **base64url, unpadded** — 43
+  characters for an Ed25519 key. Globally unique with no registry.
+
+  This doc originally said base32 with a type prefix, and the code has always
+  emitted base64url; the divergence was settled in favour of the code
+  (`31` §12). base32's real advantage is case-insensitivity — it survives being
+  lowercased by a URL, an email client, or a person reading it aloud — and the
+  reason that loses is that **an account id is not something people handle.**
+  Humans use handles (below); the raw key appears in an invite link you copy
+  whole and in a verification screen you compare rather than transcribe. The
+  cost of a prefix and nine extra characters is paid on every id, and the
+  benefit only appears in cases the design already routes around.
 - A **handle** (`viola`) is a human name for that key, registered at an **IdP**.
   Full address is email-shaped: `viola@idp.example`. The hosted IdP is the
   default; the UI shows bare `viola` for accounts on the same IdP as the viewer

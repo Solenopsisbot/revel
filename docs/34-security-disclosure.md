@@ -2,13 +2,17 @@
 
 `docs/29` §6 asks for four cheap things that are conspicuous by their absence.
 Two of them are code and are done; two are commitments, and commitments are not
-mine to write. This is the draft — **the bracketed lines are decisions, not
-placeholders to be quietly kept.**
+mine to write.
+
+The windows were decided on 2026-08-31 and are no longer drafts. **One bracket
+remains — the contact address — and this document must not be published with it
+still in place.** A disclosure policy that tells you to email `[decide]` is
+worse than no policy: it advertises that nobody is on the other end.
 
 | `29` §6 asks for | Status |
 | --- | --- |
 | `/.well-known/security.txt` | Built. Not served until a contact is configured. |
-| A written disclosure policy | This document, pending the decisions below. |
+| A written disclosure policy | This document. Windows decided; needs an address. |
 | Signed authorisation letters | Not built. Kith's `authz.md` ports directly. |
 | A published threat model | Written (`03` §10). Needs to be a page, not a doc. |
 
@@ -28,11 +32,10 @@ the channel is imperfect.
 
 ## What we commit to
 
-- **We will acknowledge within [decide: 72 hours?].** That is a human saying
-  "we have it", not a fix.
-- **We will tell you what we think within [decide: 7 days?]** — including
-  "this is not a bug, and here is why", which is a real answer and one you are
-  owed.
+- **We will acknowledge within 72 hours.** That is a human saying "we have
+  it", not a fix.
+- **We will tell you what we think within 7 days** — including "this is not a
+  bug, and here is why", which is a real answer and one you are owed.
 - **We will tell you when it is fixed**, and what the fix was.
 - **We will credit you** by whatever name you give us, or not at all if you
   prefer. See below.
@@ -42,8 +45,10 @@ the channel is imperfect.
 
 ## What we ask
 
-- Give us a chance to fix it before you publish. [decide: 90 days? and does the
-  clock stop if we ask?]
+- **Give us 90 days before you publish**, and the clock does not stop. We can
+  ask for more time and explain why; you can say no. A deadline a vendor is
+  allowed to pause is not a deadline, and every disclosure programme that
+  quietly acquired one became a way of never shipping the fix.
 - Do not access, modify or keep anybody else's data. If you need to prove a
   bug touches real data, tell us and we will make you an account that is
   allowed to.
@@ -75,10 +80,13 @@ code and is explicitly wanted.
 funded bounty is worse than none: it sets a price on a thing and then fails to
 pay it.
 
-What there is instead: public credit, by name or handle or anonymously, at
-[decide: where — a page? a file in this repo?]. If that changes and a bounty
-appears, everything already reported is eligible retroactively. That is easy to
-promise and cheap to keep.
+What there is instead: public credit, by name or handle or anonymously, in
+`SECURITY-CREDITS.md` at the root of this repository. A file rather than a page,
+because a page needs somebody to maintain a site and a file needs somebody to
+open a pull request — and a credit list that is one commit away from being
+updated is one that actually gets updated. It can move to a page later without
+breaking the promise. If a bounty ever appears, everything already reported is
+eligible retroactively; that is easy to promise and cheap to keep.
 
 ## Authorisation letters
 

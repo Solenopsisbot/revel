@@ -120,15 +120,6 @@ state, never about behaviour.
 >
 > [Turn on transcription]  [No thanks]
 
-**Busy room you never post in**
-
-> **You haven't posted in [room name] in a while**
->
-> It's busy, though — [n] messages this week. Muting keeps it in your list but
-> stops the notifications.
->
-> [Mute]  [Leave it]
-
 **Never opened the command surface**
 
 > **There's a command bar, if you want it**
@@ -242,3 +233,12 @@ relationships.
 **"Time to update the app."**
 She's not a software updater. If an update matters for a security reason, the
 security reason is the notice, not the update.
+
+**"You haven't posted in [room] in a while — it's busy, though."**
+This one was in this deck, as a real notice, until `12-wren-as-guide.md` cut it
+during review and the copy here outlived the decision. It is the hardest of
+these to see, because it reads as pure state: a count and a recency, both true,
+both things the client already knows. But "busy room you never post in" is one
+abstraction step from *we noticed you're not engaging*, which is where every bad
+notification system ends up. **Lurking is not a problem to solve.** Muting stays
+a normal feature a click away; Wren just doesn't bring it up.
