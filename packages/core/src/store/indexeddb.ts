@@ -121,6 +121,26 @@ export class IndexedDbStore implements LocalStore {
     // `before`; everything else walks up from the start.
     const backwards = options.before !== undefined;
 
+    if (!backwards) {
+      // **One request, not one per row.** This used to walk a cursor and call
+      // `continue()` for every event, which is an event-loop round trip each
+      // time — and this is the cold-open path, so it was 2,000 of them before
+      // the first paint. Measuring `docs/29` §5's budget found it: writing
+      // 2,000 events took 78 ms and *reading them back* took 5,639 ms. A slow
+      // storage layer would have been slow at both.
+      //
+      // `getAll` cannot walk backwards, which is why the cursor survives below
+      // — but that path is `backfill`, bounded by a page size of 50, where the
+      // round trips are 50 and nobody is waiting on a first paint.
+      const rows = await request<StoredEvent[]>(
+        limit === undefined
+          ? store.getAll(rangeFor(roomId, options))
+          : store.getAll(rangeFor(roomId, options), limit),
+      );
+      await done(tx);
+      return rows.map((row) => row.event);
+    }
+
     await new Promise<void>((resolve, reject) => {
       const req = store.openCursor(rangeFor(roomId, options), backwards ? 'prev' : 'next');
       req.onerror = () => reject(req.error);

@@ -1490,3 +1490,62 @@ Welcome, and cannot make a withheld message unrecoverable.
 
 What it *can* do, and the tests say so plainly: put anybody in a room — and
 still not let them read it.
+
+---
+
+## 26. D3: the budgets, measured — and the bug that measuring them found
+
+`docs/29` §5: *"Claims need numbers, and numbers need to be measured or they
+rot."* Here are the numbers, on this machine, through the wasm a browser runs:
+
+| `docs/29` §5 | Budget | Measured |
+| --- | --- | --- |
+| Cold open → room painted from local store (5,000 events) | < 300 ms | **31 ms** |
+| Room switch, cached snapshot of 5,000 | < 100 ms | **9 ms** |
+| Keypress → local echo, into a 5,000-message room | < 16 ms | **0.3 ms** |
+| MLS commit + apply, 200 leaves | < 500 ms | **35 ms** |
+| Reduce 32,000 events | — | **29 ms**, and 8× the events costs 9.6× |
+| Message list scroll, 100k events, 60 fps | — | **not measured** |
+| Decrypt + render an incoming message | < 50 ms | **half measured** |
+
+### The cold-open path was 430× slower than it needed to be
+
+`IndexedDbStore.listEvents` walked a cursor and called `continue()` for every
+row — **one event-loop round trip per event**, on the one path that runs before
+the first paint. Writing 5,000 events took 78 ms and reading them back took
+**5,639 ms**. The asymmetry is what gave it away: a slow storage layer is slow at
+both, and this was 72× worse in one direction.
+
+`getAll` fetches the page in a single request: **5,639 ms → 13 ms.** The cursor
+survives on the backwards path, because `getAll` cannot walk in reverse — but
+that path is `backfill`, bounded by a page of 50, where nobody is waiting on a
+first paint.
+
+This is the whole argument for §5 existing. Nothing was *wrong*: every test
+passed, the store's conformance suite passed against both implementations, and
+the room rendered correctly. It was just slow in a way that only shows up when
+somebody puts a number next to it.
+
+### How the assertions are set, given this is not a fixed machine
+
+`docs/29` wants these "measured in CI on a fixed machine where possible", and
+this is whatever the suite happens to run on. A timing test that flakes gets
+disabled, and a disabled budget is not a budget — so the file separates two
+jobs: **every measurement prints**, because a number nobody sees cannot be
+noticed moving; and the assertion is set where a real regression trips it and
+machine noise does not. With an order of magnitude of headroom on every row, the
+budget itself is that threshold.
+
+The scaling check is a **ratio**, not a time: 8× the events should cost roughly
+8× as much, and the alarm is at 24×. That says something about the algorithm
+rather than about the machine, and it is what catches an accidental O(n²) — the
+failure that passes at 5,000 events and ruins the app for anybody who has used
+it for a year.
+
+### Two rows are not measured, and say so in a test
+
+**60 fps over 100k events** and the *render* half of **decrypt + render** both
+need a renderer, and there is no DOM in this environment. That omission is
+written as a test rather than left as a gap, so it sits in the same list as the
+budgets and cannot quietly become "we measure §5". `docs/33`'s reference page is
+where they belong.
