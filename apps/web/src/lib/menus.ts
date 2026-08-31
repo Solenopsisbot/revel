@@ -11,7 +11,13 @@ import type { NotifyLevel, Room, Space } from './fake/data.js';
 import type { Item } from './menu.js';
 
 /** Rows for choosing a room's notification level, ticked to show the current
-    one and where it came from. Shared by the room menu and the space menu. */
+    one and where it came from.
+
+    Used by the room menu only. The space menu has a single "Notification
+    defaults" item that opens the settings screen instead — a space's default is
+    a thing you set once, and a context menu is for the thing in front of you.
+    (This said "shared by the room menu and the space menu", which it never
+    was.) */
 function notifyRows(current: NotifyLevel, inherited: boolean, prefix: string): Item[] {
   return [
     {
