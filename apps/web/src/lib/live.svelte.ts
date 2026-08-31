@@ -81,18 +81,53 @@ class Live {
     const stack = this.stack;
     if (!stack) return null;
 
-    if (!this.#watching.has(roomId)) {
-      this.#watching.add(roomId);
-      // `open` fills the state from the local store; `watch` keeps it fresh.
-      void stack.core.conversation.open(roomId).catch(() => {});
-      this.#unwatch.push(
-        stack.core.conversation.watch(roomId, (state) => {
-          this.#rooms.set(roomId, state);
-          this.version++;
-        }),
-      );
-    }
+    this.#subscribe(roomId);
     return this.#rooms.get(roomId) ?? stack.core.conversation.room(roomId);
+  }
+
+  /** Subscribe a room once. Idempotent, and the only place `watch` is called. */
+  #subscribe(roomId: string): void {
+    const stack = this.stack;
+    if (!stack || this.#watching.has(roomId)) return;
+    this.#watching.add(roomId);
+    // `open` fills the state from the local store; `watch` keeps it fresh.
+    // Bumping on the way out matters: `open` is the *only* thing that loads a
+    // room nobody has looked at, and it does not go through `watch`, so
+    // without this an unread badge for such a room would stay at whatever it
+    // read before the store had been consulted — which is zero, always.
+    void stack.core.conversation
+      .open(roomId)
+      .then((state) => {
+        this.#rooms.set(roomId, state);
+        this.version++;
+      })
+      .catch(() => {});
+    this.#unwatch.push(
+      stack.core.conversation.watch(roomId, (state) => {
+        this.#rooms.set(roomId, state);
+        this.version++;
+      }),
+    );
+  }
+
+  /**
+   * How many unread messages a room is holding.
+   *
+   * Subscribes the room the same way `room` does, because a badge is a claim
+   * about a room *nobody is looking at* — and an unwatched room's state never
+   * changes, so an unsubscribed count would be frozen at whatever it was when
+   * the sidebar first rendered.
+   */
+  unread(roomId: string): number {
+    void this.version;
+    if (!this.stack) return 0;
+    this.#subscribe(roomId);
+    return this.stack.core.conversation.unread(roomId);
+  }
+
+  /** Everything up to now in this room has been seen. */
+  async markRead(roomId: string): Promise<void> {
+    await this.stack?.core.conversation.markRead(roomId).catch(() => {});
   }
 
   /** Rooms the Host says this account is in. Refreshed, never guessed. */

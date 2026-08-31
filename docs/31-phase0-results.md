@@ -2066,3 +2066,59 @@ helped (14.9 s → 10.9 s) and it was not the problem. Timing the individual
 operations in the page took ten minutes and showed each scan at ~20 ms against a
 5,200 ms insert: roughly 250 scans per message, which is a per-row number rather
 than a per-list one, and that is what pointed at `threadSummary`.
+
+## 32. A message that arrived, notified, and was not on the screen
+
+Wiring `docs/35`'s rules into the browser turned up the worst-shaped bug so far.
+
+The symptom: in a three-account test, a message sent to a conversation the
+reader was *not* looking at would raise its notification mark, land in the local
+event store, and never appear in the room. Reopening the room brought it back,
+because `open` rebuilds from the event log rather than the snapshot. Everything
+said the message had arrived except the part a person looks at.
+
+The first hypothesis was a lost update. `receive` is a read-modify-write —
+read `state`, reduce, commit — with several awaits in the middle, so two
+deliveries overlapping in one room would have the later commit reduce from a
+base that predates the earlier one. That is a real hazard and the fix for it is
+in (`RoomSync` now takes a per-room turn for `receive` and `open`), **but it was
+not this bug.** Three attempts at a test that failed without the serialisation
+all passed with it removed: the in-process harness resolves too promptly to
+interleave, and every browser reproduction still failed with the fix in place.
+
+What it actually was, found by logging the reduce result next to the committed
+state and seeing them disagree:
+
+```
+[recv] {"decrypted":["166656/m.message"],"baseMsgs":["m1","m2"],"outMsgs":["m1","m2","m3"]}
+[persistCrypto threw] RuntimeError: memory access out of bounds
+final:  {"msgs":["m1","m2"]}
+```
+
+The reduce was correct. The commit never ran, because the line before it —
+`await this.persistCrypto()` — trapped inside the MLS wasm, and the rejection
+propagated out of `receive` into a socket handler that swallows errors.
+
+Two separate faults, and only one of them is the crypto's:
+
+1. **The wasm trap.** `memory access out of bounds` out of `exportGroup`,
+   reproducible after this device sends a `silent` event (a read receipt) in a
+   room and then receives in it. Still open — it needs chasing in the mls-rs
+   binding, not in the sync engine.
+2. **The engine's response to it.** `receive` let an unrelated failure discard
+   work that was already durable. The events were decrypted, written to the
+   store and delivered to the notification rules *before* the throw; only the
+   in-memory reduce was lost. It now commits regardless and logs the crypto
+   failure instead of propagating it: the group stays dirty so the next persist
+   retries, and the local log — not the snapshot — is what a reload rebuilds
+   from.
+
+The lesson is about ordering, not about crypto. Anything that runs between
+computing state and publishing it is a place where an unrelated fault can eat
+a message, and "the error propagated to a caller that ignores errors" is how
+that becomes silent. Persisting a cache should never be upstream of publishing
+the thing it is a cache of.
+
+It also explains why phase 0's advice keeps holding: this needed two accounts, a
+third to be looking elsewhere, a read receipt, and a real socket. Every half of
+it passed its own tests.

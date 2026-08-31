@@ -11,6 +11,7 @@ import { newFaceId, resolveSetting } from '@revel/core';
 import { untoned } from '../emoji.js';
 import { myFaces } from '../faces.svelte.js';
 import { live } from '../live.svelte.js';
+import { notifications as notificationSink } from '../notify.svelte.js';
 // A cycle — `conversation.svelte.ts` imports this module back. Safe because
 // both sides only *use* the other inside functions, never at module top level,
 // so whichever is evaluated first has the binding it needs by the time anything
@@ -250,6 +251,7 @@ class Core {
   keyChanges = $state(structuredClone(keyChanges));
   storage = $state(structuredClone(storage));
   notifications = $state(structuredClone(notifications));
+
   privacy = $state(structuredClone(privacy));
   language = $state(structuredClone(language));
   /** Whether the command surface has ever been opened on this device. */
@@ -262,6 +264,35 @@ class Core {
   postedIn = $state<string[]>([]);
 
   constructor() {
+    // `docs/35`'s rules run inside the sync engine, which has no idea a UI
+    // exists. Pointing it at this state is what makes muting a room in the
+    // menu actually silence it, rather than only looking as though it did.
+    notificationSink.useSettings(() => ({
+      default: this.notifications.global,
+      spaces: this.notifications.spaces,
+      rooms: Object.fromEntries(
+        this.dmsSeed.flatMap((dm) => (dm.notify ? [[dm.id, dm.notify]] : [])),
+      ),
+      previews: this.notifications.previews,
+      sound: this.notifications.sound,
+      // `docs/35`'s quiet hours are minutes from midnight so the rule stays
+      // arithmetic; the settings screen edits clock strings because that is
+      // what a person types. This is the one place they meet.
+      ...(this.notifications.quietHours?.on
+        ? {
+            quietHours: {
+              start: minutes(this.notifications.quietHours.from),
+              end: minutes(this.notifications.quietHours.to),
+            },
+          }
+        : {}),
+      // No `dnd`. There is no way to set it yet — presence has a `busy` status
+      // in the fixtures and nothing that writes one for your own account — and
+      // a `dnd` that is always false is more honest than one wired to a value
+      // nobody can change. `docs/35`: nothing overrides DND, so guessing at it
+      // is the one mistake here that silences everything.
+    }));
+
     if (typeof localStorage === 'undefined') return;
     try {
       const raw = localStorage.getItem(EMOJI_KEY);
@@ -607,6 +638,14 @@ class Core {
           .filter((account) => account !== live.stack?.account)
           .map((account) => live.nameOf(account))
           .join(' and '),
+        // `undefined` rather than `0`, because every badge in the sidebar is
+        // written as `{#if dm.unread}` and a zero that renders is worse than
+        // no number at all.
+        ...(live.unread(r.id) ? { unread: live.unread(r.id) } : {}),
+        // `badge` rather than `dot` is `docs/35`'s way of saying this one is
+        // *about you* — a mention, a reply, or a DM that is not muted. The
+        // sidebar turns that into a count instead of a plain dot.
+        mention: notificationSink.mark(r.id) === 'badge',
       }));
   }
 
@@ -1184,6 +1223,12 @@ class Core {
       this.typingIn[key] = (this.typingIn[key] ?? []).filter((f) => f !== faceId);
     }, ms);
   }
+}
+
+/** `'23:00'` → 1380. Anything unparseable is midnight, which is inert. */
+function minutes(clock: string): number {
+  const [h, m] = clock.split(':').map((n) => Number.parseInt(n, 10));
+  return (Number.isFinite(h) ? (h as number) : 0) * 60 + (Number.isFinite(m) ? (m as number) : 0);
 }
 
 export const core = new Core();

@@ -35,6 +35,11 @@ class DeviceSession {
         const { myFaces } = await import('./faces.svelte.js');
         await myFaces.load(this.current.accountPub);
 
+        // Which room to reopen is per account, not per browser: two people
+        // sharing a machine must not inherit each other's last conversation.
+        const { forAccount } = await import('./lastRoom.js');
+        forAccount(this.current.accountPub);
+
         // The real core. Floating on purpose: it opens a socket and a database
         // and talks to a Host, and none of that may stop the app rendering —
         // `live.error` is what the connection banner reads if it fails.

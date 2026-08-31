@@ -240,6 +240,14 @@ export class RoomSync {
    * room fill in while somebody is already reading it.
    */
   async open(roomId: string): Promise<RoomState> {
+    // In a turn for the same reason `receive` is: on a cold room this reads
+    // the store and then writes memory, and a `receive` landing in between
+    // would have its reduce overwritten by the older snapshot.
+    return await this.#inTurn(roomId, () => this.#open(roomId));
+  }
+
+  /** `open` without taking a turn, for callers that already hold one. */
+  async #open(roomId: string): Promise<RoomState> {
     const cached = this.#rooms.get(roomId);
     if (cached) return cached;
 
@@ -330,8 +338,12 @@ export class RoomSync {
 
   /** Apply events that arrived, from anywhere. */
   async receive(roomId: string, events: Event | Event[]): Promise<RoomState> {
+    return await this.#inTurn(roomId, () => this.#receive(roomId, events));
+  }
+
+  async #receive(roomId: string, events: Event | Event[]): Promise<RoomState> {
     const batch = Array.isArray(events) ? events : [events];
-    await this.open(roomId);
+    await this.#open(roomId);
 
     const decrypted: LocalEvent[] = [];
     const purges: Event[] = [];
@@ -374,7 +386,24 @@ export class RoomSync {
 
     // Crypto state moved: processing anything advances the ratchet, and a
     // commit moves the epoch outright.
-    await this.persistCrypto();
+    //
+    // **Failing to write the crypto snapshot must not take the conversation
+    // down with it.** The events are already decrypted, already in the store
+    // and have already been decided on for notifications; throwing here used
+    // to discard the reduce, so a message would be on disk, notified for, and
+    // absent from the screen until something reopened the room. That is the
+    // worst shape a bug can have: everything says it arrived except the part
+    // you look at.
+    //
+    // Not rethrowing is deliberate too. The group stays dirty, so the next
+    // persist retries it, and the local event log — not the snapshot — is what
+    // a reload rebuilds from. A loud log beats an exception that the socket
+    // handler above would swallow anyway.
+    try {
+      await this.persistCrypto();
+    } catch (error) {
+      console.error(`revel: could not persist crypto state for ${roomId}`, error);
+    }
     for (const key of typingMoved) this.#notifyPlace(key);
     await this.#commit(roomId, state);
     return state;
@@ -980,6 +1009,42 @@ export class RoomSync {
   }
 
   // -- internals ------------------------------------------------------------
+
+  /**
+   * One room's turn at a time.
+   *
+   * Every path that changes a room's state is a read-modify-write: read
+   * `state(roomId)`, reduce, commit. Two of those interleaving is a lost
+   * update — both reduce from the same base and the later commit throws the
+   * earlier one's events away. The event survives in the store, because the
+   * store write is not the thing that raced, so the symptom is a message that
+   * is on disk and missing from the screen until something reopens the room.
+   *
+   * That is not hypothetical: it happens whenever a message arrives while this
+   * device is sending in the same room — a read receipt, say — which is a
+   * thing that happens constantly and never once in a single-threaded test.
+   *
+   * Per room rather than global, so a busy room cannot hold up a quiet one.
+   */
+  #turns = new Map<string, Promise<unknown>>();
+
+  async #inTurn<T>(roomId: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.#turns.get(roomId) ?? Promise.resolve();
+    // `.then` rather than `await`, so a failed turn does not poison the queue
+    // for every turn behind it.
+    const mine = previous.then(work, work);
+    // What the *next* turn waits on: `mine` with its rejection absorbed, so a
+    // failed turn does not reject the whole chain behind it.
+    const queued = mine.catch(() => {});
+    this.#turns.set(roomId, queued);
+    try {
+      return await mine;
+    } finally {
+      // Let the map go once this is the last turn, so a long-lived client does
+      // not accumulate a settled promise per room it has ever touched.
+      if (this.#turns.get(roomId) === queued) this.#turns.delete(roomId);
+    }
+  }
 
   /** Publish new state, and write the snapshot through. */
   async #commit(roomId: string, state: RoomState): Promise<void> {

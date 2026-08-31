@@ -43,6 +43,7 @@ import {
 } from '@revel/core';
 import { LocalCryptoEngine } from '@revel/crypto';
 import { myFaces } from './faces.svelte.js';
+import { notifications } from './notify.svelte.js';
 
 /** Where the Host lives. Same origin in dev, behind the vite proxy. */
 const HOST = import.meta.env.VITE_HOST_URL ?? '';
@@ -185,7 +186,45 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
   // nothing arrives live — messages would only appear on a manual fetch, which
   // is the sort of thing that looks like "the app is slow" rather than like a
   // wiring mistake.
-  rooms = new RoomSync({ crypto, store, transport, account, stream });
+  /**
+   * Assigned once the core below is built, and read only from inside `place`.
+   *
+   * `RoomSync` has to exist before the directory that describes its rooms, so
+   * the notification rules cannot be handed a directory at construction. A
+   * room the directory has not loaded yet returns `null`, which suppresses the
+   * decision rather than guessing — a wrong `kind` here would turn a DM into a
+   * space room and silently downgrade it to the global default.
+   */
+  let directory: LiveStack['core']['directory'] | null = null;
+
+  rooms = new RoomSync({
+    crypto,
+    store,
+    transport,
+    account,
+    stream,
+    notify: {
+      settings: () => notifications.settings(),
+      place: (roomId) => {
+        const room = directory?.rooms().find((r) => r.id === roomId);
+        if (!room) return null;
+        return {
+          spaceId: room.space ?? null,
+          kind: room.kind === 'space' ? 'space' : room.kind === 'group' ? 'group' : 'dm',
+        };
+      },
+      minuteOfDay: () => {
+        const now = new Date();
+        return now.getHours() * 60 + now.getMinutes();
+      },
+      // `roles` and `mayBroadcast` are deliberately absent until spaces exist
+      // (`docs/06` phase 3). Absent means "no roles" and "nobody may", which
+      // makes `@everyone` inert rather than exploitable — the safe direction,
+      // since the failure is a missed ping rather than one nobody was entitled
+      // to send.
+      deliver: (roomId, event, decision) => notifications.deliver(roomId, event, decision),
+    },
+  });
   groups = new GroupSync({
     crypto,
     store,
@@ -230,6 +269,11 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
       return face ? refOf(face) : undefined;
     },
   });
+
+  // Now the notification rules can tell a DM from a space room. Until this
+  // line every decision was suppressed, which is the correct thing for the few
+  // milliseconds it takes to get here and the wrong thing forever.
+  directory = core.directory;
 
   return {
     core,

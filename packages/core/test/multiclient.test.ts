@@ -755,6 +755,73 @@ scenarios('the Host as an external sender', () => {
 
 // ---------------------------------------------------------------------------
 
+scenarios('concurrent delivery', () => {
+  it('does not lose a message that arrives while this device is sending', async () => {
+    // Both paths are read-modify-write on one room's state: read `state`,
+    // reduce, commit. Interleave two and the later commit reduces from a base
+    // that predates the earlier one, so the earlier one's events vanish —
+    // from memory only, because the store write is not what raced. The
+    // symptom is a message that is on disk and missing from the screen until
+    // something reopens the room, which is the worst shape a bug can have.
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    await host.say(room, 'first');
+    await world.settle();
+
+    // Bob marks read and Alice speaks at the same moment. Bob's receipt and
+    // Alice's message both land in bob's engine, concurrently.
+    await Promise.all([bob.rooms.markRead(room), host.say(room, 'second')]);
+    await world.settle();
+
+    expect(bob.texts(room)).toEqual(['first', 'second']);
+    await world.close();
+  });
+
+  it('keeps both when two deliveries overlap', async () => {
+    // The reproduction, at the level the bug actually lives at: two `receive`
+    // calls in flight in one room at once. A socket push landing while the
+    // echo of this device's own send is still being applied is exactly this,
+    // and it is why the failure needed two people and a real network to show
+    // up — nothing in a test that awaits every call in order can produce it.
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    // No `settle`, so bob has not been handed either of these yet.
+    await host.say(room, 'first');
+    await host.say(room, 'second');
+    const [one, two] = (world.store.events.get(room) ?? []).slice(-2);
+
+    // Hold the first delivery open at the one point that matters: after it has
+    // reduced its event and before it has committed the result. `receive`
+    // persists crypto in that gap, so blocking a sealed write blocks exactly
+    // there. Without serialisation the second delivery reduces from the state
+    // the first one has not published yet, and whichever commits last wins.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const store = bob.store as { putSealed: (...args: never[]) => Promise<unknown> };
+    const realPutSealed = store.putSealed.bind(store);
+    let held = false;
+    store.putSealed = async (...args: never[]) => {
+      if (!held) {
+        held = true;
+        await gate;
+      }
+      return realPutSealed(...args);
+    };
+
+    const first = bob.rooms.receive(room, one as never);
+    await bob.rooms.receive(room, two as never);
+    release();
+    await first;
+
+    expect(bob.texts(room)).toEqual(['first', 'second']);
+    await world.close();
+  });
+});
+
 scenarios('typing', () => {
   it('shows up on the other side and is never written down', async () => {
     // `docs/03` §7: ephemeral. Not stored, dropped if nobody is listening,

@@ -11,11 +11,13 @@ import { contextMenu } from '$lib/contextmenu.svelte.js';
 import { applyUrl, syncUrl } from '$lib/deeplink.js';
 import { drawers } from '$lib/drawers.svelte.js';
 import { myFaces } from '$lib/faces.svelte.js';
+import { notifications } from '$lib/notify.svelte.js';
 import { connection } from '$lib/fake/connection.svelte.js';
 import { conversation } from '$lib/fake/conversation.svelte.js';
 import { core, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
 import type { NotifyLevel } from '$lib/fake/data.js';
 import Icon from '$lib/Icon.svelte';
+import { lastRoom } from '$lib/lastRoom.js';
 import { layout } from '$lib/layout.svelte.js';
 import { live } from '$lib/live.svelte.js';
 import MessageList from '$lib/MessageList.svelte';
@@ -108,6 +110,7 @@ if (page.url.searchParams.has('e2e')) {
     session,
     myFaces,
     onboarding,
+    notifications,
   };
 }
 
@@ -146,6 +149,39 @@ $effect(() => {
  * Guarded on still being on a fixture room, so it never steals focus from
  * somebody who has already clicked somewhere.
  */
+/**
+ * Looking at a room marks it read.
+ *
+ * Depends on `live.version` as well as the room id, so a message that lands
+ * while the room is already open is marked too rather than sitting there as a
+ * badge on the conversation you are staring at.
+ */
+$effect(() => {
+  if (!live.running) return;
+  void live.version;
+  const roomId = core.currentRoomId;
+  if (!roomId) return;
+  // Tell the sink what is on screen, so a message in this room does not also
+  // pop up as a desktop notification for a conversation you are reading.
+  notifications.looking(roomId);
+  notifications.clear(roomId);
+  if (live.unread(roomId) === 0) return;
+  void live.markRead(roomId);
+});
+
+/**
+ * Where to land, once the room list has actually arrived.
+ *
+ * Separate from the scope effect above because `live.running` turns true
+ * before `refreshRooms()` finishes, so anything that reads `core.dms` in the
+ * same effect reads an empty list and falls through to a fixture room.
+ *
+ * The room it picks is the one you last had open, not the first one in the
+ * list. That distinction matters more than it looks: looking at a room marks
+ * it read, so auto-opening an arbitrary DM would clear a badge for a message
+ * you never saw. Reopening your own last choice is the behaviour every chat
+ * app has, and the one nobody loses a message to.
+ */
 let opened = false;
 $effect(() => {
   if (!live.running || opened) return;
@@ -156,7 +192,15 @@ $effect(() => {
     return;
   }
   opened = true;
-  core.openHome(dms[0]!.id);
+  const last = lastRoom.read();
+  core.openHome(last && dms.some((d) => d.id === last) ? last : dms[0]!.id);
+});
+
+/** Remember the open room, so the next load comes back to it. */
+$effect(() => {
+  if (!live.running || !opened) return;
+  const roomId = core.currentRoomId;
+  if (roomId) lastRoom.write(roomId);
 });
 
 const demo = page.url.searchParams.has('demo');
@@ -340,6 +384,10 @@ function openDmMenu(e: MouseEvent, id: string) {
       const [verb, arg] = picked.split(':');
       if (verb === 'notify') dm.notify = arg === 'inherit' ? undefined : (arg as NotifyLevel);
       if (picked === 'mark-read') {
+        // Live `dms` are derived from the room list, so writing to one is
+        // writing to a value that gets rebuilt on the next read. The real
+        // read marker lives in the sync engine.
+        if (live.running) void live.markRead(dm.id);
         dm.unread = undefined;
         dm.mention = false;
       }
