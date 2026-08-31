@@ -157,6 +157,28 @@ export function mountAccounts(app: Hono, deps: AccountDeps): void {
    * showing a bare name has to know whose provider it is on (`docs/17`), and
    * that is a client concern.
    */
+  /**
+   * Look up an account by its **key** rather than its handle.
+   *
+   * A room's membership is a list of account ids, so a client that has just
+   * joined one knows *who* is there and not what to call them. Without this it
+   * would have to render a base64 key, or wait for somebody to speak and take
+   * the face off their message — which is no answer for a room where nobody has
+   * spoken yet.
+   *
+   * Not a new disclosure: `docs/03` §7 already lists the public profile at the
+   * IdP — handle, display name, avatar — as "a directory". This is the
+   * direction that directory was always going to have to be read in.
+   *
+   * Registered before `/:address`, though it does not collide with it: that
+   * route matches a single segment and this one takes two.
+   */
+  app.get('/idp/accounts/key/:key', async (c) => {
+    const account = await deps.store.getAccount(decodeURIComponent(c.req.param('key')));
+    if (!account) return c.json({ error: 'no_such_account' }, 404);
+    return c.json(profile(account, deps.idp));
+  });
+
   app.get('/idp/accounts/:address', async (c) => {
     const address = parseAddress(decodeURIComponent(c.req.param('address')), deps.idp);
     if (!address) return c.json({ error: 'invalid_address' }, 400);

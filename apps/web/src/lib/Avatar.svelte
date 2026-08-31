@@ -1,9 +1,29 @@
 <script lang="ts">
 import type { Face } from './fake/data.js';
 
-let { face, size = 40, dot = false }: { face: Face; size?: number; dot?: boolean } = $props();
+/**
+ * `face` is optional, and that is a real state rather than defensiveness.
+ *
+ * A message from a real room carries a `FaceRef` snapshot *if the sender was
+ * speaking as a face* — an account that has never made one sends without, which
+ * is correct and must render as somebody rather than as a crash. It happened:
+ * a faceless row took the whole message list down with
+ * "Cannot read properties of undefined", and a list that renders nothing is a
+ * much worse answer than a list with an anonymous avatar in it.
+ *
+ * `status` and `colour` are fixture fields a `FaceRef` does not carry either,
+ * so both fall back rather than being assumed.
+ */
+let {
+  face,
+  size = 40,
+  dot = false,
+}: { face?: Partial<Face> | null; size?: number; dot?: boolean } = $props();
 
-const initial = $derived(face.name.charAt(0).toUpperCase());
+const name = $derived(face?.name ?? '');
+// A dash rather than a letter: an empty circle reads as a loading state, and
+// this is not loading — there is genuinely nobody named here.
+const initial = $derived(name ? name.charAt(0).toUpperCase() : '·');
 
 /**
  * The presence dot takes its colour from the actual status. It used to be
@@ -11,11 +31,11 @@ const initial = $derived(face.name.charAt(0).toUpperCase());
  * still got a green dot — the list said one thing and the dot said another.
  */
 const statusColour = $derived(
-  face.status === 'busy'
+  face?.status === 'busy'
     ? 'var(--face-rose)'
-    : face.status === 'away'
+    : face?.status === 'away'
       ? 'var(--face-gold)'
-      : face.status === 'invisible'
+      : face?.status === 'invisible'
         ? 'var(--text-mute)'
         : 'var(--face-mint)',
 );
@@ -23,11 +43,11 @@ const statusColour = $derived(
 
 <span
   class="av"
-  style="--fc: var(--face-{face.colour}); --sc: {statusColour}; width:{size}px; height:{size}px; font-size:{Math.round(size * 0.38)}px"
-  title={face.name}
+  style="--fc: var(--face-{face?.colour ?? 'lilac'}); --sc: {statusColour}; width:{size}px; height:{size}px; font-size:{Math.round(size * 0.38)}px"
+  title={name || 'Someone'}
 >
   {initial}
-  {#if dot}<span class="dot" class:hollow={face.status === 'invisible'}></span>{/if}
+  {#if dot}<span class="dot" class:hollow={face?.status === 'invisible'}></span>{/if}
 </span>
 
 <style>

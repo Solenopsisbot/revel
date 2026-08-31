@@ -92,6 +92,13 @@ export interface Transport {
    * taken by somebody else, and a key cannot (`docs/17`).
    */
   resolveAddress(address: string): Promise<AccountProfile>;
+  /**
+   * The profile behind an account key.
+   *
+   * The direction a room needs: membership is a list of keys, so naming the
+   * people in one means asking what each key is called.
+   */
+  lookupAccount(accountPub: string): Promise<AccountProfile>;
 
   /** This account's devices, including the ones it has signed out. */
   listDevices(): Promise<DeviceInfo[]>;
@@ -219,6 +226,10 @@ export class HttpTransport implements Transport {
 
   updateProfile(patch: UpdateProfile): Promise<AccountProfile> {
     return this.#json('/idp/accounts/me', { method: 'PATCH', body: JSON.stringify(patch) });
+  }
+
+  lookupAccount(accountPub: string): Promise<AccountProfile> {
+    return this.#json(`/idp/accounts/key/${encodeURIComponent(accountPub)}`, { method: 'GET' });
   }
 
   resolveAddress(address: string): Promise<AccountProfile> {

@@ -776,17 +776,32 @@ export class RoomSync {
       return this.state(roomId);
     }
 
-    // 1. Show it immediately. This is the only step a person can see.
-    const optimistic: Message & { clientNonce: string } = {
-      id: localId,
-      account: this.#account,
-      at: this.#now(),
-      body: (payload as { body?: unknown }).body ?? '',
-      replyTo: (payload as { replyTo?: string }).replyTo,
-      thread: (payload as { thread?: string }).thread,
-      clientNonce,
-    };
-    this.#commitSync(roomId, addPending(this.state(roomId), optimistic));
+    // 1. Show it immediately — **but only if it is a message.**
+    //
+    // An optimistic row exists for one reason: somebody typed something and has
+    // to see it before the network has heard of it. Nothing else has that
+    // property. A reaction, an edit, a redaction, a read receipt, a thread
+    // name, a face roster — all of them go through here, none of them is a
+    // message, and each one was quietly inserting a **blank pending row** that
+    // never resolved, because there is no incoming message for it to reconcile
+    // against.
+    //
+    // The ephemeral branch above already learned this from typing notices. This
+    // is the same lesson for the other twelve event types, found when a
+    // `room.faces` announcement put a faceless row in a real timeline and the
+    // avatar renderer fell over on it.
+    if (payload.type === 'm.message') {
+      const optimistic: Message & { clientNonce: string } = {
+        id: localId,
+        account: this.#account,
+        at: this.#now(),
+        body: (payload as { body?: unknown }).body ?? '',
+        replyTo: (payload as { replyTo?: string }).replyTo,
+        thread: (payload as { thread?: string }).thread,
+        clientNonce,
+      };
+      this.#commitSync(roomId, addPending(this.state(roomId), optimistic));
+    }
 
     try {
       // 2. Encrypt. The ratchet has now moved, and this device's state on disk

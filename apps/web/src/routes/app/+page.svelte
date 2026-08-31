@@ -102,8 +102,39 @@ if (Number.isFinite(seed) && seed > 0) {
  * Gated so it never exists in an ordinary session.
  */
 if (page.url.searchParams.has('e2e')) {
-  (window as unknown as Record<string, unknown>).__revel = { core, live, session, myFaces };
+  (window as unknown as Record<string, unknown>).__revel = {
+    core,
+    live,
+    session,
+    myFaces,
+    onboarding,
+  };
 }
+
+let startingDm = $state(false);
+let dmHandle = $state('');
+let dmError = $state('');
+let dmBusy = $state(false);
+
+/**
+ * A signed-in account starts in Home.
+ *
+ * Spaces are still fixtures — `packages/core` has no `SpaceCore` — so a real
+ * account has no real space to be in, and landing in Solexsis would put
+ * somebody in a room that does not exist for them. Home is the part that *is*
+ * real, so that is where the app opens.
+ *
+ * Runs once, when the core starts, rather than on every change: somebody who
+ * has deliberately clicked into a fixture space to look at it should stay
+ * there.
+ */
+let homed = false;
+$effect(() => {
+  if (!live.running || homed) return;
+  homed = true;
+  core.scope = 'home';
+  if (core.dms.length) core.openHome(core.dms[0]!.id);
+});
 
 const demo = page.url.searchParams.has('demo');
 if (!demo) {
@@ -116,7 +147,15 @@ const deepLink = page.url.searchParams.get('settings');
 let settingsOpen = $state(!!deepLink);
 let settingsSection = $state(deepLink ?? 'account');
 
-const me = $derived(core.faces[core.speakingAs]!);
+const me = $derived(
+  core.myFaces.find((f) => f.id === core.speakingHere) ?? core.faces[core.speakingAs],
+);
+/** This account, as a person reads it: the handle when there is one. */
+const myAddress = $derived(
+  live.running
+    ? (session.current?.handle ?? live.stack?.account.slice(0, 8) ?? '')
+    : 'viola@revel.chat',
+);
 
 let commandOpen = $state(false);
 let spaceOpen = $state(false);
@@ -540,7 +579,55 @@ function toggleMembers() {
 
   <aside class="sidebar">
     {#if core.scope === 'home'}
-      <header class="space-head static"><span class="sh-nm">Direct messages</span></header>
+      <header class="space-head static">
+        <span class="sh-nm">Direct messages</span>
+        {#if live.running}
+          <!-- Only when there is a real directory to ask. Without an account
+               the fixtures are the list, and a box that resolved nothing would
+               be a promise the demo cannot keep. -->
+          <button
+            class="sh-add"
+            title="Message someone"
+            onclick={() => { startingDm = !startingDm; dmError = ''; }}
+          >
+            <Icon name="plus" size={16} />
+          </button>
+        {/if}
+      </header>
+
+      {#if startingDm}
+        <form
+          class="new-dm"
+          onsubmit={async (e) => {
+            e.preventDefault();
+            dmBusy = true;
+            const result = await core.startDm(dmHandle);
+            dmBusy = false;
+            if (result.error) {
+              dmError =
+                result.error === 'no_such_account'
+                  ? "Nobody here goes by that."
+                  : 'Could not reach your provider.';
+              return;
+            }
+            startingDm = false;
+            dmHandle = '';
+            navigated();
+          }}
+        >
+          <input
+            bind:value={dmHandle}
+            placeholder="handle"
+            aria-label="Who do you want to message?"
+            autocomplete="off"
+          />
+          <button type="submit" disabled={dmBusy || !dmHandle.trim()}>
+            {dmBusy ? '…' : 'Start'}
+          </button>
+          {#if dmError}<p class="new-dm-err" role="alert">{dmError}</p>{/if}
+        </form>
+      {/if}
+
       <div class="rooms">
         {#each core.dms as dm (dm.id)}
           <button
@@ -669,8 +756,11 @@ function toggleMembers() {
       <button class="me-id" onclick={() => (core.profileFor = core.speakingAs)} title="You">
         <Avatar face={me} size={30} dot />
         <span class="me-meta">
-          <span class="me-nm">{me.name}</span>
-          <span class="me-sub">viola@revel.chat</span>
+          <!-- The face speaking here, and the account underneath it. A signed-in
+               account with no faces yet shows its handle alone rather than a
+               fixture's name — which is what it did, and it was somebody else's. -->
+          <span class="me-nm">{me?.name ?? myAddress}</span>
+          <span class="me-sub">{me ? myAddress : 'no face yet'}</span>
         </span>
       </button>
       <button
@@ -886,6 +976,36 @@ function toggleMembers() {
     padding: 6px 13px; border-radius: var(--r-pill);
   }
   .join:hover { filter: brightness(1.06); }
+  /* Sits in the header rather than floating: "message someone" is a property
+     of the list, and a button that hovers over rows is one people click by
+     accident while scrolling. */
+  .sh-add {
+    margin-left: auto; display: grid; place-items: center; cursor: pointer;
+    width: 24px; height: 24px; min-width: var(--tap); min-height: var(--tap);
+    border: 0; background: transparent; color: var(--text-dim); border-radius: var(--r-sm);
+  }
+  .sh-add:hover { color: var(--text); background: var(--ground-3); }
+
+  .new-dm { display: flex; gap: 6px; padding: 6px 10px 8px; flex-wrap: wrap; }
+  .new-dm input {
+    flex: 1; min-width: 0; font: inherit; font-size: var(--text-sm);
+    padding: 7px 10px; min-height: var(--tap);
+    border-radius: var(--r-sm); border: 1px solid var(--line);
+    background: var(--ground-1); color: var(--text);
+  }
+  .new-dm button {
+    font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer;
+    padding: 0 12px; min-height: var(--tap); border: 0; border-radius: var(--r-sm);
+    background: var(--accent); color: var(--on-accent);
+  }
+  .new-dm button:disabled { opacity: .5; cursor: default; }
+  /* The muted warning tone, not red: a handle nobody has is a typo, not an
+     alarm (`docs/08`). */
+  .new-dm-err {
+    flex-basis: 100%; margin: 2px 0 0; font-size: var(--text-xs);
+    color: color-mix(in oklab, var(--text) 66%, transparent);
+  }
+
   .rooms { overflow-y: auto; padding: 10px 8px; flex: 1; }
 
   /* Bottom-left, where every chat client puts the "you" area. */

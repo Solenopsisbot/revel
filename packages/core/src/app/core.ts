@@ -164,6 +164,14 @@ export interface IdentityCore {
   updateProfile(patch: UpdateProfile): Promise<AccountProfile>;
   /** Look somebody up. `viola` or `viola@revel.chat`. */
   resolve(address: string): Promise<AccountProfile>;
+  /**
+   * Look somebody up by account key.
+   *
+   * What a room needs: its membership is a list of keys, so naming the people
+   * in it means asking what each key is called. `resolve` goes the other way,
+   * for when somebody typed a name.
+   */
+  lookup(accountPub: string): Promise<AccountProfile>;
 
   devices(): Promise<DeviceInfo[]>;
   /** Sign one out. Its sessions and push channel die immediately (`docs/03` §3). */

@@ -19,8 +19,18 @@ let draft = $state('');
 let input = $state<HTMLTextAreaElement>();
 let dragging = $state(false);
 
-/** The face this composer sends as — per conversation in a DM, global in a room. */
-const face = $derived(core.faces[core.speakingHere]!);
+/**
+ * The face this composer sends as, or `undefined`.
+ *
+ * Undefined is a real state and the first one a new account is in: it has made
+ * no faces, so there is nothing to speak as, and sending without a `FaceRef` is
+ * correct rather than broken. This was `core.faces[…]!` — the `!` was a lie the
+ * moment the faces stopped being fixtures, and it took the whole composer down
+ * with "cannot read properties of undefined".
+ */
+const face = $derived(
+  core.myFaces.find((f) => f.id === core.speakingHere) ?? core.faces[core.speakingHere],
+);
 
 /**
  * The face waiting on a confirmation to join this conversation, if any.
@@ -245,7 +255,7 @@ function grow(el: HTMLTextAreaElement) {
     class="box"
     class:dragging
     class:replying={!!core.replyTo && !thread}
-    style="--fc: var(--face-{face.colour})"
+    style="--fc: var(--face-{face?.colour ?? 'lilac'})"
     ondragover={(e) => { e.preventDefault(); dragging = true; }}
     ondragleave={() => (dragging = false)}
     ondrop={(e) => { e.preventDefault(); dragging = false; }}
@@ -256,7 +266,7 @@ function grow(el: HTMLTextAreaElement) {
            A singlet never sees it (`docs/11`). -->
       <button class="chip" onclick={() => (core.speakingAsOpen = !core.speakingAsOpen)} title="Speaking as">
         <Avatar {face} size={24} />
-        <span class="nm">{face.name}</span>
+        <span class="nm">{face?.name ?? 'Someone'}</span>
         <Icon name="chevron" size={14} />
       </button>
     {/if}
@@ -267,7 +277,14 @@ function grow(el: HTMLTextAreaElement) {
       onkeydown={onKey}
       oninput={(e) => grow(e.currentTarget)}
       rows="1"
-      placeholder={thread ? 'Reply in thread' : `Message #${core.room.name}`}
+      placeholder={thread
+        ? 'Reply in thread'
+        : core.scope === 'home'
+          ? // A DM is a person, not a channel. `#` is the channel sigil
+            // (`docs/16`), and putting it on somebody's name reads as a room
+            // called after them.
+            `Message ${core.room.name}`
+          : `Message #${core.room.name}`}
       aria-label="Message"
     ></textarea>
 

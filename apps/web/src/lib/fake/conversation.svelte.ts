@@ -127,3 +127,14 @@ export const conversation = {
     );
   },
 };
+
+/**
+ * The room timeline, for `core` itself to read.
+ *
+ * A named export rather than `conversation.timeline`, because `core` cannot
+ * import the object that imports it — and the empty state and the arrival
+ * counter both live on `core` and have to agree with what the list renders.
+ */
+export function conversationTimeline(roomId: string) {
+  return conversation.timeline(roomId);
+}

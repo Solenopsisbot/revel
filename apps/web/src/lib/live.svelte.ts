@@ -50,6 +50,7 @@ class Live {
       const stack = await startLive(session);
       this.stack = stack;
       this.#poll();
+      await this.refreshRooms();
     } catch (err) {
       console.error('could not start the real core', err);
       this.error = String((err as Error)?.message ?? err);
@@ -90,6 +91,57 @@ class Live {
       );
     }
     return this.#rooms.get(roomId) ?? stack.core.conversation.room(roomId);
+  }
+
+  /** Rooms the Host says this account is in. Refreshed, never guessed. */
+  rooms = $state<{ id: string; kind: string; space: string | null; members: string[] }[]>([]);
+  /** account key → handle, once asked. See `nameOf`. */
+  #names = new Map<string, string>();
+  #asking = new Set<string>();
+
+  async refreshRooms(): Promise<void> {
+    const stack = this.stack;
+    if (!stack) return;
+    const rooms = await stack.core.directory.refresh().catch(() => []);
+    this.rooms = rooms.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      space: r.space ?? null,
+      members: r.members ?? [],
+    }));
+    this.version++;
+  }
+
+  /**
+   * What to call an account.
+   *
+   * A room's membership is a list of keys, so naming the people in one means
+   * asking the IdP what each key is called. Asked once per key and cached —
+   * and *not* awaited by the caller: a room list that waited for a directory
+   * round trip per member would render nothing for as long as the slowest one
+   * took. It shows the key, then the name, which is the right order.
+   */
+  nameOf(accountPub: string): string {
+    void this.version;
+    const known = this.#names.get(accountPub);
+    if (known) return known;
+
+    if (!this.#asking.has(accountPub) && this.stack) {
+      this.#asking.add(accountPub);
+      void this.stack.core.identity
+        .lookup(accountPub)
+        .then((profile) => {
+          this.#names.set(accountPub, profile.handle ?? accountPub.slice(0, 8));
+          this.version++;
+        })
+        .catch(() => {
+          // An account the IdP does not know — a foreign one, or one that has
+          // not claimed a handle. Its key is a worse name and it is a true one.
+          this.#names.set(accountPub, accountPub.slice(0, 8));
+          this.version++;
+        });
+    }
+    return accountPub.slice(0, 8);
   }
 
   /** The socket, polled because `WebSocketStream` reports by callback. */

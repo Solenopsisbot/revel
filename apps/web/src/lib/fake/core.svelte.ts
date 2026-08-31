@@ -11,6 +11,12 @@ import { newFaceId, resolveSetting } from '@revel/core';
 import { untoned } from '../emoji.js';
 import { myFaces } from '../faces.svelte.js';
 import { live } from '../live.svelte.js';
+// A cycle — `conversation.svelte.ts` imports this module back. Safe because
+// both sides only *use* the other inside functions, never at module top level,
+// so whichever is evaluated first has the binding it needs by the time anything
+// calls it. Worth the cycle: the alternative is a second copy of the mapping,
+// and two copies of "what is in this room" is how they come to disagree.
+import { conversationTimeline } from './conversation.svelte.js';
 import {
   account,
   type Dm,
@@ -58,7 +64,7 @@ class Core {
    */
   faces: Record<string, Face> = $state(seedFaces);
   spaces = $state(spaces);
-  dms = $state(structuredClone(dms));
+  dmsSeed = $state(structuredClone(dms));
   currentSpaceId = $state('solexsis');
   /**
    * What you are looking at. A DM's id sits here exactly like a room's does,
@@ -259,6 +265,20 @@ class Core {
    */
   get room(): Room {
     const dm = this.dm;
+    // Signed in, in Home, with nothing open — which is exactly what a brand new
+    // account sees. Falling through to `this.space.rooms[0]` put a *fixture*
+    // room in the header and "Message #design" in the composer of an account
+    // that has never seen Solexsis.
+    if (!dm && live.running && this.scope === 'home') {
+      return {
+        id: '',
+        name: '',
+        kind: 'text',
+        category: 'Direct messages',
+        style: 'bubbles',
+        audience: { kind: 'picked', faceIds: [] },
+      };
+    }
     if (dm) {
       return {
         id: dm.id,
@@ -295,6 +315,11 @@ class Core {
    * parent keeps a summary line so the conversation still leads to them.
    */
   get timeline() {
+    // Through the seam when live, so the empty state and the arrival counter
+    // agree with what the list is actually showing. They disagreed: a real
+    // conversation rendered underneath "Nothing here yet", because this read
+    // the fixtures directly while `MessageList` read the seam.
+    if (live.running) return conversationTimeline(this.currentRoomId);
     return (this.messages[this.currentRoomId] ?? []).filter((m) => !m.thread);
   }
 
@@ -501,10 +526,62 @@ class Core {
   }
 
   get roster() {
+    // A real room's roster is the `room.faces` state the reducer built from
+    // encrypted events (`docs/03` §7) — the only place a plural system's
+    // members are ever written down, and never at the Host.
+    if (live.running) {
+      const room = live.room(this.currentRoomId);
+      const faces = room ? [...room.faces.values()] : [];
+      // Cast to the fixture `Face` on purpose: the roster is rendered by the
+      // same components as a fixture one, and widening the return type made
+      // every consumer of `agent`, `bio` and friends a type error. What is
+      // *absent* here is the honest part — a `FaceRef` carries a name, a colour
+      // and pronouns, and nothing else travels.
+      return faces.map(
+        (f) =>
+          ({
+            id: f.id,
+            name: f.name,
+            colour: (f.colour ?? 'lilac') as FaceColour,
+            ...(f.pronouns ? { pronouns: f.pronouns } : {}),
+            accountId: '',
+            status: 'here',
+          }) as Face,
+      );
+    }
     const dm = this.dm;
     if (dm) return participantsIn(dm).map((id) => this.faces[id]!);
     return (rosters[this.currentRoomId] ?? []).map((id) => this.faces[id]!);
   }
+  /**
+   * The conversations in Home.
+   *
+   * Real rooms when a signed-in device is running the core, fixtures
+   * otherwise. Mapped into the fixture `Dm` shape so the sidebar keeps reading
+   * one thing — the difference between the two is where the list comes from,
+   * not what a row looks like.
+   *
+   * `withIds` is empty for a real DM and that is not an oversight: it holds
+   * *face* ids, and the other person's faces are not knowable until they speak
+   * (`docs/03` §7 — the roster is a per-room encrypted event). The name comes
+   * from the IdP directory instead, which is what it is for.
+   */
+  get dms(): Dm[] {
+    if (!live.running) return this.dmsSeed;
+    return live.rooms
+      .filter((r) => r.kind === 'dm' || r.kind === 'group')
+      .map((r) => ({
+        id: r.id,
+        kind: r.kind === 'group' ? ('group' as const) : ('dm' as const),
+        withIds: [],
+        mineIds: [],
+        name: r.members
+          .filter((account) => account !== live.stack?.account)
+          .map((account) => live.nameOf(account))
+          .join(' and '),
+      }));
+  }
+
   get myFaces(): Face[] {
     // The real book when signed in, the fixtures otherwise. Mapped into the
     // fixture shape so every screen keeps reading one thing — `accountId` and
@@ -641,12 +718,12 @@ class Core {
     const face = this.faces[faceId];
     if (!face || face.accountId === MY_ACCOUNT) return;
     const id = dmId(MY_ACCOUNT, face.accountId);
-    let dm: Dm | undefined = this.dms.find((d) => d.id === id);
+    let dm: Dm | undefined = this.dmsSeed.find((d) => d.id === id);
     if (!dm) {
       // Opened as whoever I am right now. A new 1:1 has exactly one of my faces
       // in it, and adding another is the same deliberate act it is in a group.
       dm = { id, kind: 'dm', withIds: [faceId], mineIds: [this.speakingAs] };
-      this.dms.push(dm);
+      this.dmsSeed.push(dm);
       this.messages[id] ??= [];
     }
     this.scope = 'home';
@@ -667,7 +744,7 @@ class Core {
    * what it does.
    */
   closeDm(id: string) {
-    this.dms = this.dms.filter((d) => d.id !== id);
+    this.dmsSeed = this.dmsSeed.filter((d) => d.id !== id);
     if (this.currentRoomId === id) {
       if (this.dms.length) this.openHome(this.dms[0]!.id);
       else this.openRoom(this.currentSpaceId, this.space.rooms[0]!.id);
@@ -872,6 +949,35 @@ class Core {
     // The engine calls the last rung `default` after the field it reads; this
     // surface has always called it `global`, and it is the one users see.
     return { level: resolved.level, from: resolved.from === 'default' ? 'global' : resolved.from };
+  }
+
+  /**
+   * Start a conversation with somebody by name.
+   *
+   * The real path: a handle goes to the IdP, comes back as an account key, and
+   * that opens a DM whose id is derived from the two accounts — so two people
+   * messaging each other at the same moment land in one room rather than two
+   * (`docs/03`). Also creates the MLS group and invites them, which `openDm`
+   * on the core does because a room without one cannot be sent to.
+   *
+   * Returns the error code rather than throwing: "no such account" is an
+   * ordinary answer to a typo and belongs on the screen, not in a stack trace.
+   */
+  async startDm(address: string): Promise<{ room?: string; error?: string }> {
+    if (!live.running) return { error: 'not_signed_in' };
+    const handle = address.trim().replace(/^@/, '');
+    if (!handle) return { error: 'no_handle' };
+    try {
+      const who = await live.stack!.core.identity.resolve(handle);
+      const room = await live.stack!.core.directory.openDm({ account: who.id });
+      await live.refreshRooms();
+      this.openHome(room.id);
+      return { room: room.id };
+    } catch (err) {
+      console.error('could not start a conversation', err);
+      const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
+      return { error: code || 'unreachable' };
+    }
   }
 
   /** Set or clear a room's override. `undefined` returns it to inheriting. */

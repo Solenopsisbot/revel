@@ -80,24 +80,45 @@ const alice = await signUp(`la${stamp}`);
 const bob = await signUp(`lb${stamp}`);
 ok('both are running the real core', !!alice.account && !!bob.account);
 
-console.log('\nopening a DM and pointing the UI at it');
-const room = await alice.page.evaluate(async (peer) => {
-  const { live, core } = window.__revel;
-  const info = await live.stack.core.directory.openDm({ account: peer });
-  // The UI renders whatever `currentRoomId` points at, and the seam decides
-  // where the messages come from. Pointing it at a real room is the whole test.
-  core.currentRoomId = info.id;
-  return info.id;
-}, bob.account);
+console.log('\nalice starts a conversation by typing a handle');
+// A new account gets the welcome overlay, and a person dismisses it before
+// doing anything else. It is modal, so leaving it up means every click below
+// lands on the scrim instead.
+for (const who of [alice, bob]) {
+  await who.page.evaluate(() => window.__revel.onboarding?.dismiss?.());
+}
+// Through the sidebar, the way a person does it: press +, type a name, submit.
+await alice.page.getByTitle('Message someone').click();
+await alice.page.fill('input[aria-label="Who do you want to message?"]', bob.handle);
+await alice.page.getByRole('button', { name: 'Start' }).click();
+await alice.page.waitForFunction(
+  () => window.__revel.core.scope === 'home' && window.__revel.core.currentRoomId.length > 5,
+  { timeout: 30000 },
+);
+const room = await alice.page.evaluate(() => window.__revel.core.currentRoomId);
 ok('a real room is open in the UI', !!room);
 
+// The row in her sidebar is named after the person, not a key.
+const named = await alice.page.evaluate(async () => {
+  for (let i = 0; i < 20; i++) {
+    const dm = window.__revel.core.dms[0];
+    if (dm?.name && !/^[A-Za-z0-9_-]{8}$/.test(dm.name)) return dm.name;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return window.__revel.core.dms[0]?.name ?? '';
+});
+ok('and the sidebar names them from the directory', named === bob.handle, named);
+
 await wait(4000);
-await bob.page.evaluate(async (id) => {
-  const { live, core } = window.__revel;
+// Bob does what a client does on waking: take what is waiting, and look at the
+// room list. Then open it the way a person would — by clicking it.
+await bob.page.evaluate(async () => {
+  const { live } = window.__revel;
   await live.stack.sync();
-  await live.stack.core.directory.refresh();
-  core.currentRoomId = id;
-}, room);
+  await live.refreshRooms();
+});
+await bob.page.waitForFunction(() => window.__revel.core.dms.length > 0, { timeout: 30000 });
+await bob.page.evaluate(() => window.__revel.core.openHome(window.__revel.core.dms[0].id));
 await wait(2000);
 
 console.log('\nalice sends through the path her keystrokes take');

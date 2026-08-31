@@ -406,6 +406,10 @@ class LiveIdentity implements IdentityCore {
     return this.#transport.resolveAddress(address);
   }
 
+  lookup(accountPub: string): Promise<AccountProfile> {
+    return this.#transport.lookupAccount(accountPub);
+  }
+
   devices(): Promise<DeviceInfo[]> {
     return this.#transport.listDevices();
   }
