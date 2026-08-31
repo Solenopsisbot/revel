@@ -196,11 +196,18 @@ $effect(() => {
   core.openHome(last && dms.some((d) => d.id === last) ? last : dms[0]!.id);
 });
 
-/** Remember the open room, so the next load comes back to it. */
+/**
+ * Remember the open room, so the next load comes back to it.
+ *
+ * `currentRoomId` is read *before* the guards on purpose. An effect only
+ * depends on what it actually reads, so returning early on `opened` — a plain
+ * `let`, and not reactive — would mean this never subscribed to the room id at
+ * all and never ran again after the first time.
+ */
 $effect(() => {
-  if (!live.running || !opened) return;
   const roomId = core.currentRoomId;
-  if (roomId) lastRoom.write(roomId);
+  if (!live.running || !opened || !roomId) return;
+  lastRoom.write(roomId);
 });
 
 const demo = page.url.searchParams.has('demo');

@@ -2101,10 +2101,22 @@ propagated out of `receive` into a socket handler that swallows errors.
 
 Two separate faults, and only one of them is the crypto's:
 
-1. **The wasm trap.** `memory access out of bounds` out of `exportGroup`,
-   reproducible after this device sends a `silent` event (a read receipt) in a
-   room and then receives in it. Still open — it needs chasing in the mls-rs
-   binding, not in the sync engine.
+1. **The wasm trap.** `RuntimeError: memory access out of bounds` from the MLS
+   wasm. Still open, and it needs chasing in the binding rather than in the
+   sync engine.
+
+   It has two faces and they are the same fault. On the **receiving** side it
+   comes out of `exportGroup` during `persistCrypto`, which is what this
+   section is about. On the **sending** side it comes out of `encrypt`, and
+   there the message never leaves at all — it sits in the sender's own timeline
+   as `pending/failed`, with `send failed RuntimeError: memory access out of
+   bounds` in the console and nothing on screen to say so.
+
+   The trigger, as far as it has been narrowed: a room in which the *other*
+   device has sent a `silent` event — a read receipt — and both sides then
+   carry on. `pnpm test:unread` hits it in roughly half of runs and reports it
+   by name instead of asserting on it, because a flaky notification test would
+   bury an open crypto bug rather than surface it.
 2. **The engine's response to it.** `receive` let an unrelated failure discard
    work that was already durable. The events were decrypted, written to the
    store and delivered to the notification rules *before* the throw; only the

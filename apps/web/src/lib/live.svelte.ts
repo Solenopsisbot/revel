@@ -191,7 +191,10 @@ class Live {
    * stored, dropped if nobody is listening (`docs/03` §7) — so there is nothing
    * to fetch and the only way to know is to have been listening.
    */
-  typingIn(roomId: string, thread?: string): { account: string; face?: { id: string; name: string } }[] {
+  typingIn(
+    roomId: string,
+    thread?: string,
+  ): { account: string; face?: { id: string; name: string } }[] {
     void this.version;
     const stack = this.stack;
     if (!stack) return [];
