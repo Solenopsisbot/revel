@@ -210,12 +210,14 @@ class LiveDirectory implements DirectoryCore {
   #crypto: CryptoEngine;
   #known: RoomInfo[] = [];
   #listeners = new Set<(rooms: RoomInfo[]) => void>();
+  #account: string;
 
   constructor(options: LiveCoreOptions) {
     this.#transport = options.transport;
     this.#rooms = options.rooms;
     this.#groups = options.groups;
     this.#crypto = options.crypto;
+    this.#account = options.account;
   }
 
   rooms(): RoomInfo[] {
@@ -244,14 +246,54 @@ class LiveDirectory implements DirectoryCore {
     const room = who.address
       ? await this.#transport.createDmWith(who.address)
       : await this.#transport.createDm(who.account as string);
+    const started = await this.#start(room, room.members ?? []);
     await this.refresh();
-    return room;
+    return started;
   }
 
   async openGroupRoom(accounts: string[]): Promise<RoomInfo> {
     const room = await this.#transport.createGroupRoom(accounts);
+    const started = await this.#start(room, accounts);
     await this.refresh();
-    return room;
+    return started;
+  }
+
+  /**
+   * Give a brand-new room a group, and invite the people in it.
+   *
+   * **Without this, opening a conversation produces one nobody can use.** The
+   * server creates a *room* — a membership list and a place for events — and
+   * that is all it can do: it has no group secret and never will (`docs/03`
+   * §5). Somebody has to create the MLS group and commit the other members in,
+   * and it has to be a client, and it may as well be the one that just asked
+   * for the room.
+   *
+   * Idempotent by the `room.group` check, because two devices opening the same
+   * derived DM id at once is an ordinary race — the loser gets the winner's
+   * room back from the server, already bound, and does nothing here.
+   */
+  async #start(room: RoomInfo, invite: string[]): Promise<RoomInfo> {
+    if (room.group) {
+      await this.#rooms.bind(room.id, room.group);
+      this.#rooms.listen(room.id);
+      return room;
+    }
+
+    // Key packages first: creating a group is useless if there is nothing on
+    // the shelf for the people being invited to be added with.
+    await this.#groups.replenish();
+    const groupId = await this.#groups.create(room.id);
+    await this.#rooms.bind(room.id, groupId);
+    // **And listen.** Binding says which keys open this room; listening is what
+    // makes the socket deliver into it. A caller that opened a conversation and
+    // then had to remember to subscribe would eventually not, and the symptom
+    // is "messages only appear when I switch rooms".
+    this.#rooms.listen(room.id);
+
+    const others = invite.filter((account) => account !== this.#account);
+    if (others.length) await this.#groups.invite(groupId, others);
+
+    return { ...room, group: groupId };
   }
 
   async addMembers(roomId: string, accounts: string[]): Promise<RoomInfo> {

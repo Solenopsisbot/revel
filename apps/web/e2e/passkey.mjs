@@ -101,13 +101,20 @@ ok('adding a passkey lands in the app', page.url().includes('/app'));
 
 const credentials = await cdp.send('WebAuthn.getCredentials', { authenticatorId });
 ok('the authenticator holds one discoverable credential', credentials.credentials.length === 1);
-ok('it is a resident key, so sign-in needs no handle', credentials.credentials[0].isResidentCredential);
+ok(
+  'it is a resident key, so sign-in needs no handle',
+  credentials.credentials[0].isResidentCredential,
+);
 
 // ---------------------------------------------------------------------------
 console.log('\nsign out, then sign in with the passkey alone');
 
 await page.evaluate(
-  () => new Promise((r) => { const q = indexedDB.deleteDatabase('revel-session'); q.onsuccess = q.onerror = q.onblocked = () => r(); }),
+  () =>
+    new Promise((r) => {
+      const q = indexedDB.deleteDatabase('revel-session');
+      q.onsuccess = q.onerror = q.onblocked = () => r();
+    }),
 );
 await page.goto(`${APP}/signin`);
 await page.waitForSelector('text=Sign in.', { timeout: 15000 });
@@ -131,7 +138,11 @@ ok('with a 32-byte account key', restored?.keyLen === 32);
 console.log('\nthe passkey is a third door, not a replacement');
 
 await page.evaluate(
-  () => new Promise((r) => { const q = indexedDB.deleteDatabase('revel-session'); q.onsuccess = q.onerror = q.onblocked = () => r(); }),
+  () =>
+    new Promise((r) => {
+      const q = indexedDB.deleteDatabase('revel-session');
+      q.onsuccess = q.onerror = q.onblocked = () => r();
+    }),
 );
 await page.goto(`${APP}/signin`);
 await fill('input[type=text]', handle);

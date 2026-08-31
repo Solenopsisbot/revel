@@ -4,7 +4,7 @@ import { createApp } from './app.js';
 import { sessionAuthenticator } from './auth.js';
 import { generateHostIdentity, hostKeyPath, parseHostKey, readHostKey } from './hostkey.js';
 import { Hub } from './hub.js';
-import { RateLimiter } from './ratelimit.js';
+import { LIMITS, RateLimiter } from './ratelimit.js';
 import { type Actor, SocketSession } from './socket.js';
 import { FileBlobBytes } from './store/blobstore.js';
 import { MemoryStore } from './store/memory.js';
@@ -148,6 +148,35 @@ const hostIdentity = await (async () => {
  * rate-limit key and the limiter stops existing. Turning it on is a statement
  * that something upstream overwrites the header.
  */
+/**
+ * Scale every rate-limit bucket, for local multi-client testing.
+ *
+ * In development every caller shares one bucket, because there is no proxy to
+ * read an address from (see `address` below) — so two browsers signing up
+ * against one box exhaust the `auth` capacity between them. That is the limiter
+ * working correctly and it also makes an honest end-to-end test impossible.
+ *
+ * Loud when set, like the store and the shard: a Host running with a scale of
+ * 50 is a Host with effectively no rate limiting, and that should never be a
+ * thing somebody discovers from an incident.
+ */
+const rateScale = Number(process.env.REVEL_RATE_SCALE ?? 1);
+const scaledLimits =
+  Number.isFinite(rateScale) && rateScale > 1
+    ? (Object.fromEntries(
+        Object.entries(LIMITS).map(([name, bucket]) => [
+          name,
+          {
+            capacity: Math.ceil(bucket.capacity * rateScale),
+            refillPerSecond: bucket.refillPerSecond * rateScale,
+          },
+        ]),
+      ) as typeof LIMITS)
+    : null;
+if (scaledLimits) {
+  console.warn(`rate limits: SCALED ${rateScale}x — development only, never a deployment`);
+}
+
 const trustProxy = process.env.REVEL_TRUST_PROXY === '1';
 const address = (req: Request): string => {
   if (trustProxy) {
@@ -196,7 +225,11 @@ const app = createApp({
   host,
   idp,
   externalSender: hostIdentity.certificate,
-  rateLimit: { limiter: new RateLimiter(), address },
+  rateLimit: {
+    limiter: new RateLimiter(),
+    address,
+    ...(scaledLimits ? { limits: scaledLimits } : {}),
+  },
   // `docs/29` §6. Unset means `/.well-known/security.txt` is not served, which
   // is deliberate: a contact nobody reads is worse than no contact at all.
   ...(process.env.REVEL_SECURITY_CONTACT

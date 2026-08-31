@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@revel/core": "workspace:*",
+    "@revel/crypto": "workspace:*",
     "@revel/crypto-wasm": "workspace:*",
     "@revel/protocol": "workspace:*",
     "@revel/ui": "workspace:*",

@@ -173,6 +173,21 @@ export interface RateLimitDeps {
    * to forward addresses yet.
    */
   address(req: Request): string;
+  /**
+   * Override the buckets. Absent means [`LIMITS`], which is the answer for
+   * anything reachable.
+   *
+   * It exists for **local multi-client testing**, and that is a narrow enough
+   * need to say out loud: in development every caller shares one bucket (see
+   * `address` above), so two browsers signing up against one box exhaust the
+   * `auth` capacity between them before either finishes. That is the limiter
+   * working, and it also makes an honest end-to-end test impossible without a
+   * way to say "not on this box".
+   *
+   * Not a way to turn limiting off — a caller still has to supply real buckets,
+   * so a misconfiguration is a *different* limit rather than none at all.
+   */
+  limits?: Record<LimitClass, Bucket>;
   /** Off by default in tests, where 600 requests a minute is a Tuesday. */
   enabled?: boolean;
 }
@@ -215,7 +230,7 @@ export function rateLimit(deps: RateLimitDeps) {
 
     const limit = classify(c.req.method, c.req.path);
     const subject = await subjectOf(deps, c.req.raw);
-    const verdict = deps.limiter.take(`${limit}:${subject}`, LIMITS[limit]);
+    const verdict = deps.limiter.take(`${limit}:${subject}`, (deps.limits ?? LIMITS)[limit]);
 
     if (!verdict.ok) {
       c.header('retry-after', String(verdict.retryAfter));

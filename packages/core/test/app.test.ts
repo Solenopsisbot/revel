@@ -27,9 +27,12 @@ async function pair() {
   await world.name(bob, 'bob');
   await bob.replenish();
 
+  // `openDm` starts the conversation as well as creating the room: the group,
+  // the binding and the invitation. It used to hand back a room nobody could
+  // send to until the caller separately created a group — which every caller
+  // would have had to know to do, and one of them would eventually forget.
   const room = await alice.core.directory.openDm({ address: 'bob' });
-  const group = await alice.open(room.id);
-  await alice.invite(group, [bob.account]);
+  const group = room.group as string;
   await world.settle();
 
   await bob.core.directory.refresh();
@@ -223,8 +226,6 @@ scenarios('the directory surface', () => {
     await carol.replenish();
 
     const room = await alice.core.directory.openGroupRoom([bob.account]);
-    const group = await alice.open(room.id);
-    await alice.invite(group, [bob.account]);
     await world.settle();
     await bob.core.directory.refresh();
     await bob.sync();
