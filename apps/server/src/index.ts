@@ -28,8 +28,15 @@ const store: Store = await (async () => {
     return new MemoryStore();
   }
   const pg = new PostgresStore({ url });
-  await pg.migrate();
+  const { applied, alreadyApplied } = await pg.migrate();
   console.log(`store: postgres (${new URL(url).host})`);
+  // Said out loud, because a schema change is the kind of thing somebody wants
+  // to see in a deploy log rather than infer afterwards.
+  if (applied.length) {
+    for (const m of applied) console.log(`  migrated: ${m.version} ${m.name}`);
+  } else {
+    console.log(`  schema up to date (${alreadyApplied} migrations)`);
+  }
   return pg;
 })();
 

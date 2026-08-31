@@ -36,10 +36,9 @@
  * else. Snowflake ids stay text the whole way and are never converted.
  */
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import type { Event, HandshakeRecord, KeyPackageSupply, KeyPackageUpload } from '@revel/protocol';
 import postgres from 'postgres';
+import { loadMigrations, type MigrateResult, migrate as runMigrations } from './migrate.js';
 import type {
   Account,
   Blob,
@@ -99,16 +98,14 @@ export class PostgresStore implements Store {
   }
 
   /**
-   * Apply `schema.sql`. Idempotent — every statement is `IF NOT EXISTS`.
+   * Apply any migration this database has not seen.
    *
-   * Not a migration framework, and deliberately not pretending to be one: this
-   * creates what is missing and never alters what is there, so it is safe to
-   * run at boot and useless for evolving a schema that already has data in it.
-   * The real thing lands with `revel init` (`docs/29` §7).
+   * Safe at every boot and safe from several processes at once — see
+   * `migrate.ts` for the three details that make that true. Returns what it
+   * did, so a caller can say so rather than migrating in silence.
    */
-  async migrate(): Promise<void> {
-    const path = fileURLToPath(new URL('./schema.sql', import.meta.url));
-    await this.sql.unsafe(readFileSync(path, 'utf8'));
+  async migrate(): Promise<MigrateResult> {
+    return runMigrations(this.sql, await loadMigrations());
   }
 
   async close(): Promise<void> {

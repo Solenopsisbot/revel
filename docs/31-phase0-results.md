@@ -1652,8 +1652,7 @@ back.
 
 ### What is still missing
 
-Real migrations — `migrate()` creates what is absent and never alters what is
-there, which is safe at boot and useless for evolving a schema with data in it.
+~~Real migrations~~ — done in §30.
 Blob bytes are in a `bytea` column, which is fine at this scale and wrong at any
 other; the seam is written down where the row is inserted. And the Host's
 external-sender key was still generated per process (§8) — Postgres does not fix
