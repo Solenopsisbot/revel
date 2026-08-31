@@ -4,15 +4,14 @@
 Two of them are code and are done; two are commitments, and commitments are not
 mine to write.
 
-The windows were decided on 2026-08-31 and are no longer drafts. **One bracket
-remains — the contact address — and this document must not be published with it
-still in place.** A disclosure policy that tells you to email `[decide]` is
-worse than no policy: it advertises that nobody is on the other end.
+Everything here was decided on 2026-08-31. There are no brackets left, which
+is the point: a disclosure policy with a `[decide]` in it is worse than no
+policy, because it advertises that nobody is on the other end.
 
 | `29` §6 asks for | Status |
 | --- | --- |
-| `/.well-known/security.txt` | Built. Not served until a contact is configured. |
-| A written disclosure policy | This document. Windows decided; needs an address. |
+| `/.well-known/security.txt` | Built, and now has a contact to serve. |
+| A written disclosure policy | This document. Decided and publishable. |
 | Signed authorisation letters | Not built. Kith's `authz.md` ports directly. |
 | A published threat model | Written (`03` §10). Needs to be a page, not a doc. |
 
@@ -20,7 +19,7 @@ worse than no policy: it advertises that nobody is on the other end.
 
 ## How to report
 
-Email **[decide: the address]**. It reaches a person, not a queue.
+Email **security@revel.chat**. It reaches a person, not a queue.
 
 Include what you did, what happened, and what you expected. A rough
 reproduction beats a polished write-up; we would rather read four sentences

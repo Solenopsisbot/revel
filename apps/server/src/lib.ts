@@ -32,6 +32,7 @@ export {
 export { mountRooms, type RoomDeps } from './rooms.js';
 export { type Actor, type SocketDeps, SocketSession } from './socket.js';
 export { MemoryStore } from './store/memory.js';
+export { PostgresStore, type PostgresStoreOptions } from './store/postgres.js';
 export type {
   Account,
   Blob,

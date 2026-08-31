@@ -6,8 +6,31 @@ import { Hub } from './hub.js';
 import { RateLimiter } from './ratelimit.js';
 import { type Actor, SocketSession } from './socket.js';
 import { MemoryStore } from './store/memory.js';
+import { PostgresStore } from './store/postgres.js';
+import type { Store } from './store/types.js';
 
-const store = new MemoryStore();
+/**
+ * Postgres when there is one, memory when there is not.
+ *
+ * The in-memory store is a real mode rather than a fallback — it is what
+ * `revel dev` runs on and what the whole test suite uses (`docs/29` §4). What
+ * it is *not* is a silent default for a deployment: a Host that came up on
+ * memory because a connection string was misspelled would work perfectly and
+ * lose every message on restart, which is the worst way for a mistake like that
+ * to behave. So the choice is printed at boot, every time.
+ */
+const store: Store = await (async () => {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    console.log('store: memory (no DATABASE_URL — nothing will survive a restart)');
+    return new MemoryStore();
+  }
+  const pg = new PostgresStore({ url });
+  await pg.migrate();
+  console.log(`store: postgres (${new URL(url).host})`);
+  return pg;
+})();
+
 const hub = new Hub();
 
 /**

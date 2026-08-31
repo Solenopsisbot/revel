@@ -1567,3 +1567,81 @@ need a renderer, and there is no DOM in this environment. That omission is
 written as a test rather than left as a gap, so it sits in the same list as the
 budgets and cannot quietly become "we measure §5". `docs/33`'s reference page is
 where they belong.
+
+---
+
+## 27. A5: Postgres, and a concurrency test that was lying
+
+The deferred track-A item, unblocked by Docker being available. `PostgresStore`
+implements all 52 methods of `Store`; `compose.yml` brings up Postgres 17;
+`schema.sql` is `docs/04` §1 as tables and is applied idempotently by
+`migrate()`. The server picks its store from `DATABASE_URL` and **prints which
+one it chose at boot** — a Host that came up on memory because a connection
+string was misspelled would work perfectly and lose everything on restart, which
+is the worst way for that mistake to behave.
+
+### One suite, two stores
+
+`MemoryStore` is what every other test in this repo runs against, which makes it
+load-bearing in a way a test double usually is not: **if it has drifted from
+Postgres, the whole suite goes green while production is wrong.** So the
+contract is written once, in `store.conformance.ts`, and run against both — 40
+tests each. `docs/29` §4's "the in-memory implementation lets the whole test
+suite run with no database" is only true if the two are the same implementation
+of the same contract, and the only way to know that is to check.
+
+The Postgres half skips when `DATABASE_URL` is unset, so `pnpm test` stays
+hermetic on a machine without Docker. That is a real trade and worth naming: a
+contributor can break Postgres without their local run noticing. It is one
+environment variable and a `docker compose up -d` away.
+
+### The ordering bug that has not happened yet
+
+Snowflakes are text — they exceed 2^53 and JSON has no bigint (`docs/04` §6) —
+and clients order them with `compareIds`, which compares as `BigInt`. A plain
+`ORDER BY id` in Postgres is **lexical**, and lexical disagrees with numeric the
+moment two ids differ in length: `'9999999999999999999'` sorts *after*
+`'10000000000000000000'` because `'9' > '1'`.
+
+Every ordered read sorts by `(length(id), id)` instead, which is exactly numeric
+order for decimal strings with no leading zeros — which is what a snowflake is —
+and the indexes are built on the same expression so the sort is free. There is a
+conformance test that inserts one id either side of a digit boundary, because
+this is invisible until a room crosses one, at which point history quietly
+reorders itself and no amount of testing at 19 digits would have caught it.
+
+### And a test that passed for the wrong reason
+
+Four things Postgres has to do that a `Map` cannot: one commit wins a race, a
+one-time key package is never handed out twice, a challenge is spent once, a
+duplicated retry deduplicates. `MemoryStore` gets all four for free because
+JavaScript does not interleave, so these live outside the shared suite.
+
+The one that matters is the **commit race**: two devices read epoch 4, both are
+told to go ahead, and the group forks in a way nothing can repair — everyone
+after the fork fails to decrypt, sender included. `SELECT … FOR UPDATE` on the
+group row is the line that prevents it.
+
+**The test passed with that line deleted. Twelve times out of twelve.**
+
+The reason is that `postgres` opens pooled connections lazily, so the first
+transaction finished in well under the millisecond the second needed to
+TCP-connect and authenticate. The two never overlapped, nothing contended, and
+the suite cheerfully reported that a lock it had never exercised was working.
+Warming the pool before racing anything fixed it: **six failures out of six with
+the lock removed, zero out of six with it restored.**
+
+Worth writing down as a general shape rather than one bug. A concurrency test
+that passes tells you nothing on its own — the only thing that makes it evidence
+is watching it fail when the protection is removed. Every one of the four here
+was checked that way, and the check is cheap: delete the line, run it, put it
+back.
+
+### What is still missing
+
+Real migrations — `migrate()` creates what is absent and never alters what is
+there, which is safe at boot and useless for evolving a schema with data in it.
+Blob bytes are in a `bytea` column, which is fine at this scale and wrong at any
+other; the seam is written down where the row is inserted. And the Host's
+external-sender key is still generated per process (§8), which Postgres does not
+fix, because it is a secret and this database is not where secrets go.

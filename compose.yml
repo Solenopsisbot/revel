@@ -1,0 +1,31 @@
+# Local Postgres for development and for running the store conformance suite
+# against something real (`docs/29` §4).
+#
+# The suite runs against `MemoryStore` unconditionally and against Postgres only
+# when `DATABASE_URL` is set, so `pnpm test` stays hermetic on a machine with no
+# Docker — which is the property that keeps people running it.
+#
+#   docker compose up -d
+#   DATABASE_URL=postgres://revel:revel@localhost:5432/revel pnpm test
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: revel-postgres
+    environment:
+      POSTGRES_USER: revel
+      POSTGRES_PASSWORD: revel
+      POSTGRES_DB: revel
+    ports:
+      - '5432:5432'
+    volumes:
+      - revel-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `pg_isready` returns before the server accepts connections on the first
+      # boot, so the retries are load-bearing rather than decorative.
+      test: ['CMD-SHELL', 'pg_isready -U revel -d revel']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  revel-pgdata:
