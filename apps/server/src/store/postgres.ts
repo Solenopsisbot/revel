@@ -38,6 +38,7 @@
 
 import type { Event, HandshakeRecord, KeyPackageSupply, KeyPackageUpload } from '@revel/protocol';
 import postgres from 'postgres';
+import type { BlobBytes } from './blobstore.js';
 import { loadMigrations, type MigrateResult, migrate as runMigrations } from './migrate.js';
 import type {
   Account,
@@ -85,16 +86,28 @@ export interface PostgresStoreOptions {
   url: string;
   /** Bounded, because a Host is not the only thing on its database server. */
   max?: number;
+  /**
+   * Where attachment ciphertext goes. Defaults to a `bytea` column.
+   *
+   * The default is fine at this scale and wrong at any other — every read pulls
+   * the whole attachment through the database connection, and the database is
+   * the one thing here that is hard to scale sideways. It stays the default
+   * because a Host that has not thought about storage yet should still work.
+   */
+  blobs?: BlobBytes;
 }
 
 export class PostgresStore implements Store {
   readonly sql: Sql;
+  /** `null` means the bytes live in the row. See [`PostgresStoreOptions`]. */
+  readonly #blobs: BlobBytes | null;
 
   constructor(options: PostgresStoreOptions | Sql) {
     this.sql =
       typeof options === 'function'
         ? (options as Sql)
         : postgres(options.url, { max: options.max ?? 10, onnotice: () => {} });
+    this.#blobs = typeof options === 'function' ? null : (options.blobs ?? null);
   }
 
   /**
@@ -533,6 +546,29 @@ export class PostgresStore implements Store {
   }
 
   async putBlob(blob: Blob, bytes: Uint8Array): Promise<Blob> {
+    // **Bytes first, then the row.** A crash in between leaves bytes nothing
+    // points at — garbage, collectable later. The other order leaves a row
+    // promising an attachment that was never stored, which is a message broken
+    // forever. See the note in `blobstore.ts`.
+    if (this.#blobs) {
+      await this.#blobs.put(blob.id, bytes);
+      const [inserted] = await this.sql`
+        INSERT INTO blobs (id, room_id, uploader, size, hash, created_at, purged_at, bytes)
+        VALUES (${blob.id}, ${blob.roomId}, ${blob.uploader}, ${blob.size}, ${blob.hash},
+                ${blob.createdAt}, ${blob.purgedAt}, NULL)
+        ON CONFLICT (id) DO NOTHING
+        RETURNING id, room_id, uploader, size, hash, created_at, purged_at`;
+      if (inserted) return this.#blob(inserted);
+      const [existing] = await this.sql`
+        SELECT id, room_id, uploader, size, hash, created_at, purged_at FROM blobs
+        WHERE id = ${blob.id}`;
+      return this.#blob(existing as Row);
+    }
+    return this.#putBlobInline(blob, bytes);
+  }
+
+  /** The `bytea` path: one statement, because the row and its bytes are one row. */
+  async #putBlobInline(blob: Blob, bytes: Uint8Array): Promise<Blob> {
     // **Returns what is stored, not what was offered.** First write wins, and
     // on a collision the caller gets the row that is actually there.
     //
@@ -563,12 +599,33 @@ export class PostgresStore implements Store {
   }
 
   async readBlob(id: string): Promise<Uint8Array | null> {
+    if (this.#blobs) {
+      // The row still decides whether this blob exists at all; the byte store
+      // only holds bytes. A purged blob has a row and no bytes, and that has to
+      // read as "gone" rather than "never existed" (`docs/22`).
+      const [row] = await this.sql`SELECT purged_at FROM blobs WHERE id = ${id}`;
+      if (!row || row.purged_at != null) return null;
+      return this.#blobs.get(id);
+    }
     const [row] = await this.sql`SELECT bytes FROM blobs WHERE id = ${id}`;
     const bytes = row?.bytes as Uint8Array | null | undefined;
     return bytes ? new Uint8Array(bytes) : null;
   }
 
   async purgeBlob(id: string, at: number): Promise<boolean> {
+    // **Bytes first, then the row** — the opposite order to `putBlob`, and for
+    // the opposite reason. A crash in between leaves a row claiming bytes it no
+    // longer has, which reads as already-purged. Marking the row first would
+    // leave ciphertext on disk *after somebody asked for it to be gone*, and
+    // that is not a failure mode a privacy product gets to have.
+    //
+    // Checked before deleting, so a second purge still reports `false` rather
+    // than re-deleting nothing and claiming success.
+    if (this.#blobs) {
+      const [live] = await this.sql`SELECT id FROM blobs WHERE id = ${id} AND purged_at IS NULL`;
+      if (!live) return false;
+      await this.#blobs.delete(id);
+    }
     const [row] = await this.sql`
       UPDATE blobs SET bytes = NULL, size = 0, purged_at = ${at}
       WHERE id = ${id} AND purged_at IS NULL

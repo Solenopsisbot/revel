@@ -471,6 +471,12 @@ export function describeStore(name: string, harness: StoreHarness): void {
 
     // -------------------------------------------------------------------------
     describe('blobs', () => {
+      // Snowflakes, like `deps.newId()` mints in the route. A fixture id of
+      // `blob-3` type-checks and works against a `bytea` column, and is
+      // rejected outright by a store that puts bytes on a filesystem — where a
+      // path assembled from a caller-influenced string is a traversal waiting
+      // to happen. A fixture that does not look like the real thing cannot
+      // catch that.
       const blob = (id: string) => ({
         id,
         roomId: 'room-1',
@@ -482,7 +488,7 @@ export function describeStore(name: string, harness: StoreHarness): void {
       });
 
       it('stores ciphertext and hands it back byte for byte', async () => {
-        const id = uniq('blob');
+        const id = snowflake();
         const bytes = new Uint8Array([1, 2, 250, 255]);
         await store.putBlob(blob(id), bytes);
 
@@ -496,7 +502,7 @@ export function describeStore(name: string, harness: StoreHarness): void {
         // memory overwrote, silently replacing somebody else's bytes. Both were
         // wrong in different directions; the honest answer is the row that is
         // there.
-        const id = uniq('blob');
+        const id = snowflake();
         await store.putBlob(blob(id), new Uint8Array([1]));
 
         const second = await store.putBlob(
@@ -512,7 +518,7 @@ export function describeStore(name: string, harness: StoreHarness): void {
       it('does not let a re-upload quietly un-purge an id', async () => {
         // The worse half of the same bug: the caller was told `purgedAt: null`
         // for a row that was still purged with its bytes gone.
-        const id = uniq('blob');
+        const id = snowflake();
         await store.putBlob(blob(id), new Uint8Array([1, 2, 3, 4]));
         await store.purgeBlob(id, 1_700_000_009_000);
 
@@ -526,7 +532,7 @@ export function describeStore(name: string, harness: StoreHarness): void {
         // Same shape as an event purge and for the same reason: a client with
         // the ciphertext cached needs to be told it is gone, and a missing row
         // cannot tell it anything.
-        const id = uniq('blob');
+        const id = snowflake();
         await store.putBlob(blob(id), new Uint8Array([1, 2, 3, 4]));
 
         expect(await store.purgeBlob(id, 1_700_000_009_000)).toBe(true);

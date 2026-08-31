@@ -2,13 +2,22 @@
  * The conformance suite, run against both stores.
  *
  * See `store.conformance.ts` for what it checks and why it is one suite rather
- * than two. This file is only the wiring: `MemoryStore` always, `PostgresStore`
- * when `DATABASE_URL` points at something.
+ * than two. This file is only the wiring: `MemoryStore` always, and — when
+ * `DATABASE_URL` points at something — `PostgresStore` twice, once with
+ * attachment bytes in a `bytea` column and once with them on disk.
+ *
+ * Three runs of one suite rather than three suites. The blob seam is only worth
+ * having if both sides of it behave identically, and "identically" is a claim
+ * that wants the same tests, not a new set.
  *
  *   docker compose up -d --wait
  *   DATABASE_URL=postgres://revel:revel@localhost:5432/revel pnpm test
  */
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { FileBlobBytes } from '../src/store/blobstore.js';
 import { MemoryStore } from '../src/store/memory.js';
 import { PostgresStore } from '../src/store/postgres.js';
 import { describeStore } from './store.conformance.js';
@@ -241,8 +250,33 @@ if (url) {
     });
   });
 
+  /**
+   * The same conformance suite, with attachment bytes on disk instead of in a
+   * `bytea` column.
+   *
+   * Which is the point of running it twice: the blob seam is only worth having
+   * if both sides of it behave identically, and "identically" is a claim that
+   * needs the same tests rather than a new set of them.
+   */
+  const fileDir = mkdtempSync(join(tmpdir(), 'revel-blobs-'));
+  const fileStore = new PostgresStore({
+    url,
+    max: 4,
+    blobs: new FileBlobBytes({ dir: fileDir }),
+  });
+
+  describeStore('PostgresStore (blobs on disk)', {
+    make: async () => fileStore,
+    reset: async () => {
+      await fileStore.sql.unsafe(`TRUNCATE ${TABLES.join(', ')} RESTART IDENTITY`);
+      rmSync(fileDir, { recursive: true, force: true });
+    },
+  });
+
   afterAll(async () => {
     await store.close();
+    await fileStore.close();
+    rmSync(fileDir, { recursive: true, force: true });
   });
 } else {
   describe('PostgresStore', () => {

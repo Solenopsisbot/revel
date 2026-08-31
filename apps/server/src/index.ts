@@ -6,6 +6,7 @@ import { generateHostIdentity, hostKeyPath, parseHostKey, readHostKey } from './
 import { Hub } from './hub.js';
 import { RateLimiter } from './ratelimit.js';
 import { type Actor, SocketSession } from './socket.js';
+import { FileBlobBytes } from './store/blobstore.js';
 import { MemoryStore } from './store/memory.js';
 import { PostgresStore } from './store/postgres.js';
 import type { Store } from './store/types.js';
@@ -27,9 +28,19 @@ const store: Store = await (async () => {
     console.log('store: memory (no DATABASE_URL — nothing will survive a restart)');
     return new MemoryStore();
   }
-  const pg = new PostgresStore({ url });
+  // Attachments on disk when a directory is configured, in the database when
+  // not. The default is fine at this scale and wrong at any other — every read
+  // pulls the whole attachment through the database connection — but it needs
+  // no configuration, and a Host that has not thought about storage yet should
+  // still work.
+  const blobDir = process.env.REVEL_BLOB_DIR;
+  const pg = new PostgresStore({
+    url,
+    ...(blobDir ? { blobs: new FileBlobBytes({ dir: blobDir }) } : {}),
+  });
   const { applied, alreadyApplied } = await pg.migrate();
   console.log(`store: postgres (${new URL(url).host})`);
+  console.log(`  blobs: ${blobDir ?? 'in the database (set REVEL_BLOB_DIR to move them)'}`);
   // Said out loud, because a schema change is the kind of thing somebody wants
   // to see in a deploy log rather than infer afterwards.
   if (applied.length) {

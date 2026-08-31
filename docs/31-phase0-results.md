@@ -1653,8 +1653,9 @@ back.
 ### What is still missing
 
 ~~Real migrations~~ — done in §30.
-Blob bytes are in a `bytea` column, which is fine at this scale and wrong at any
-other; the seam is written down where the row is inserted. And the Host's
+~~Blob bytes are in a `bytea` column~~ — there is a seam now (§30), with a
+filesystem implementation and the conformance suite running against both. And
+the Host's
 external-sender key was still generated per process (§8) — Postgres does not fix
 that, because it is a secret and a database is not where secrets go; §29 does.
 

@@ -31,6 +31,12 @@ export {
 } from './ratelimit.js';
 export { mountRooms, type RoomDeps } from './rooms.js';
 export { type Actor, type SocketDeps, SocketSession } from './socket.js';
+export {
+  type BlobBytes,
+  ColumnBlobBytes,
+  FileBlobBytes,
+  type FileBlobOptions,
+} from './store/blobstore.js';
 export { MemoryStore } from './store/memory.js';
 export { PostgresStore, type PostgresStoreOptions } from './store/postgres.js';
 export type {
