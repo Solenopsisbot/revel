@@ -44,8 +44,19 @@ export interface PrfProvider {
    * optional and refusing one must not look like a failure.
    */
   enrol(handle: string): Promise<Uint8Array | null>;
-  /** Get the PRF output again, later, for the same account. */
-  assert(handle: string): Promise<Uint8Array | null>;
+  /**
+   * Get the PRF output again, later.
+   *
+   * **Returns the handle as well**, because a passkey is a discoverable
+   * credential and the assertion says which account it is for. That is what
+   * makes signing in with a passkey a single click rather than "type your
+   * handle, then use your passkey" — the authenticator already knows, and
+   * asking anyway would be theatre.
+   *
+   * `handle` is optional and only narrows the choice; omitting it lets the
+   * person pick from whatever this device holds.
+   */
+  assert(handle?: string): Promise<{ prf: Uint8Array; handle: string } | null>;
 }
 
 export interface PasskeyDeps extends EnrolDeps {
@@ -91,16 +102,19 @@ export async function addPasskeyWrap(
  */
 export async function unlockWithPasskey(
   deps: PasskeyDeps,
-  input: { handle: string },
+  input: { handle?: string } = {},
 ): Promise<Enrolled> {
-  const prf = await deps.prf.assert(input.handle);
-  if (!prf) throw new EnrolError('passkey_declined');
+  const asserted = await deps.prf.assert(input.handle);
+  if (!asserted) throw new EnrolError('passkey_declined');
 
   const { envelope } = deps;
-  const key = prf.slice(0, 32);
+  const key = asserted.prf.slice(0, 32);
+  // The authenticator says which account this is for, so signing in with a
+  // passkey needs nothing typed at all.
+  const handle = input.handle ?? asserted.handle;
 
   const res = await deps.transport.post('/idp/recover/finish', {
-    handle: input.handle,
+    handle,
     kind: 'passkey',
     verifier: b64(envelope.recoveryVerifier(key)),
   });
@@ -116,11 +130,15 @@ export async function unlockWithPasskey(
   const wrap = body.wraps.find((w) => w.kind === 'passkey');
   if (!wrap) throw new EnrolError('no_passkey_wrap');
 
-  return {
-    accountPub: body.accountPub,
-    handle: body.handle,
-    accountKey: envelope.unwrap(unb64(wrap.blob), key),
-  };
+  const accountKey = envelope.unwrap(unb64(wrap.blob), key);
+  // A passkey unlock is a sign-in on a device that has no device key yet, so it
+  // mints one like every other path that produces an account key.
+  const device = await deps.signDeviceCert(accountKey, deps.deviceLabel ?? 'this device');
+  await deps.transport
+    .post('/idp/devices', { certificate: b64(device.certificate) })
+    .catch(() => undefined);
+
+  return { accountPub: body.accountPub, handle: body.handle, accountKey, device };
 }
 
 function errorOf(body: unknown, fallback: string): string {

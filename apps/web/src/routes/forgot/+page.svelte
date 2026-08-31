@@ -18,6 +18,51 @@ let error = $state('');
 /** Two steps: prove the code, then choose a password. */
 let step = $state<'code' | 'password'>('code');
 
+/** `null` until asked; `false` hides the passkey route entirely. */
+let passkeys = $state<boolean | null>(null);
+let passkeyError = $state('');
+$effect(() => {
+  if (passkeys !== null) return;
+  void import('$lib/identity.js').then(async (m) => {
+    passkeys = await m.passkeysAvailable();
+  });
+});
+
+/**
+ * The other door (`docs/03` §4's "or the passkey path").
+ *
+ * Goes straight into the app rather than to the password step: somebody who has
+ * their passkey is not locked out, and forcing them to choose a new password
+ * would be making them do work to fix a problem they do not have.
+ */
+async function withPasskey() {
+  busy = true;
+  passkeyError = '';
+  try {
+    const { unlockWithPasskey, saveSession } = await import('@revel/core');
+    const { enrolDeps, webAuthnPrf } = await import('$lib/identity.js');
+    const result = await unlockWithPasskey({
+      ...(await enrolDeps()),
+      prf: webAuthnPrf,
+      authorization: '',
+    });
+    await saveSession({
+      accountPub: result.accountPub,
+      handle: result.handle,
+      accountKey: result.accountKey,
+      device: result.device,
+    });
+    goto('/app');
+  } catch (err) {
+    console.error('passkey unlock failed', err);
+    const failure = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
+    passkeyError =
+      failure === 'passkey_declined' ? '' : "That passkey doesn't open an account here.";
+  } finally {
+    busy = false;
+  }
+}
+
 /**
  * Check the code by actually recovering with it.
  *
@@ -74,6 +119,7 @@ async function reset() {
       accountPub: result.accountPub,
       handle: result.handle,
       accountKey: result.accountKey,
+      device: result.device,
     });
     // Both secrets out of memory before leaving. The recovery code still works
     // — resetting does not spend it — but there is no reason for it to sit here.
@@ -133,11 +179,16 @@ async function reset() {
         {/if}
       </section>
 
-      <section class="way">
-        <h2>Passkey</h2>
-        <p>If you enrolled one, it can unlock your account too — no code needed.</p>
-        <Button variant="secondary">Use a passkey</Button>
-      </section>
+      {#if passkeys !== false}
+        <section class="way">
+          <h2>Passkey</h2>
+          <p>If you enrolled one, it can unlock your account too — no code needed.</p>
+          {#if passkeyError}<p class="error" role="alert">{passkeyError}</p>{/if}
+          <Button variant="secondary" disabled={busy} onclick={withPasskey}>
+            {busy ? 'Waiting for your device…' : 'Use a passkey'}
+          </Button>
+        </section>
+      {/if}
     </div>
 
     <p class="fine">

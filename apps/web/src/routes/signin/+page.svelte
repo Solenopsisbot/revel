@@ -1,10 +1,12 @@
 <script lang="ts">
+import { renderSVG } from 'uqr';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import Icon from '$lib/Icon.svelte';
 import Button from '$lib/moment/Button.svelte';
 import Field from '$lib/moment/Field.svelte';
 import Moment from '$lib/moment/Moment.svelte';
+import { pairing } from '$lib/pairing.svelte.js';
 
 /**
  * The normal path: handle + password + second factor. Deliberately boring —
@@ -53,6 +55,7 @@ async function attempt(totp?: string) {
       accountPub: result.accountPub,
       handle: result.handle,
       accountKey: result.accountKey,
+      device: result.device,
     });
     // The password is gone from memory the moment it is no longer needed. Not
     // a serious defence — a page can be inspected — but the cheapest one there
@@ -80,6 +83,84 @@ async function attempt(totp?: string) {
 async function submit() {
   if (!ready) return;
   await attempt();
+}
+
+/**
+ * The QR, rendered from whatever the pairing channel produced.
+ *
+ * `$derived` rather than generated in `startPairing`, so it cannot get out of
+ * step with the link it is meant to encode — a QR showing a stale channel is
+ * worse than no QR, because it scans.
+ */
+const qrSvg = $derived(pairing.link ? renderSVG(pairing.link, { border: 1 }) : '');
+
+async function startPairing() {
+  await pairing.begin(async (paired) => {
+    const { saveSession } = await import('@revel/core');
+    const { enrolDeps } = await import('$lib/identity.js');
+    // The key arrived; the device key is this device's own and is minted here,
+    // exactly as it would be after a password sign-in. `docs/03` §3 has the
+    // *existing* device sign the new certificate; doing it here instead means
+    // the private half never crosses the channel, which is strictly better and
+    // costs one signature the account key can make locally.
+    const { signDeviceCert } = await enrolDeps();
+    const device = await signDeviceCert(paired.accountKey, 'this device');
+    await saveSession({ ...paired, device });
+    goto('/app');
+  });
+}
+
+// Start when the step opens, stop when it closes. A hidden page quietly polling
+// every two seconds is the kind of thing that is invisible until a bill arrives.
+$effect(() => {
+  if (step === 'scan') void startPairing();
+  else pairing.stop();
+  return () => pairing.stop();
+});
+
+/** `null` until asked; `false` means this device cannot offer one. */
+let passkeys = $state<boolean | null>(null);
+$effect(() => {
+  if (passkeys !== null) return;
+  void import('$lib/identity.js').then(async (m) => {
+    passkeys = await m.passkeysAvailable();
+  });
+});
+
+/**
+ * Sign in with a passkey. Nothing typed, not even the handle.
+ *
+ * The credential is discoverable, so the authenticator offers whatever it holds
+ * for this site and tells us which account was chosen. Asking for a handle
+ * first and *then* for the passkey would be theatre — the device already knows.
+ */
+async function withPasskey() {
+  busy = true;
+  error = '';
+  try {
+    const { unlockWithPasskey, saveSession } = await import('@revel/core');
+    const { enrolDeps, webAuthnPrf } = await import('$lib/identity.js');
+    const result = await unlockWithPasskey({
+      ...(await enrolDeps()),
+      prf: webAuthnPrf,
+      authorization: '',
+    });
+    await saveSession({
+      accountPub: result.accountPub,
+      handle: result.handle,
+      accountKey: result.accountKey,
+      device: result.device,
+    });
+    goto('/app');
+  } catch (err) {
+    console.error('passkey sign-in failed', err);
+    const failure = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
+    // Declining the prompt is a choice, not a failure, and saying "that didn't
+    // work" to somebody who pressed cancel is a lie about what they did.
+    error = failure === 'passkey_declined' ? '' : "That passkey doesn't open an account here.";
+  } finally {
+    busy = false;
+  }
 }
 
 async function verify() {
@@ -110,6 +191,13 @@ async function verify() {
 
         <div class="row">
           <Button type="submit" disabled={!ready || busy}>{busy ? 'Checking…' : 'Sign in'}</Button>
+          {#if passkeys}
+            <!-- Offered only where it can work. A button that opens a dialog
+                 the device cannot fulfil is worse than no button. -->
+            <Button variant="secondary" disabled={busy} onclick={withPasskey}>
+              Use a passkey
+            </Button>
+          {/if}
           <Button variant="ghost" onclick={() => (step = 'scan')}>Have another device handy? Scan instead</Button>
         </div>
       </form>
@@ -152,10 +240,38 @@ async function verify() {
         Open Revel on a device you already use, and point it at this code. Nothing
         gets typed, and your password never leaves the other device.
       </p>
-      <div class="qr" role="img" aria-label="Pairing code"></div>
-      <p class="waiting"><span class="pulse"></span> Waiting for the other device…</p>
+      {#if pairing.link}
+        <!-- `svg` rather than a canvas: it scales to whatever the screen is,
+             and a QR that is fuzzy is a QR that does not scan. -->
+        <div class="qr" role="img" aria-label="Pairing code">{@html qrSvg}</div>
+        <!-- The same digits appear on the other device before it sends
+             anything. A QR is a thing an attacker can also put on a screen, so
+             the confirmation is a comparison a person can actually make. -->
+        <p class="print">{pairing.fingerprint}</p>
+        <!-- The link in text as well as in the QR. A desktop with no camera has
+             to be able to complete this, and copy-paste is the fallback any
+             camera flow needs anyway. -->
+        <p class="link" title="Paste this on your other device">{pairing.link}</p>
+      {:else}
+        <div class="qr" role="img" aria-label="Pairing code"></div>
+      {/if}
+
+      {#if pairing.status === 'waiting'}
+        <p class="waiting"><span class="pulse"></span> Waiting for the other device…</p>
+      {:else if pairing.status === 'expired'}
+        <p class="error" role="alert">
+          That code has expired. They only last five minutes — start again if you
+          still have the other device to hand.
+        </p>
+      {:else if pairing.status === 'failed'}
+        <p class="error" role="alert">Could not reach the server.</p>
+      {/if}
+
       <div class="row">
-        <Button variant="ghost" onclick={() => (step = 'credentials')}>
+        {#if pairing.status === 'expired' || pairing.status === 'failed'}
+          <Button onclick={startPairing}>Show a new code</Button>
+        {/if}
+        <Button variant="ghost" onclick={() => { pairing.stop(); step = 'credentials'; }}>
           <Icon name="reply" size={16} /> Use my password instead
         </Button>
       </div>
@@ -164,6 +280,20 @@ async function verify() {
 </Moment>
 
 <style>
+  /* Monospace and spaced out: this is compared digit by digit against another
+     screen, and a proportional font makes that harder than it needs to be. */
+  .print {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--text-lg); letter-spacing: .06em; text-align: center;
+    margin: 14px 0 0; color: color-mix(in oklab, var(--text) 82%, transparent);
+  }
+  .qr :global(svg) { width: 100%; height: auto; display: block; }
+  .link {
+    font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--text-xs);
+    text-align: center; word-break: break-all; margin: 8px 0 0;
+    color: color-mix(in oklab, var(--text) 56%, transparent); user-select: all;
+  }
+
   .pane { animation: enter var(--t-slow) var(--ease); }
   @keyframes enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 

@@ -36,6 +36,14 @@ export interface Session {
   handle: string;
   /** The account private seed. Only in memory, only after unsealing. */
   accountKey: Uint8Array;
+  /**
+   * This device's own signing key and its certificate, when it has one.
+   *
+   * Sealed alongside the account key rather than separately: they are lost and
+   * found together, and a device key without the certificate the account signed
+   * for it is a key nothing will accept.
+   */
+  device?: { certificate: Uint8Array; devicePub: Uint8Array; deviceSecret: Uint8Array };
 }
 
 /** The row as it sits in IndexedDB: a key that cannot be exported, and bytes. */
@@ -99,6 +107,24 @@ export async function saveSession(
     'decrypt',
   ]);
 
+  // Everything secret in one blob: the account key and the device key are lost
+  // and found together, and a device key without its certificate is a key
+  // nothing will accept.
+  const secrets = new TextEncoder().encode(
+    JSON.stringify({
+      accountKey: [...session.accountKey],
+      ...(session.device
+        ? {
+            device: {
+              certificate: [...session.device.certificate],
+              devicePub: [...session.device.devicePub],
+              deviceSecret: [...session.device.deviceSecret],
+            },
+          }
+        : {}),
+    }),
+  );
+
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   // Copied rather than passed through, for the reason `identity.ts` gives: a
   // view is both a type WebCrypto will not take and a thing that can change
@@ -107,7 +133,7 @@ export async function saveSession(
     await crypto.subtle.encrypt(
       { name: 'AES-GCM', iv: new Uint8Array(nonce) },
       wrappingKey,
-      new Uint8Array(session.accountKey),
+      new Uint8Array(secrets),
     ),
   );
   const sealed = new Uint8Array(nonce.length + ciphertext.length);
@@ -152,10 +178,23 @@ export async function loadSession(options: SessionStoreOptions = {}): Promise<Se
         row.wrappingKey,
         new Uint8Array(ciphertext),
       );
+      const secrets = JSON.parse(new TextDecoder().decode(plain)) as {
+        accountKey: number[];
+        device?: { certificate: number[]; devicePub: number[]; deviceSecret: number[] };
+      };
       return {
         accountPub: row.accountPub,
         handle: row.handle,
-        accountKey: new Uint8Array(plain),
+        accountKey: new Uint8Array(secrets.accountKey),
+        ...(secrets.device
+          ? {
+              device: {
+                certificate: new Uint8Array(secrets.device.certificate),
+                devicePub: new Uint8Array(secrets.device.devicePub),
+                deviceSecret: new Uint8Array(secrets.device.deviceSecret),
+              },
+            }
+          : {}),
       };
     } catch {
       await tx(db, 'readwrite', (s) => s.delete(KEY));

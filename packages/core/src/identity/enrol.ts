@@ -40,11 +40,29 @@ export interface IdpTransport {
   post(path: string, body: unknown): Promise<{ status: number; body: unknown }>;
 }
 
+/**
+ * A device's own keys, and the certificate the account signed for them.
+ *
+ * `docs/03` §1: each device generates its own signing key, and the account key
+ * signs a certificate binding it. The device key is what actually sits in MLS
+ * groups — one leaf per device, as RFC 9420 intends — so it has to outlive the
+ * moment the account key was available, which is why it comes back here rather
+ * than staying inside the signer.
+ */
+export interface DeviceMaterial {
+  certificate: Uint8Array;
+  devicePub: Uint8Array;
+  /** Stored on this device and nowhere else. Never uploaded. */
+  deviceSecret: Uint8Array;
+}
+
 export interface EnrolDeps {
   transport: IdpTransport;
   envelope: EnvelopeApi;
-  /** Signs a device certificate with the account key. Platform-specific. */
-  signDeviceCert(accountSeed: Uint8Array, label: string): Promise<Uint8Array>;
+  /** Generates a device key and signs its certificate. Platform-specific. */
+  signDeviceCert(accountSeed: Uint8Array, label: string): Promise<DeviceMaterial>;
+  /** What to call this device in its certificate. Shown on the devices screen. */
+  deviceLabel?: string;
 }
 
 const b64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes));
@@ -56,6 +74,16 @@ export interface Enrolled {
   handle: string;
   /** The account private seed. Seal it to the device and forget this copy. */
   accountKey: Uint8Array;
+  /**
+   * This device's own key and certificate.
+   *
+   * Minted by every flow that produces an account key, because every one of
+   * them is happening *on a device that does not have one yet* — `docs/03` §3:
+   * "generate a device key, sign its device cert with the account key, upload
+   * the cert". A device without this can hold an account and cannot act as one
+   * at a Host.
+   */
+  device: DeviceMaterial;
 }
 
 export interface SignUpResult extends Enrolled {
@@ -112,7 +140,7 @@ export async function signUp(deps: EnrolDeps, input: SignUpInput): Promise<SignU
   const salt = envelope.generateSalt();
   const rk = envelope.recoveryKey(recoveryCode, salt);
 
-  const deviceCert = await deps.signDeviceCert(accountKey, input.deviceLabel);
+  const device = await deps.signDeviceCert(accountKey, input.deviceLabel);
 
   const finished = await transport.post('/idp/register/finish', {
     handle: input.handle,
@@ -122,7 +150,7 @@ export async function signUp(deps: EnrolDeps, input: SignUpInput): Promise<SignU
       { kind: 'password', blob: b64(envelope.wrap(accountKey, kek)) },
       { kind: 'recovery', blob: b64(envelope.wrap(accountKey, rk)), salt: b64(salt) },
     ],
-    deviceCert: b64(deviceCert),
+    deviceCert: b64(device.certificate),
     recoveryVerifier: b64(envelope.recoveryVerifier(rk)),
   });
   const account = expect<{ handle: string; accountPub: string }>(finished, 'handle_taken');
@@ -132,6 +160,7 @@ export async function signUp(deps: EnrolDeps, input: SignUpInput): Promise<SignU
     handle: account.handle,
     accountKey,
     recoveryCode,
+    device,
   };
 }
 
@@ -188,13 +217,16 @@ export async function signIn(deps: EnrolDeps, input: SignInInput): Promise<Enrol
   if (!wrap) throw new EnrolError('no_password_wrap');
 
   const kek = envelope.kekFromExportKey(unb64url(result.exportKey));
+  // A wrap that does not open here means the server handed back somebody else's
+  // blob, or the wrong one — either way it throws rather than returning a key
+  // that is not the account's.
+  const accountKey = envelope.unwrap(unb64(wrap.blob), kek);
+
   return {
     accountPub: body.accountPub,
     handle: body.handle,
-    // A wrap that does not open here means the server handed back somebody
-    // else's blob, or the wrong one — either way it throws rather than
-    // returning a key that is not the account's.
-    accountKey: envelope.unwrap(unb64(wrap.blob), kek),
+    accountKey,
+    device: await enrolThisDevice(deps, accountKey),
   };
 }
 
@@ -233,10 +265,12 @@ export async function recover(deps: EnrolDeps, input: RecoverInput): Promise<Enr
   const wrap = body.wraps.find((w) => w.kind === 'recovery');
   if (!wrap) throw new EnrolError('no_recovery_wrap');
 
+  const accountKey = envelope.unwrap(unb64(wrap.blob), rk);
   return {
     accountPub: body.accountPub,
     handle: body.handle,
-    accountKey: envelope.unwrap(unb64(wrap.blob), rk),
+    accountKey,
+    device: await enrolThisDevice(deps, accountKey),
   };
 }
 
@@ -290,6 +324,23 @@ export async function resetPassword(deps: EnrolDeps, input: ResetInput): Promise
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * Mint this device's key and register its certificate.
+ *
+ * Every flow that produces an account key is running on a device that does not
+ * have one yet, so this is the same three lines each time: generate, sign,
+ * upload. Uploading is best-effort — a Host that is unreachable must not turn a
+ * successful sign-in into a failure, and the certificate is re-registrable at
+ * any time because registration is idempotent.
+ */
+async function enrolThisDevice(deps: EnrolDeps, accountKey: Uint8Array): Promise<DeviceMaterial> {
+  const device = await deps.signDeviceCert(accountKey, deps.deviceLabel ?? 'this device');
+  await deps.transport
+    .post('/idp/devices', { certificate: b64(device.certificate) })
+    .catch(() => undefined);
+  return device;
+}
 
 interface StoredWrapWire {
   kind: string;

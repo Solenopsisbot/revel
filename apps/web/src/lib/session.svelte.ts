@@ -28,6 +28,15 @@ class DeviceSession {
     try {
       const { loadSession } = await import('@revel/core');
       this.current = await loadSession();
+      if (this.current) {
+        // A device token, so this device can act at the Host. Floating on
+        // purpose: a Host that is unreachable must not stop the app opening —
+        // everything local still works, and the token is retried on next use.
+        const { authenticateDevice } = await import('./identity.js');
+        void authenticateDevice(this.current).catch((err) =>
+          console.error('device authentication failed', err),
+        );
+      }
     } catch (err) {
       // A storage failure is not a reason to be stuck on a blank page. Treated
       // as signed out, which is recoverable by signing in — the alternative is
@@ -42,7 +51,9 @@ class DeviceSession {
 
   async signOut(): Promise<void> {
     const { clearSession } = await import('@revel/core');
+    const { forgetDeviceToken } = await import('./identity.js');
     await clearSession();
+    forgetDeviceToken();
     this.current = null;
   }
 }

@@ -83,9 +83,14 @@ beforeEach(() => {
         return { status: res.status, body: await res.json().catch(() => null) };
       },
     },
-    // A device cert is `device.rs`'s job and not this file's; a stand-in keeps
-    // the test about enrolment.
-    signDeviceCert: async (_seed, label) => new TextEncoder().encode(`cert:${label}`),
+    // A stand-in device. The real one runs the wasm `Device`, which has its own
+    // tests in `crates/revel-crypto`; what this file is about is enrolment.
+    signDeviceCert: async (_seed, label) => ({
+      certificate: new TextEncoder().encode(`cert:${label}`),
+      devicePub: new Uint8Array(32).fill(1),
+      deviceSecret: new Uint8Array(32).fill(2),
+    }),
+    deviceLabel: 'a test device',
   };
 });
 
@@ -240,9 +245,11 @@ describe('the passkey wrap', () => {
    * injected function. Everything on either side of it is real: the wrapping,
    * the upload, the fetch and the unseal all run the same code the browser does.
    */
-  const authenticator = (bytes: number, declines = false) => ({
+  const authenticator = (bytes: number, declines = false, handle = 'viola') => ({
     enrol: async () => (declines ? null : new Uint8Array(32).fill(bytes)),
-    assert: async () => (declines ? null : new Uint8Array(32).fill(bytes)),
+    // Returns the handle as well as the bytes: a passkey is a discoverable
+    // credential, so the authenticator knows which account it is for.
+    assert: async () => (declines ? null : { prf: new Uint8Array(32).fill(bytes), handle }),
   });
 
   it('adds a third door to the same key', async () => {
@@ -260,9 +267,11 @@ describe('the passkey wrap', () => {
       await addPasskeyWrap(withPasskey, { handle: 'viola', accountKey: created.accountKey }),
     ).toBe(true);
 
-    // The same account key, through a door the password never touched.
-    const opened = await unlockWithPasskey(withPasskey, { handle: 'viola' });
+    // The same account key, through a door the password never touched — and
+    // without a handle, because the authenticator supplies it.
+    const opened = await unlockWithPasskey(withPasskey);
     expect(opened.accountKey).toEqual(created.accountKey);
+    expect(opened.handle).toBe('viola');
   });
 
   it('leaves the password and the recovery code working', async () => {

@@ -23,12 +23,114 @@ export const transport: IdpTransport = {
   async post(path, body) {
     const res = await fetch(`${IDP}${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        // Sent when there is one. Most of these routes are unauthenticated by
+        // design — signing in is what you do when you have nothing — so this is
+        // additive rather than required.
+        ...(deviceToken ? { authorization: `Bearer ${deviceToken}` } : {}),
+      },
       body: JSON.stringify(body),
     });
     return { status: res.status, body: await res.json().catch(() => null) };
   },
 };
+
+/**
+ * The bearer token for this device, once it has one.
+ *
+ * In memory only: it is short-lived and re-derivable from the device key, so
+ * persisting it would add a thing to steal and save nothing worth saving.
+ */
+let deviceToken: string | null = null;
+
+/**
+ * Register this device and get a session token (`docs/03` §2).
+ *
+ * The device-key challenge-response, from the client side: register the
+ * certificate the account signed, ask for a nonce, sign it with the device key,
+ * exchange it for a token. **No password anywhere** — that is the whole point
+ * of devices having their own keys.
+ *
+ * Returns `null` when this device has no certificate yet, which is an ordinary
+ * state rather than a failure: an account created before device material
+ * existed simply cannot authenticate to a Host until it re-enrols.
+ */
+export async function authenticateDevice(session: {
+  accountKey: Uint8Array;
+  device?: { certificate: Uint8Array; deviceSecret: Uint8Array };
+}): Promise<string | null> {
+  if (!session.device) return null;
+  if (deviceToken) return deviceToken;
+
+  const [{ authPayload, decodeDeviceCert, toAccountId, toBase64, fromBase64 }, wasm] =
+    await Promise.all([import('@revel/protocol'), import('@revel/crypto-wasm')]);
+  await wasm.default();
+
+  // The protocol's decoder rather than the wasm one: `readDeviceCert` returns a
+  // `MemberInfo` for rendering and does not carry the device key, which is the
+  // one field this needs.
+  const cert = decodeDeviceCert(session.device.certificate);
+  if (!cert) return give_up('the stored device certificate does not decode');
+  const devicePub: string = toAccountId(cert.devicePub);
+
+  // `restore` re-issues the certificate rather than storing it, which is why it
+  // needs the account key — and why this can only run on a device that has one.
+  // That is the right constraint: authenticating *is* proving this device
+  // belongs to the account.
+  const account = wasm.Account.fromSecret(session.accountKey);
+  const device = wasm.Device.restore(account, cert.label, session.device.deviceSecret);
+
+  const registered = await transport.post('/idp/devices', {
+    certificate: toBase64(device.certificate),
+  });
+  if (registered.status >= 400) {
+    return give_up(`registering this device failed (${registered.status})`, registered.body);
+  }
+
+  const challenge = await transport.post('/auth/challenge', { device: devicePub });
+  if (challenge.status < 200 || challenge.status >= 300) {
+    return give_up(`no challenge (${challenge.status})`, challenge.body);
+  }
+  const { nonce, host } = challenge.body as { nonce: string; host: string };
+
+  // Domain-separated inside wasm, so this key can never be asked to sign
+  // something replayable as an MLS handshake.
+  const signature = device.signAuth(authPayload(host, fromBase64(nonce), cert.devicePub));
+
+  const granted = await transport.post('/auth/session', {
+    device: devicePub,
+    nonce,
+    signature: toBase64(signature),
+  });
+  // Any 2xx. The route answers **201** — a session is created, not fetched — and
+  // checking for exactly 200 threw away a perfectly good token and reported it
+  // as a refused signature. Found because the failure said what it was.
+  if (granted.status < 200 || granted.status >= 300) {
+    return give_up(`the Host refused the signature (${granted.status})`, granted.body);
+  }
+  deviceToken = (granted.body as { token: string }).token;
+  return deviceToken;
+}
+
+/**
+ * Give up, out loud.
+ *
+ * Every one of these used to be a bare `return null`, which made "this device
+ * cannot talk to the Host" indistinguishable from "this device has no
+ * certificate yet" — and left nothing in the console either way. The same
+ * mistake as a screen that says "something went wrong" and logs nothing, and it
+ * cost an hour of guessing before it was fixed.
+ */
+function give_up(why: string, detail?: unknown): null {
+  console.error(`device authentication: ${why}`, detail ?? '');
+  return null;
+}
+
+/** Forget the token. Called on sign-out, alongside clearing the session. */
+export function forgetDeviceToken(): void {
+  deviceToken = null;
+}
 
 let envelopePromise: Promise<EnvelopeApi> | null = null;
 
@@ -56,18 +158,29 @@ export function loadEnvelope(): Promise<EnvelopeApi> {
 /**
  * Everything `packages/core`'s flows need.
  *
- * `signDeviceCert` is a stub for now and says so: signing a device certificate
- * is `device.rs`'s job and needs the device keypair, which does not exist until
- * there is somewhere durable to keep it. Returning empty bytes means an account
- * can be created and recovered and its devices are not yet real — which is a
- * true statement about where this is, and better than a certificate that looks
- * signed and is not.
+ * `signDeviceCert` is real now: the account seed goes back into wasm just long
+ * enough to sign, a fresh device key is generated there, and what comes out is
+ * the certificate plus the device's own keys. `docs/03` §1 — one leaf per
+ * device, and the account key signs the binding.
+ *
+ * The account key crosses the wasm boundary twice in a lifetime and never
+ * leaves the tab; the device secret is what gets kept, sealed with the session.
  */
 export async function enrolDeps(): Promise<EnrolDeps> {
   return {
     transport,
     envelope: await loadEnvelope(),
-    signDeviceCert: async () => new Uint8Array(0),
+    signDeviceCert: async (accountSeed, label) => {
+      const wasm = await import('@revel/crypto-wasm');
+      await wasm.default();
+      const account = wasm.Account.fromSecret(accountSeed);
+      const device = new wasm.Device(account, label);
+      return {
+        certificate: device.certificate,
+        devicePub: device.publicKey,
+        deviceSecret: device.secretKey,
+      };
+    },
   };
 }
 
@@ -155,7 +268,7 @@ export const webAuthnPrf: PrfProvider = {
       const direct = prfOutput(credential);
       if (direct) return direct;
       // Created, but the output was not returned with it. Ask once more.
-      return credential ? this.assert(handle) : null;
+      return credential ? ((await this.assert(handle))?.prf ?? null) : null;
     } catch (err) {
       // Declining is a `NotAllowedError`, and it is an answer rather than a
       // failure — a passkey is optional and refusing one is a real choice.
@@ -164,8 +277,13 @@ export const webAuthnPrf: PrfProvider = {
     }
   },
 
-  async assert(_handle) {
+  async assert() {
     try {
+      // No `allowCredentials`: the passkey is a discoverable credential
+      // (`residentKey: 'required'` at enrolment), so the authenticator offers
+      // whatever it holds for this site and tells us which account was chosen.
+      // That is what makes passkey sign-in one click instead of "type your
+      // handle, then use your passkey".
       const credential = (await navigator.credentials.get({
         publicKey: {
           challenge: crypto.getRandomValues(new Uint8Array(32)),
@@ -174,7 +292,14 @@ export const webAuthnPrf: PrfProvider = {
           extensions: { prf: { eval: { first: PRF_SALT } } },
         },
       })) as PublicKeyCredential | null;
-      return prfOutput(credential);
+
+      const prf = prfOutput(credential);
+      if (!prf || !credential) return null;
+
+      // `user.id` was the handle at enrolment, so this is where it comes back.
+      const userHandle = (credential.response as AuthenticatorAssertionResponse).userHandle;
+      if (!userHandle) return null;
+      return { prf, handle: new TextDecoder().decode(userHandle) };
     } catch (err) {
       console.error('passkey assertion did not complete', err);
       return null;

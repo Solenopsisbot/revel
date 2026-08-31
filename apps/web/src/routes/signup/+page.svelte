@@ -64,6 +64,7 @@ async function create() {
       accountPub: result.accountPub,
       handle: result.handle,
       accountKey: result.accountKey,
+      device: result.device,
     });
     // Only now — the code has to be on screen before the password is gone from
     // it, or a failure between the two would leave an account nobody can reach.
