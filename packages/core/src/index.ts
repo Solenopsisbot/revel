@@ -40,6 +40,20 @@ export {
   signUp,
 } from './identity/enrol.js';
 export {
+  addFace,
+  type Face,
+  type FaceBook,
+  forgetFaces,
+  loadFaces,
+  refOf,
+  removeFace,
+  revealsLink,
+  saveFaces,
+  speakAs,
+  speakerIn,
+  updateFace,
+} from './identity/faces.js';
+export {
   addPasskeyWrap,
   type PasskeyDeps,
   type PrfProvider,

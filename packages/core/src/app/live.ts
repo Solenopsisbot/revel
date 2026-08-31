@@ -45,17 +45,62 @@ export interface LiveCoreOptions {
   account: string;
   /** Shared, so an attachment is decrypted once per app rather than per view. */
   attachments?: Attachments;
+  /**
+   * Which face speaks in a room, if this account has any.
+   *
+   * A function rather than a value because the answer is per room and changes
+   * while the app runs — and because a core that *owned* the face book would
+   * have to own its storage too, which belongs with the session rather than
+   * with the sync engines.
+   */
+  faceFor?: (roomId: string) => FaceRef | undefined;
 }
 
 class LiveConversation implements ConversationCore {
   #rooms: RoomSync;
   #files: Attachments;
   #account: string;
+  #faceFor: ((roomId: string) => FaceRef | undefined) | undefined;
+  /** Rooms already told about a face, so the roster is announced once. */
+  #announced = new Set<string>();
 
-  constructor(rooms: RoomSync, files: Attachments, account: string) {
+  constructor(
+    rooms: RoomSync,
+    files: Attachments,
+    account: string,
+    faceFor?: (roomId: string) => FaceRef | undefined,
+  ) {
     this.#rooms = rooms;
     this.#files = files;
     this.#account = account;
+    this.#faceFor = faceFor;
+  }
+
+  /**
+   * Tell the room this face exists, once.
+   *
+   * `docs/03` §7: the roster is a **per-room encrypted state event**, which is
+   * how a plural system's members stay invisible to the Host and visible to the
+   * room. Without it a face arrives only as a snapshot on a message, and a
+   * device that joins later has no roster to render a member list from.
+   *
+   * Once per room per session, keyed by both — announcing on every message
+   * would put a state event between every pair of messages, and announcing once
+   * globally would miss the next room.
+   */
+  async #announceFace(roomId: string, face: FaceRef): Promise<void> {
+    const key = `${roomId}:${face.id}`;
+    if (this.#announced.has(key)) return;
+    this.#announced.add(key);
+    // `silent`: a roster change is not something to wake a phone for.
+    await this.#rooms
+      .send(roomId, { type: 'room.faces', faces: [face] }, { class: 'silent' })
+      .catch(() => {
+        // Failing to announce must not fail the message. The face is still on
+        // the message itself, so the room can render it; the roster catches up
+        // on the next send.
+        this.#announced.delete(key);
+      });
   }
 
   room(roomId: string): RoomState {
@@ -101,12 +146,19 @@ class LiveConversation implements ConversationCore {
    * optimistic message in the timeline.
    */
   async send(roomId: string, body: unknown, options: SendOptions = {}): Promise<void> {
+    // The face this room is being spoken in, unless the caller named one.
+    // Stamped onto the message rather than looked up later: `docs/04` §2 makes
+    // it a snapshot, which is why renaming a face does not silently rewrite
+    // every message it ever sent.
+    const face = options.face ?? this.#faceFor?.(roomId);
+    if (face) await this.#announceFace(roomId, face);
+
     await this.#rooms.send(roomId, {
       type: 'm.message',
       body,
       ...(options.replyTo ? { replyTo: options.replyTo } : {}),
       ...(options.thread ? { thread: options.thread } : {}),
-      ...(options.face ? { face: options.face } : {}),
+      ...(face ? { face } : {}),
       ...(options.attachments?.length ? { attachments: options.attachments } : {}),
     });
     // Sending is the end of typing, and saying so beats waiting for the notice
@@ -403,7 +455,12 @@ export class LiveCore implements RevelCore {
   constructor(options: LiveCoreOptions) {
     const files = options.attachments ?? new Attachments({ transport: options.transport });
     this.#rooms = options.rooms;
-    this.conversation = new LiveConversation(options.rooms, files, options.account);
+    this.conversation = new LiveConversation(
+      options.rooms,
+      files,
+      options.account,
+      options.faceFor,
+    );
     this.directory = new LiveDirectory(options);
     this.identity = new LiveIdentity(options.transport);
     this.connection = new LiveConnection(options.stream);

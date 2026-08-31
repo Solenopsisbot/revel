@@ -41,7 +41,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { LocalCryptoEngine } from '@revel/crypto';
 import init from '@revel/crypto-wasm';
-import type { BlobRef } from '@revel/protocol';
+import type { BlobRef, FaceRef } from '@revel/protocol';
 import {
   DEFAULT_EVERYONE,
   Permission,
@@ -350,6 +350,9 @@ export class Client {
   /** Every decision this client made, in order. What a person would be told. */
   notified: { room: string; event: LocalEvent; decision: Decision }[] = [];
 
+  /** The face this client speaks as. Set by a test that cares. */
+  face: FaceRef | undefined;
+
   rooms!: RoomSync;
   groups!: GroupSync;
   session!: HostSession;
@@ -474,6 +477,10 @@ export class Client {
     // After the engines it wraps, because it holds them rather than making them.
     client.core = new LiveCore({
       account: client.account,
+      // The face this client speaks as, if a test has set one. `undefined`
+      // means no face, which is a real state: an account that has never made
+      // one sends without a `FaceRef` rather than inventing a name.
+      faceFor: () => client.face,
       rooms: client.rooms,
       groups: client.groups,
       crypto: client.crypto,
