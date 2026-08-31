@@ -1952,3 +1952,80 @@ enrolment for the third wrap, and every screen. The recovery flow exists as
 crypto and as storage and has no UI, which means it cannot yet be *used* — and
 `docs/03` is explicit that a recovery path people cannot find is one that does
 not exist.
+
+---
+
+## 31. The real core in a browser, and the two budgets that needed one
+
+Two things that had been "tested" without ever having *run*.
+
+### `packages/core` had never executed in a page
+
+1,104 tests and a multi-client harness, all in Node. `pnpm test:live` now signs
+up two browsers, starts the real stack in each — MLS in wasm, IndexedDB, a
+device-key session, a socket — opens a DM, sends, and reads it back on the other
+side, with the Host holding ciphertext throughout.
+
+Three bugs, and **two were in `packages/core` rather than in the wiring**:
+
+- **`LiveCore` could join a conversation but not start one.** `refresh()` binds
+  rooms that already have a group; nothing created one. `openDm` returned a room
+  that could not be sent to. Every caller would have had to create the group,
+  bind it and invite — and one of them would have forgotten. Now `openDm` and
+  `openGroupRoom` do it, and `app.test.ts` got *shorter*: the steps it performed
+  by hand were the missing ones.
+- **A device never published key packages.** Nobody can be added to a group
+  without them, and it fails silently from both ends — the inviter finds nothing
+  to claim, the invitee never gets a Welcome. Every harness test called
+  `replenish()` explicitly, which is exactly why nothing noticed that a real
+  client has to do it for itself.
+- The vite proxy forwarded three prefixes out of nine, and `/socket` needs
+  `ws: true`.
+
+The pattern is the one this project keeps finding: **a seam that both sides pass
+their own tests across.**
+
+### §5's last two rows, measured — and they are bad
+
+`docs/29` §5 budgets "message list scroll, 100k events — 60 fps" and
+"decrypt + render — 50 ms". Both needed a DOM; there is one now.
+
+| messages | rows in DOM | open | frame p50 | frame p95 | arriving message → painted |
+| --- | --- | --- | --- | --- | --- |
+| 1,000 | 1,000 | 1.2 s | 8.3 ms | 9.3 ms | **303 ms** |
+| 5,000 | 5,000 | 10.1 s | 8.4 ms | 25.0 ms | **5,366 ms** |
+| 20,000 | — | **tab crashes** | | | |
+| 100,000 | — | never renders | | | |
+
+**The message list is not windowed.** Every message is a row in the DOM, so
+100k is not a budget missed by a margin — it is one that cannot be reached by
+tuning, because the browser gives up first.
+
+The second number is worse and less obvious. An arriving message takes **303 ms
+to paint in a room of 1,000 and 5.4 seconds in a room of 5,000**, against a
+50 ms budget. It scales with the size of the list rather than with the message,
+which means every insert re-renders everything. That is the number a person
+feels: it is the gap between pressing enter and seeing what they typed.
+
+Scroll frame times look fine, and are the least trustworthy figure here — at
+5,000 messages the list is only about six screens tall, so p50 is measuring a
+list that mostly fits. The honest reading is that scrolling was never the
+problem; **building the list is.**
+
+### Two measurement mistakes worth keeping
+
+The first version scrolled `document.scrollingElement`, because the selector for
+the real scroller (`.msgs`) did not match. It reported a flawless 8 ms while
+moving zero pixels. The second scrolled the right element *downward* — and a
+chat log opens pinned to the bottom, so it still moved nothing.
+
+Both would have passed. A performance test that measures nothing does not fail,
+it congratulates you, so the script now asserts that the scroller actually moved
+and prints a warning when it did not.
+
+### What this means
+
+Windowing the message list is the fix for both rows, and it is a change to how
+the list is *built* rather than to how fast it runs. It is also now the largest
+known gap between what `docs/29` claims and what the app does — and unlike the
+other five budgets, it is not close.

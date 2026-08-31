@@ -22,10 +22,11 @@
  *    not. Where the measured value has an order of magnitude of headroom, that
  *    threshold *is* the budget. Where it does not, the comment says so.
  *
- * Two of §5's six rows are not here at all, and pretending otherwise would be
- * worse than the gap: **60 fps scrolling over 100k events** and **decrypt +
- * render** both need a renderer, and there is no DOM in this environment.
- * `docs/33` calls the reference page the visual check; that is where they go.
+ * Two of §5's six rows are not here, because they need a renderer: **60 fps
+ * scrolling over 100k events** and the render half of **decrypt + render**.
+ * They are measured in `apps/web/e2e/budgets.mjs` against a real browser —
+ * `pnpm test:budgets` — and what they found is summarised at the bottom of this
+ * file. Read that before trusting the four figures here as a whole table.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -249,7 +250,19 @@ describe('what is not measured here', () => {
     //
     // Written as a test so the omission is in the same list as the budgets and
     // cannot quietly become "we measure §5".
-    const unmeasured = ['message list scroll, 100k events, 60 fps', 'decrypt + render, < 50 ms'];
-    expect(unmeasured).toHaveLength(2);
+    // **Measured now**, in `apps/web/e2e/budgets.mjs`, against a real browser.
+    // Kept here as a pointer rather than deleted, because "we measure §5" should
+    // say where — and because what it found is worth knowing before anybody
+    // reads the four figures above and assumes the whole table is green:
+    //
+    //   * the message list is **not windowed**: every message is a DOM row, so
+    //     20,000 crashes the tab and 100,000 is not reachable at all;
+    //   * an arriving message takes **303 ms to paint at 1,000 messages and
+    //     5.4 s at 5,000** — the budget is 50 ms, and the cost scales with the
+    //     size of the list rather than with the message.
+    //
+    // Neither is a tuning problem. Both are the same missing thing.
+    const elsewhere = ['message list scroll, 100k events, 60 fps', 'decrypt + render, < 50 ms'];
+    expect(elsewhere).toHaveLength(2);
   });
 });

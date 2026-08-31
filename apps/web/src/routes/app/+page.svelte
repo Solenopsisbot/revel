@@ -61,6 +61,32 @@ if (linked.message) {
  * without an account and always has been; requiring a real sign-up to look at
  * the room list would make the fake core useless.
  */
+/**
+ * `?seed=N` fills the current room with N generated messages.
+ *
+ * For measuring `docs/29` §5's two rendering budgets, which have been unmeasured
+ * since the rest were done because they need a DOM: "message list scroll, 100k
+ * events, 60 fps" and the render half of "decrypt + render". A number nobody has
+ * ever put a figure next to is a claim, and `docs/29` is blunt that claims need
+ * numbers.
+ *
+ * A review affordance like `?touch=1` and `?theme=`, not a test hook: the point
+ * is that somebody can open a hundred thousand messages and scroll them by hand.
+ */
+const seed = Number(page.url.searchParams.get('seed') ?? 0);
+if (Number.isFinite(seed) && seed > 0) {
+  const faces = Object.keys(core.faces);
+  const base = Date.now() - seed * 1000;
+  core.messages[core.currentRoomId] = Array.from({ length: seed }, (_, i) => ({
+    id: `seed-${i}`,
+    faceId: faces[i % faces.length] as string,
+    // Varying length, because a list of identical rows measures a best case
+    // nobody experiences.
+    body: `message ${i} — ${'the quick brown fox '.repeat(1 + (i % 4))}`,
+    at: base + i * 1000,
+  }));
+}
+
 const demo = page.url.searchParams.has('demo');
 if (!demo) {
   void session.restore().then((restored) => {
