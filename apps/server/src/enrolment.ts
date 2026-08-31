@@ -133,11 +133,19 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     // answering identically either way keeps it from being a handle oracle for
     // anybody who has not yet committed to a registration. The real check is at
     // `finish`, where it is an insert that either succeeds or does not.
-    const { registrationResponse } = deps.opaque.createRegistrationResponse({
-      userIdentifier: userIdentifier(handle),
-      registrationRequest: body.data.request,
-    });
-    return c.json({ response: registrationResponse });
+    // The OPAQUE library throws on bytes it cannot parse, and these bytes come
+    // from a stranger. Unwrapped, that is a 500 where a 400 belongs — and a
+    // different status is a different answer, which is the beginning of an
+    // oracle. Found by curling the route with `AAAA`.
+    try {
+      const { registrationResponse } = deps.opaque.createRegistrationResponse({
+        userIdentifier: userIdentifier(handle),
+        registrationRequest: body.data.request,
+      });
+      return c.json({ response: registrationResponse });
+    } catch {
+      return c.json({ error: 'bad_request' }, 400);
+    }
   });
 
   app.post('/idp/register/finish', async (c) => {
@@ -197,11 +205,21 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     // simply a session that will fail later.
     if (!enrolment) return c.json({ error: 'bad_credentials' }, 401);
 
-    const { serverLoginState, loginResponse } = deps.opaque.startLogin({
-      userIdentifier: userIdentifier(handle),
-      registrationRecord: enrolment.record,
-      startLoginRequest: body.data.request,
-    });
+    let serverLoginState: string;
+    let loginResponse: string;
+    try {
+      ({ serverLoginState, loginResponse } = deps.opaque.startLogin({
+        userIdentifier: userIdentifier(handle),
+        registrationRecord: enrolment.record,
+        startLoginRequest: body.data.request,
+      }));
+    } catch {
+      // Malformed bytes from a stranger. `bad_credentials` rather than
+      // `bad_request`, so a garbage request and a wrong password are still the
+      // same answer — the shape of the failure must not depend on how far the
+      // caller got.
+      return c.json({ error: 'bad_credentials' }, 401);
+    }
 
     const session = deps.newId();
     await deps.store.putLoginSession(session, {

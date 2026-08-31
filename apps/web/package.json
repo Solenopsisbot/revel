@@ -10,9 +10,10 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
+    "@revel/core": "workspace:*",
+    "@revel/crypto-wasm": "workspace:*",
     "@revel/protocol": "workspace:*",
-    "@revel/ui": "workspace:*",
-    "@revel/core": "workspace:*"
+    "@revel/ui": "workspace:*"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.0",

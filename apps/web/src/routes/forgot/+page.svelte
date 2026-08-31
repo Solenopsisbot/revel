@@ -10,20 +10,76 @@ import Moment from '$lib/moment/Moment.svelte';
  * between "we can't help you" reading as a design principle rather than as
  * cruelty is about three words wide, so the copy here is the deck's, verbatim.
  */
+let handle = $state('');
 let code = $state('');
+let password = $state('');
 let busy = $state(false);
 let error = $state('');
+/** Two steps: prove the code, then choose a password. */
+let step = $state<'code' | 'password'>('code');
 
-async function reset() {
-  busy = true;
-  error = '';
-  await new Promise((r) => setTimeout(r, 600));
-  busy = false;
-  if (code.replace(/[\s-]/g, '').length < 20) {
+/**
+ * Check the code by actually recovering with it.
+ *
+ * There is no "is this code right" endpoint and there should not be — the only
+ * honest check is whether it opens the wrap, and that happens on this device.
+ * The length check first is a courtesy, not security: Argon2id takes a moment,
+ * and making somebody wait for it to tell them they typed 12 characters would
+ * be rude.
+ */
+async function check() {
+  if (code.replace(/[\s-]/g, '').length !== 32) {
     error = "That doesn't look like a recovery code. They're 32 characters, in eight groups.";
     return;
   }
-  goto('/');
+  busy = true;
+  error = '';
+  try {
+    const { recover } = await import('@revel/core');
+    const { enrolDeps } = await import('$lib/identity.js');
+    await recover(await enrolDeps(), { handle: handle.trim(), code });
+    step = 'password';
+  } catch (err) {
+    console.error('recovery failed', err);
+    const failure = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
+    // One message whichever it was. A handle that does not exist and a code
+    // that is wrong must be indistinguishable, or this becomes a way to find
+    // out who has an account here.
+    error = failure
+      ? "That handle and recovery code don't match an account."
+      : 'Could not reach the server.';
+  } finally {
+    busy = false;
+  }
+}
+
+/** Choose a new password: one new OPAQUE record, one re-wrap. */
+async function reset() {
+  if (password.length < 8) {
+    error = 'Pick a password of at least 8 characters.';
+    return;
+  }
+  busy = true;
+  error = '';
+  try {
+    const { resetPassword } = await import('@revel/core');
+    const { enrolDeps } = await import('$lib/identity.js');
+    await resetPassword(await enrolDeps(), {
+      handle: handle.trim(),
+      code,
+      newPassword: password,
+    });
+    // Both secrets out of memory before leaving. The recovery code still works
+    // — resetting does not spend it — but there is no reason for it to sit here.
+    code = '';
+    password = '';
+    goto('/app');
+  } catch (err) {
+    console.error('reset failed', err);
+    error = 'Could not set a new password. Your recovery code still works.';
+  } finally {
+    busy = false;
+  }
 }
 </script>
 
@@ -41,12 +97,34 @@ async function reset() {
     <div class="ways">
       <section class="way">
         <h2>Recovery code</h2>
-        <p>The one from when you signed up. Enter it and pick a new password.</p>
-        <Field label="" bind:value={code} placeholder="SPQR-4K7M-XN2A-9WTD-…" invalid={!!error} />
-        {#if error}<p class="error" role="alert">{error}</p>{/if}
-        <Button disabled={busy || !code.trim()} onclick={reset}>
-          {busy ? 'Checking…' : 'Reset with recovery code'}
-        </Button>
+        {#if step === 'code'}
+          <p>The one from when you signed up. Enter it and pick a new password.</p>
+          <Field label="Handle" bind:value={handle} placeholder="viola" />
+          <Field label="" bind:value={code} placeholder="SPQR-4K7M-XN2A-9WTD-…" invalid={!!error} />
+          {#if error}<p class="error" role="alert">{error}</p>{/if}
+          <Button disabled={busy || !code.trim() || !handle.trim()} onclick={check}>
+            {busy ? 'Checking…' : 'Reset with recovery code'}
+          </Button>
+        {:else}
+          <!-- The code worked, and saying so matters: this is the moment
+               somebody finds out the account is not gone. -->
+          <p>That worked — your account is back. Pick a new password.</p>
+          <Field
+            label="New password"
+            type="password"
+            bind:value={password}
+            autocomplete="new-password"
+            hint="At least 8 characters."
+          />
+          {#if error}<p class="error" role="alert">{error}</p>{/if}
+          <Button disabled={busy || password.length < 8} onclick={reset}>
+            {busy ? 'Setting…' : 'Set new password'}
+          </Button>
+          <p class="keep">
+            Keep your recovery code. Changing your password doesn't change it,
+            and it's still the way back if this happens again.
+          </p>
+        {/if}
       </section>
 
       <section class="way">
@@ -91,6 +169,10 @@ async function reset() {
   .way p { margin: 0 0 14px; font-size: var(--text-sm); color: color-mix(in oklab, var(--text) 74%, transparent); }
 
   .error { color: var(--face-coral); font-size: var(--text-sm); margin: -6px 0 14px; }
+  .keep {
+    margin: 14px 0 0; font-size: var(--text-sm);
+    color: color-mix(in oklab, var(--text) 66%, transparent);
+  }
 
   /* Muted and unadorned. This is the sentence people will remember, and
      dressing it up would make it read as a shrug. */

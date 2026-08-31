@@ -44,6 +44,9 @@ importers:
       '@revel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@revel/crypto-wasm':
+        specifier: workspace:*
+        version: link:../../packages/crypto-wasm
       '@revel/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

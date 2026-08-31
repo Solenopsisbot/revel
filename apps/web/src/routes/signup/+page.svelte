@@ -20,10 +20,61 @@ let providerOpen = $state(false);
 let saved = $state(false);
 let copied = $state(false);
 let showQr = $state(false);
+let busy = $state(false);
+let error = $state('');
 
-// Mock. The real one comes from the crypto core and is shown exactly once.
-const code = 'SPQR-4K7M-XN2A-9WTD-B3JC-7QME-Z2XV-K8RT';
-const ready = $derived(handle.trim().length >= 2 && password.length >= 8);
+/**
+ * The real recovery code, from the crypto core, shown exactly once.
+ *
+ * `?step=code` still shows a placeholder so the screen can be reviewed without
+ * creating an account — the alternative is rebuilding it from scratch every
+ * time somebody wants to look at the copy.
+ */
+let code = $state('SPQR-4K7M-XN2A-9WTD-B3JC-7QME-Z2XV-K8RT');
+const ready = $derived(handle.trim().length >= 2 && password.length >= 8 && !busy);
+
+/**
+ * Create the account.
+ *
+ * Everything that matters happens in `@revel/core`: the account key is
+ * generated here in the browser, wrapped under a key derived from the password
+ * via OPAQUE and under one derived from the recovery code, and only the wraps
+ * are uploaded. The password never leaves this tab.
+ */
+async function create() {
+  if (!ready) return;
+  busy = true;
+  error = '';
+  try {
+    const { signUp } = await import('@revel/core');
+    const { enrolDeps, explain } = await import('$lib/identity.js');
+    const result = await signUp(await enrolDeps(), {
+      handle: handle.trim(),
+      password,
+      deviceLabel: 'this browser',
+    });
+    code = result.recoveryCode;
+    // Only now — the code has to be on screen before the password is gone from
+    // it, or a failure between the two would leave an account nobody can reach.
+    password = '';
+    step = 'code';
+  } catch (err) {
+    error = explainError(err);
+  } finally {
+    busy = false;
+  }
+}
+
+function explainError(err: unknown): string {
+  // Logged as well as shown, always. A screen that says "something went wrong"
+  // and puts nothing in the console is one nobody can debug — including the
+  // person who wrote it, three weeks later, from a bug report.
+  console.error('sign-up failed', err);
+  const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
+  if (code === 'handle_taken') return 'Somebody already has that handle.';
+  if (code === 'wraps_incomplete') return 'Sign-up did not complete. Nothing was created.';
+  return code ? `Something went wrong (${code}).` : 'Could not reach the server.';
+}
 
 async function copy() {
   try {
@@ -70,8 +121,12 @@ async function copy() {
 
       <Field label="Password" type="password" bind:value={password} autocomplete="new-password" hint="At least 8 characters." />
 
+      {#if error}
+        <p class="error" role="alert">{error}</p>
+      {/if}
+
       <div class="row">
-        <Button disabled={!ready} onclick={() => (step = 'code')}>Continue</Button>
+        <Button disabled={!ready} onclick={create}>{busy ? 'Creating…' : 'Continue'}</Button>
         <Button variant="ghost" onclick={() => goto('/signin')}>I already have an account</Button>
       </div>
     </div>
@@ -130,6 +185,10 @@ async function copy() {
 </Moment>
 
 <style>
+  /* One shared error line for the flow. The muted warning tone rather than red
+     (`docs/08`): a handle somebody already has is not an alarm. */
+  .error { margin: 0; font-size: var(--text-sm); color: var(--warn, var(--text-dim)); }
+
   /* Each step fades and rises; the steps are a sequence, not a slideshow. */
   .pane { animation: enter var(--t-slow) var(--ease); }
   @keyframes enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

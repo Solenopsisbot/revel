@@ -10,9 +10,9 @@ import { contextMenu } from '$lib/contextmenu.svelte.js';
 import { applyUrl, syncUrl } from '$lib/deeplink.js';
 import { drawers } from '$lib/drawers.svelte.js';
 import { connection } from '$lib/fake/connection.svelte.js';
-import type { NotifyLevel } from '$lib/fake/data.js';
 import { conversation } from '$lib/fake/conversation.svelte.js';
 import { core, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
+import type { NotifyLevel } from '$lib/fake/data.js';
 import Icon from '$lib/Icon.svelte';
 import { layout } from '$lib/layout.svelte.js';
 import MessageList from '$lib/MessageList.svelte';
@@ -209,8 +209,7 @@ function openDmMenu(e: MouseEvent, id: string) {
     ],
     (picked) => {
       const [verb, arg] = picked.split(':');
-      if (verb === 'notify')
-        dm.notify = arg === 'inherit' ? undefined : (arg as NotifyLevel);
+      if (verb === 'notify') dm.notify = arg === 'inherit' ? undefined : (arg as NotifyLevel);
       if (picked === 'mark-read') {
         dm.unread = undefined;
         dm.mention = false;

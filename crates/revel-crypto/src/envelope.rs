@@ -187,18 +187,28 @@ pub fn unwrap_account_key(
 /// code that reads as a word is one people repeat out loud.
 const ALPHABET: &[u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-/// A fresh recovery code: 26 characters, grouped, ~128 bits.
+/// How long a recovery code is, in characters. 32 × 5 bits = 160.
+const CODE_LEN: usize = 32;
+/// Characters per group. Eight even groups of four.
+const CODE_GROUP: usize = 4;
+
+/// A fresh recovery code: 32 characters in eight groups of four, 160 bits.
 ///
-/// Formatted `XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-X` because this is the one secret
-/// in the product a person has to copy onto paper, and an undelimited run of 26
-/// characters is one nobody transcribes correctly.
+/// Formatted `XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`, because this is the one
+/// secret in the product a person has to copy onto paper and an undelimited run
+/// of 32 characters is one nobody transcribes correctly. Even groups
+/// deliberately: a trailing group of one is the character people drop.
+///
+/// `% ALPHABET.len()` is uniform rather than nearly so — the alphabet is 32
+/// long and 256 divides by it exactly, so there is no modulo bias to argue
+/// about.
 pub fn generate_recovery_code() -> Zeroizing<String> {
-    let mut bytes = Zeroizing::new([0u8; 26]);
+    let mut bytes = Zeroizing::new([0u8; CODE_LEN]);
     OsRng.fill_bytes(bytes.as_mut());
 
-    let mut out = String::with_capacity(31);
+    let mut out = String::with_capacity(CODE_LEN + CODE_LEN / CODE_GROUP);
     for (i, b) in bytes.iter().enumerate() {
-        if i > 0 && i % 5 == 0 {
+        if i > 0 && i % CODE_GROUP == 0 {
             out.push('-');
         }
         out.push(ALPHABET[(*b as usize) % ALPHABET.len()] as char);
@@ -213,7 +223,7 @@ pub fn generate_recovery_code() -> Zeroizing<String> {
 /// has already gone wrong. Crockford's mapping, which is why the alphabet is
 /// Crockford's.
 pub fn normalise_recovery_code(code: &str) -> Result<String, EnvelopeError> {
-    let mut out = String::with_capacity(26);
+    let mut out = String::with_capacity(CODE_LEN);
     for ch in code.chars() {
         let c = ch.to_ascii_uppercase();
         let mapped = match c {
@@ -229,7 +239,7 @@ pub fn normalise_recovery_code(code: &str) -> Result<String, EnvelopeError> {
         }
         out.push(mapped);
     }
-    if out.len() != 26 {
+    if out.len() != CODE_LEN {
         return Err(EnvelopeError::BadRecoveryCode);
     }
     Ok(out)

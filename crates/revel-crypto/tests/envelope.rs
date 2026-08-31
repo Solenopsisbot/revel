@@ -161,14 +161,14 @@ fn a_recovery_code_survives_being_copied_off_paper() {
 fn the_four_ambiguous_letters_are_folded() {
     // Somebody reading off paper types `O` for zero and `l` for one. Refusing
     // that is refusing the one flow that exists because everything else failed.
-    assert_eq!(normalise_recovery_code("O1234-56789-01234-56789-01234-5").unwrap(),
-               normalise_recovery_code("01234-56789-01234-56789-01234-5").unwrap());
-    assert_eq!(normalise_recovery_code("I1234-56789-01234-56789-01234-5").unwrap(),
-               normalise_recovery_code("11234-56789-01234-56789-01234-5").unwrap());
-    assert_eq!(normalise_recovery_code("L1234-56789-01234-56789-01234-5").unwrap(),
-               normalise_recovery_code("11234-56789-01234-56789-01234-5").unwrap());
-    assert_eq!(normalise_recovery_code("U1234-56789-01234-56789-01234-5").unwrap(),
-               normalise_recovery_code("V1234-56789-01234-56789-01234-5").unwrap());
+    assert_eq!(normalise_recovery_code("O123-4567-8901-2345-6789-0123-4567-8901").unwrap(),
+               normalise_recovery_code("0123-4567-8901-2345-6789-0123-4567-8901").unwrap());
+    assert_eq!(normalise_recovery_code("I123-4567-8901-2345-6789-0123-4567-8901").unwrap(),
+               normalise_recovery_code("1123-4567-8901-2345-6789-0123-4567-8901").unwrap());
+    assert_eq!(normalise_recovery_code("L123-4567-8901-2345-6789-0123-4567-8901").unwrap(),
+               normalise_recovery_code("1123-4567-8901-2345-6789-0123-4567-8901").unwrap());
+    assert_eq!(normalise_recovery_code("U123-4567-8901-2345-6789-0123-4567-8901").unwrap(),
+               normalise_recovery_code("V123-4567-8901-2345-6789-0123-4567-8901").unwrap());
 }
 
 #[test]
@@ -177,14 +177,14 @@ fn a_code_of_the_wrong_length_is_rejected() {
     // after eight seconds of Argon2id.
     assert_eq!(normalise_recovery_code("TOOSHORT"), Err(EnvelopeError::BadRecoveryCode));
     assert_eq!(normalise_recovery_code(""), Err(EnvelopeError::BadRecoveryCode));
-    let long = "0".repeat(27);
+    let long = "0".repeat(33);
     assert_eq!(normalise_recovery_code(&long), Err(EnvelopeError::BadRecoveryCode));
 }
 
 #[test]
 fn a_code_with_characters_that_are_not_in_the_alphabet_is_rejected() {
     assert_eq!(
-        normalise_recovery_code("!1234-56789-01234-56789-01234-5"),
+        normalise_recovery_code("!123-4567-8901-2345-6789-0123-4567-8901"),
         Err(EnvelopeError::BadRecoveryCode)
     );
 }
@@ -195,7 +195,7 @@ fn codes_are_not_repeated() {
     let a = generate_recovery_code();
     let b = generate_recovery_code();
     assert_ne!(*a, *b);
-    assert_eq!(normalise_recovery_code(&a).unwrap().len(), 26);
+    assert_eq!(normalise_recovery_code(&a).unwrap().len(), 32);
 }
 
 #[test]

@@ -96,8 +96,9 @@ describe('signing up', () => {
     });
 
     expect(result.accountKey).toHaveLength(32);
-    // 26 characters, grouped for somebody copying it onto paper.
-    expect(result.recoveryCode.replace(/-/g, '')).toHaveLength(26);
+    // 32 characters in eight even groups, for somebody copying it onto paper.
+    expect(result.recoveryCode.replace(/-/g, '')).toHaveLength(32);
+    expect(result.recoveryCode.split('-')).toHaveLength(8);
     expect(result.handle).toBe('viola');
   });
 
@@ -169,7 +170,7 @@ describe('recovering', () => {
   it('refuses a wrong code', async () => {
     await signUp(deps, { handle: 'viola', password: PASSWORD, deviceLabel: 'laptop' });
     await expect(
-      recover(deps, { handle: 'viola', code: 'ABCDE-FGHJK-MNPQR-STVWX-YZ012-3' }),
+      recover(deps, { handle: 'viola', code: 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789' }),
     ).rejects.toThrow(new EnrolError('bad_credentials'));
   });
 
@@ -178,7 +179,7 @@ describe('recovering', () => {
     // second round trip before failing — which is the point: it cannot be used
     // to find out who has an account here.
     await expect(
-      recover(deps, { handle: 'nobody', code: 'ABCDE-FGHJK-MNPQR-STVWX-YZ012-3' }),
+      recover(deps, { handle: 'nobody', code: 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789' }),
     ).rejects.toThrow(new EnrolError('bad_credentials'));
   });
 });
@@ -219,7 +220,7 @@ describe('resetting the password', () => {
     await expect(
       resetPassword(deps, {
         handle: 'viola',
-        code: 'ABCDE-FGHJK-MNPQR-STVWX-YZ012-3',
+        code: 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789',
         newPassword: 'mine now',
       }),
     ).rejects.toThrow(new EnrolError('bad_credentials'));

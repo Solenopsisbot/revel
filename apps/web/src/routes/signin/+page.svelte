@@ -23,30 +23,62 @@ let error = $state('');
 
 const ready = $derived(handle.trim().length > 0 && password.length > 0);
 
-async function submit() {
-  if (!ready) return;
+/**
+ * The account key, once it is out.
+ *
+ * Held here only until there is somewhere durable to seal it — `docs/03` §1
+ * wants it sealed under a device-local key so a reload does not need the
+ * password again. Until that exists, signing in works and does not persist,
+ * which is a true statement about where this is.
+ */
+let accountKey: Uint8Array | null = null;
+
+async function attempt(totp?: string) {
   busy = true;
   error = '';
-  await new Promise((r) => setTimeout(r, 550));
-  busy = false;
-  if (password === 'wrong') {
-    // One message for both cases, so it isn't an enumeration oracle
-    // (`docs/17`).
-    error = "That handle and password don't match.";
-    return;
+  try {
+    const { signIn } = await import('@revel/core');
+    const { enrolDeps } = await import('$lib/identity.js');
+    const result = await signIn(await enrolDeps(), {
+      handle: handle.trim(),
+      password,
+      ...(totp ? { totp } : {}),
+    });
+    accountKey = result.accountKey;
+    // The password is gone from memory the moment it is no longer needed. Not
+    // a serious defence — a page can be inspected — but the cheapest one there
+    // is, and leaving it lying around has no upside at all.
+    password = '';
+    goto('/app');
+  } catch (err) {
+    console.error('sign-in failed', err);
+    const failure = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
+    if (failure === 'totp_required') {
+      // The server only asks once the password has checked out, so arriving
+      // here means the password was right — which is why this is a step rather
+      // than an error.
+      error = '';
+      step = 'twofactor';
+      return;
+    }
+    const { explain } = await import('$lib/identity.js');
+    error = failure ? explain(failure) : 'Could not reach the server.';
+  } finally {
+    busy = false;
   }
-  step = 'twofactor';
+}
+
+async function submit() {
+  if (!ready) return;
+  await attempt();
 }
 
 async function verify() {
-  busy = true;
-  await new Promise((r) => setTimeout(r, 500));
-  busy = false;
   if (code.trim().length !== 6) {
     error = 'That code has expired or is wrong. Codes last 30 seconds.';
     return;
   }
-  goto('/');
+  await attempt(code.trim());
 }
 </script>
 
