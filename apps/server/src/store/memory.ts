@@ -581,6 +581,10 @@ export class MemoryStore implements Store {
     );
   }
 
+  async deleteWrap(accountPub: string, kind: 'passkey') {
+    this.wraps.get(accountPub)?.delete(kind);
+  }
+
   async putRegistrationRecord(accountPub: string, record: string) {
     const enrolment = await this.getEnrolmentByAccount(accountPub);
     if (enrolment) this.enrolments.set(enrolment.handle, { ...enrolment, record });

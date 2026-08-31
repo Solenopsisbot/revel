@@ -33,6 +33,7 @@ import {
   LoginFinish,
   LoginStart,
   OpenChannel,
+  PutPasskeyWrap,
   RecoverFinish,
   RecoverStart,
   RegisterFinish,
@@ -176,7 +177,14 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     // it was is not a stranger's business.
     if (!enrolment) return c.json({ error: 'handle_taken' }, 409);
 
-    for (const wrap of wraps) await deps.store.putWrap(accountPub, toStored(wrap));
+    for (const wrap of wraps) {
+      await deps.store.putWrap(accountPub, {
+        ...toStored(wrap),
+        // The verifier belongs to the wrap it authorises. `password` gets none:
+        // that one is released by finishing an OPAQUE login.
+        ...(wrap.kind === 'recovery' ? { verifier: body.data.recoveryVerifier } : {}),
+      });
+    }
     await deps.store.claimHandle({
       id: accountPub,
       handle,
@@ -293,9 +301,10 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     if (!body.success) return c.json({ error: 'bad_request' }, 400);
 
     const handle = fold(body.data.handle);
+    const kind = body.data.kind ?? 'recovery';
     const enrolment = await deps.store.getEnrolment(handle);
     const wraps = enrolment ? await deps.store.wrapsFor(enrolment.accountPub) : [];
-    const salt = wraps.find((w) => w.kind === 'recovery')?.salt;
+    const salt = wraps.find((w) => w.kind === kind)?.salt;
 
     // **Always an answer, and always the same shape.** An unknown handle that
     // got a different response — or none — would make this a membership oracle,
@@ -310,19 +319,20 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     if (!body.success) return c.json({ error: 'bad_request' }, 400);
 
     const handle = fold(body.data.handle);
+    const kind = body.data.kind ?? 'recovery';
     const enrolment = await deps.store.getEnrolment(handle);
+    const wraps = enrolment ? await deps.store.wrapsFor(enrolment.accountPub) : [];
+
     // Compared in constant time, and against a fixed-length dummy when there is
-    // no enrolment — so an unknown handle takes the same path as a wrong code.
-    const expected = enrolment?.recoveryVerifier || decoySalt(`verifier:${handle}`);
+    // no enrolment or no wrap of this kind — so an unknown handle, an account
+    // with no passkey, and a wrong secret all take the same path.
+    const expected =
+      wraps.find((w) => w.kind === kind)?.verifier || decoySalt(`verifier:${kind}:${handle}`);
     if (!matches(expected, body.data.verifier) || !enrolment) {
       return c.json({ error: 'bad_credentials' }, 401);
     }
 
-    return c.json({
-      accountPub: enrolment.accountPub,
-      handle,
-      wraps: await deps.store.wrapsFor(enrolment.accountPub),
-    });
+    return c.json({ accountPub: enrolment.accountPub, handle, wraps });
   });
 
   app.post('/idp/recover/reset', async (c) => {
@@ -330,8 +340,11 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     if (!body.success) return c.json({ error: 'bad_request' }, 400);
 
     const handle = fold(body.data.handle);
+    const kind = body.data.kind ?? 'recovery';
     const enrolment = await deps.store.getEnrolment(handle);
-    const expected = enrolment?.recoveryVerifier || decoySalt(`verifier:${handle}`);
+    const wraps = enrolment ? await deps.store.wrapsFor(enrolment.accountPub) : [];
+    const expected =
+      wraps.find((w) => w.kind === kind)?.verifier || decoySalt(`verifier:${kind}:${handle}`);
     if (!matches(expected, body.data.verifier) || !enrolment) {
       return c.json({ error: 'bad_credentials' }, 401);
     }
@@ -410,6 +423,46 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     // Once. A channel that accepted a second delivery would let anybody who saw
     // the QR overwrite what the real device sent.
     if (!delivered) return c.json({ error: 'no_such_channel' }, 404);
+    return c.body(null, 204);
+  });
+
+  /**
+   * Add or replace the passkey wrap, from a device that is signed in.
+   *
+   * `docs/03` §3 offers a passkey as "a second low-friction wrap", and this is
+   * where it lands. Authenticated, because enrolling a passkey is something you
+   * do *from* an account you already have open — the wrap is a way back in
+   * later, not a way in now.
+   *
+   * The verifier arrives with it, for the same reason the recovery one does:
+   * without it there is no way to release this wrap to somebody who has the
+   * passkey and has forgotten the password, which is the only situation it
+   * exists for.
+   *
+   * `POST` rather than `PUT`, and `/remove` rather than `DELETE`, because every
+   * other route on this IdP is a POST and the client transport has exactly one
+   * verb. One shape beats REST purity for a surface this small — and a `PUT`
+   * the client could not send was how this was found.
+   */
+  app.post('/idp/wraps/passkey', async (c) => {
+    const actor = await deps.authenticate?.(c.req.raw);
+    if (!actor) return c.json({ error: 'unauthenticated' }, 401);
+
+    const body = PutPasskeyWrap.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+
+    await deps.store.putWrap(actor.accountId, {
+      kind: 'passkey',
+      blob: body.data.blob,
+      verifier: body.data.verifier,
+    });
+    return c.json({ ok: true });
+  });
+
+  app.post('/idp/wraps/passkey/remove', async (c) => {
+    const actor = await deps.authenticate?.(c.req.raw);
+    if (!actor) return c.json({ error: 'unauthenticated' }, 401);
+    await deps.store.deleteWrap(actor.accountId, 'passkey');
     return c.body(null, 204);
   });
 

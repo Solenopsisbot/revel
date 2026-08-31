@@ -16,6 +16,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import postgres from 'postgres';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { FileBlobBytes } from '../src/store/blobstore.js';
 import { MemoryStore } from '../src/store/memory.js';
@@ -30,7 +31,26 @@ describeStore('MemoryStore', {
 const url = process.env.DATABASE_URL;
 
 if (url) {
-  const store = new PostgresStore({ url, max: 4 });
+  /**
+   * **A schema of its own, not `public`.**
+   *
+   * This suite `TRUNCATE`s every table between tests, and it used to do that to
+   * whatever `DATABASE_URL` pointed at — which meant running `pnpm test` while
+   * a dev server was up silently destroyed the accounts and rooms somebody was
+   * working with. Found the hard way, by signing up in a browser and then
+   * wondering why the password had stopped working.
+   *
+   * `search_path` is per connection, so it goes in `connection` rather than a
+   * one-off `SET`: with a pool, a `SET` and the query it is meant to scope can
+   * land on different backends.
+   */
+  const schema = 'revel_test';
+  const connection = { search_path: schema };
+  const bootstrap = postgres(url, { max: 1, onnotice: () => {} });
+  await bootstrap.unsafe(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
+  await bootstrap.end({ timeout: 5 });
+
+  const store = new PostgresStore({ url, max: 4, connection });
   // One connection pool and one schema for the whole file, truncated between
   // tests. Creating a database per test would be correct and slow enough that
   // somebody would eventually stop running this.
@@ -267,6 +287,7 @@ if (url) {
   const fileStore = new PostgresStore({
     url,
     max: 4,
+    connection,
     blobs: new FileBlobBytes({ dir: fileDir }),
   });
 

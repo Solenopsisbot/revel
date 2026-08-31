@@ -48,14 +48,18 @@ const envelope = {
 
 let store: MemoryStore;
 let deps: EnrolDeps;
+/** Who the server thinks is calling. Enrolling a passkey is authenticated. */
+let signedInAs: { accountId: string; devicePub: string } | null = null;
 
 beforeEach(() => {
   store = new MemoryStore();
+  signedInAs = null;
   const app = createApp({
     store,
     hub: { broadcast: () => {} } as never,
     ids: new SnowflakeFactory(0),
-    authenticate: async () => null,
+    // Signed in as the account under test, so the passkey route is reachable.
+    authenticate: async () => signedInAs,
     host: 'idp.example',
     idp: 'idp.example',
     decoyKey: 'a-long-lived-server-secret',
@@ -223,6 +227,123 @@ describe('resetting the password', () => {
         code: 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789',
         newPassword: 'mine now',
       }),
+    ).rejects.toThrow(new EnrolError('bad_credentials'));
+  });
+});
+
+describe('the passkey wrap', () => {
+  /**
+   * A stand-in authenticator.
+   *
+   * `navigator.credentials` needs a real device, a user gesture and a secure
+   * context, so it cannot run here — which is exactly why `PrfProvider` is one
+   * injected function. Everything on either side of it is real: the wrapping,
+   * the upload, the fetch and the unseal all run the same code the browser does.
+   */
+  const authenticator = (bytes: number, declines = false) => ({
+    enrol: async () => (declines ? null : new Uint8Array(32).fill(bytes)),
+    assert: async () => (declines ? null : new Uint8Array(32).fill(bytes)),
+  });
+
+  it('adds a third door to the same key', async () => {
+    const { addPasskeyWrap, unlockWithPasskey } = await import('../src/index.js');
+    const created = await signUp(deps, {
+      handle: 'viola',
+      password: PASSWORD,
+      deviceLabel: 'laptop',
+    });
+    // Enrolling a passkey is something you do *from* an account you have open.
+    signedInAs = { accountId: created.accountPub, devicePub: 'this-device' };
+
+    const withPasskey = { ...deps, prf: authenticator(3), authorization: 'device-token' };
+    expect(
+      await addPasskeyWrap(withPasskey, { handle: 'viola', accountKey: created.accountKey }),
+    ).toBe(true);
+
+    // The same account key, through a door the password never touched.
+    const opened = await unlockWithPasskey(withPasskey, { handle: 'viola' });
+    expect(opened.accountKey).toEqual(created.accountKey);
+  });
+
+  it('leaves the password and the recovery code working', async () => {
+    // Three doors, one key. Adding one must not disturb the others — a passkey
+    // that quietly invalidated the recovery code would be a downgrade dressed
+    // as a feature.
+    const { addPasskeyWrap } = await import('../src/index.js');
+    const created = await signUp(deps, {
+      handle: 'viola',
+      password: PASSWORD,
+      deviceLabel: 'laptop',
+    });
+    // Enrolling a passkey is something you do *from* an account you have open.
+    signedInAs = { accountId: created.accountPub, devicePub: 'this-device' };
+    await addPasskeyWrap(
+      { ...deps, prf: authenticator(3), authorization: 't' },
+      { handle: 'viola', accountKey: created.accountKey },
+    );
+
+    expect((await signIn(deps, { handle: 'viola', password: PASSWORD })).accountKey).toEqual(
+      created.accountKey,
+    );
+    expect(
+      (await recover(deps, { handle: 'viola', code: created.recoveryCode })).accountKey,
+    ).toEqual(created.accountKey);
+  });
+
+  it('treats declining as an answer, not a failure', async () => {
+    // A passkey is optional. Somebody dismissing the prompt has not hit an
+    // error, and telling them they have would be a lie about their own choice.
+    const { addPasskeyWrap } = await import('../src/index.js');
+    const created = await signUp(deps, {
+      handle: 'viola',
+      password: PASSWORD,
+      deviceLabel: 'laptop',
+    });
+    // Enrolling a passkey is something you do *from* an account you have open.
+    signedInAs = { accountId: created.accountPub, devicePub: 'this-device' };
+    expect(
+      await addPasskeyWrap(
+        { ...deps, prf: authenticator(3, true), authorization: 't' },
+        { handle: 'viola', accountKey: created.accountKey },
+      ),
+    ).toBe(false);
+  });
+
+  it('will not open with a different authenticator', async () => {
+    const { addPasskeyWrap, unlockWithPasskey } = await import('../src/index.js');
+    const created = await signUp(deps, {
+      handle: 'viola',
+      password: PASSWORD,
+      deviceLabel: 'laptop',
+    });
+    // Enrolling a passkey is something you do *from* an account you have open.
+    signedInAs = { accountId: created.accountPub, devicePub: 'this-device' };
+    await addPasskeyWrap(
+      { ...deps, prf: authenticator(3), authorization: 't' },
+      { handle: 'viola', accountKey: created.accountKey },
+    );
+
+    await expect(
+      unlockWithPasskey(
+        { ...deps, prf: authenticator(9), authorization: 't' },
+        { handle: 'viola' },
+      ),
+    ).rejects.toThrow(new EnrolError('bad_credentials'));
+  });
+
+  it('will not open an account that has no passkey', async () => {
+    const { unlockWithPasskey } = await import('../src/index.js');
+    const made = await signUp(deps, {
+      handle: 'viola',
+      password: PASSWORD,
+      deviceLabel: 'laptop',
+    });
+    signedInAs = { accountId: made.accountPub, devicePub: 'this-device' };
+    await expect(
+      unlockWithPasskey(
+        { ...deps, prf: authenticator(3), authorization: 't' },
+        { handle: 'viola' },
+      ),
     ).rejects.toThrow(new EnrolError('bad_credentials'));
   });
 });

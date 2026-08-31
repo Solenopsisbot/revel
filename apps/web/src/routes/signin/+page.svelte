@@ -45,6 +45,15 @@ async function attempt(totp?: string) {
       ...(totp ? { totp } : {}),
     });
     accountKey = result.accountKey;
+    // Sealed under a non-extractable device key, so the next reload does not
+    // ask for a password — `docs/03` §1 calls that Kith's biggest UX cliff, and
+    // this is the construction that removes it.
+    const { saveSession } = await import('@revel/core');
+    await saveSession({
+      accountPub: result.accountPub,
+      handle: result.handle,
+      accountKey: result.accountKey,
+    });
     // The password is gone from memory the moment it is no longer needed. Not
     // a serious defence — a page can be inspected — but the cheapest one there
     // is, and leaving it lying around has no upside at all.

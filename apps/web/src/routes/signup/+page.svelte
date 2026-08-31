@@ -54,12 +54,62 @@ async function create() {
       deviceLabel: 'this browser',
     });
     code = result.recoveryCode;
+    enrolled = { handle: result.handle, accountKey: result.accountKey };
+    // Sealed to this device before the code is shown, so a reload during the
+    // "write it down" step does not lose the account that was just created
+    // (`docs/03` §1). The key is non-extractable and the password is not
+    // involved — that is the point of it.
+    const { saveSession } = await import('@revel/core');
+    await saveSession({
+      accountPub: result.accountPub,
+      handle: result.handle,
+      accountKey: result.accountKey,
+    });
     // Only now — the code has to be on screen before the password is gone from
     // it, or a failure between the two would leave an account nobody can reach.
     password = '';
     step = 'code';
   } catch (err) {
     error = explainError(err);
+  } finally {
+    busy = false;
+  }
+}
+
+/** `null` until asked; `false` means this device simply cannot do it. */
+let passkeys = $state<boolean | null>(null);
+/** The account key, kept only across the passkey step. */
+let enrolled: { handle: string; accountKey: Uint8Array } | null = null;
+
+$effect(() => {
+  if (step !== 'passkey' || passkeys !== null) return;
+  void import('$lib/identity.js').then(async (m) => {
+    passkeys = await m.passkeysAvailable();
+  });
+});
+
+/**
+ * Add the passkey wrap.
+ *
+ * Declining is an answer rather than a failure — a passkey is optional, and
+ * telling somebody their own choice was an error would be a lie. So a refusal
+ * moves on exactly like "skip".
+ */
+async function addPasskey() {
+  if (!enrolled) return goto('/app');
+  busy = true;
+  error = '';
+  try {
+    const { addPasskeyWrap } = await import('@revel/core');
+    const { enrolDeps, webAuthnPrf } = await import('$lib/identity.js');
+    await addPasskeyWrap(
+      { ...(await enrolDeps()), prf: webAuthnPrf, authorization: '' },
+      { handle: enrolled.handle, accountKey: enrolled.accountKey },
+    );
+    goto('/app');
+  } catch (err) {
+    console.error('passkey enrolment failed', err);
+    error = 'Could not add a passkey. Your recovery code still works.';
   } finally {
     busy = false;
   }
@@ -170,16 +220,36 @@ async function copy() {
   {:else}
     <div class="pane">
       <p class="eyebrow">One more thing — optional</p>
-      <h1>Skip the password?</h1>
+      <h1>A second way back.</h1>
+      <!-- This used to say "skip typing your password every time", which stopped
+           being true the moment the account key started being sealed to the
+           device: a reload does not ask for a password anyway (`docs/03` §1).
+           What a passkey actually buys is the *other* door — `docs/03` §4's "or
+           the passkey path", for the day the password is gone and the paper
+           is too. Saying the old thing would have oversold it and undersold
+           the recovery code. -->
       <p class="lede">
-        Add a passkey and you can unlock with your face or fingerprint instead of
-        typing your password every time. Your recovery code still works as a backup
-        either way.
+        If you ever forget your password, a passkey opens your account with your
+        face or fingerprint — no code to find. Your recovery code keeps working
+        either way; this is a second door, not a replacement.
       </p>
-      <div class="row">
-        <Button onclick={() => goto('/')}>Add a passkey</Button>
-        <Button variant="ghost" onclick={() => goto('/')}>Skip for now</Button>
-      </div>
+      {#if passkeys === false}
+        <p class="lede dim">
+          This device doesn't have a passkey authenticator, so there's nothing to
+          add here. Your recovery code is still your way back in.
+        </p>
+        <div class="row">
+          <Button onclick={() => goto('/app')}>Finish</Button>
+        </div>
+      {:else}
+        {#if error}<p class="error" role="alert">{error}</p>{/if}
+        <div class="row">
+          <Button disabled={busy} onclick={addPasskey}>
+            {busy ? 'Waiting for your device…' : 'Add a passkey'}
+          </Button>
+          <Button variant="ghost" onclick={() => goto('/app')}>Skip for now</Button>
+        </div>
+      {/if}
     </div>
   {/if}
 </Moment>
@@ -202,6 +272,7 @@ async function copy() {
     letter-spacing: -.035em; font-weight: 600; margin: 10px 0 18px;
   }
   .lede { color: color-mix(in oklab, var(--text) 84%, transparent); margin: 0 0 24px; }
+  .lede.dim { color: color-mix(in oklab, var(--text) 62%, transparent); font-size: var(--text-sm); }
 
   .code {
     font-family: var(--font-mono); font-size: clamp(15px, 2.1vw, 20px); font-weight: 600;

@@ -555,6 +555,96 @@ describe('adding a device from one you are holding', () => {
   });
 });
 
+describe('the passkey wrap', () => {
+  const PASSKEY_VERIFIER = btoa('proof-of-passkey-prf');
+
+  beforeEach(async () => {
+    await register('viola', 'pw');
+    actor = { accountId: ACCOUNT, devicePub: 'dev-a' };
+  });
+
+  it('is added from a signed-in device, and then opens the account', async () => {
+    // `docs/03` §3's "second low-friction wrap": enrolled *from* an account you
+    // already have open, and used later when the password is gone.
+    const put = await post('/idp/wraps/passkey', {
+      blob: b64('wrapped under PK'),
+      verifier: PASSKEY_VERIFIER,
+    });
+    expect(put.status).toBe(200);
+
+    const finish = await post('/idp/recover/finish', {
+      handle: 'viola',
+      kind: 'passkey',
+      verifier: PASSKEY_VERIFIER,
+    });
+    expect(finish.status).toBe(200);
+    expect((await finish.json()).wraps.map((w: { kind: string }) => w.kind)).toContain('passkey');
+  });
+
+  it('cannot be enrolled by somebody who is not signed in', async () => {
+    actor = null;
+    const put = await post('/idp/wraps/passkey', {
+      blob: b64('mine now'),
+      verifier: PASSKEY_VERIFIER,
+    });
+    expect(put.status).toBe(401);
+  });
+
+  it('does not let a passkey verifier open the recovery wrap, or the reverse', async () => {
+    // Each verifier authorises its own wrap. Sharing one would mean a passkey
+    // taken off a stolen laptop released the recovery wrap too.
+    await post('/idp/wraps/passkey', { blob: b64('pk'), verifier: PASSKEY_VERIFIER });
+
+    const crossed = await post('/idp/recover/finish', {
+      handle: 'viola',
+      kind: 'recovery',
+      verifier: PASSKEY_VERIFIER,
+    });
+    expect(crossed.status).toBe(401);
+
+    const other = await post('/idp/recover/finish', {
+      handle: 'viola',
+      kind: 'passkey',
+      verifier: VERIFIER,
+    });
+    expect(other.status).toBe(401);
+  });
+
+  it('refuses an account with no passkey exactly as it refuses a wrong one', async () => {
+    // "Does this account have a passkey" is not a stranger's question either.
+    const none = await post('/idp/recover/finish', {
+      handle: 'viola',
+      kind: 'passkey',
+      verifier: PASSKEY_VERIFIER,
+    });
+    const wrong = await post('/idp/recover/finish', {
+      handle: 'viola',
+      kind: 'recovery',
+      verifier: btoa('wrong'),
+    });
+    expect(none.status).toBe(wrong.status);
+    expect(await none.json()).toEqual(await wrong.json());
+  });
+
+  it('can be removed again', async () => {
+    await post('/idp/wraps/passkey', { blob: b64('pk'), verifier: PASSKEY_VERIFIER });
+    expect((await post('/idp/wraps/passkey/remove', {})).status).toBe(204);
+
+    const after = await post('/idp/recover/finish', {
+      handle: 'viola',
+      kind: 'passkey',
+      verifier: PASSKEY_VERIFIER,
+    });
+    expect(after.status).toBe(401);
+  });
+
+  it('leaves the recovery code working, because two ways back is the point', async () => {
+    await post('/idp/wraps/passkey', { blob: b64('pk'), verifier: PASSKEY_VERIFIER });
+    const still = await post('/idp/recover/finish', { handle: 'viola', verifier: VERIFIER });
+    expect(still.status).toBe(200);
+  });
+});
+
 describe('the second factor', () => {
   beforeEach(async () => {
     await register('viola', 'pw');

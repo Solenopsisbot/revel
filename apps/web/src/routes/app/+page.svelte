@@ -1,5 +1,6 @@
 <script lang="ts">
 import { untrack } from 'svelte';
+import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import Avatar from '$lib/Avatar.svelte';
 import { back } from '$lib/back.js';
@@ -23,6 +24,7 @@ import { onboarding } from '$lib/onboarding/onboarding.svelte.js';
 import ProfileCard from '$lib/ProfileCard.svelte';
 import SearchPanel from '$lib/search/SearchPanel.svelte';
 import { search } from '$lib/search/search.svelte.js';
+import { session } from '$lib/session.svelte.js';
 import SettingsOverlay from '$lib/settings/SettingsOverlay.svelte';
 import SpaceSettings from '$lib/space/SpaceSettings.svelte';
 import ThreadPanel from '$lib/thread/ThreadPanel.svelte';
@@ -43,6 +45,27 @@ if (linked.message) {
   const here = core.messages[core.currentRoomId]?.some((m) => m.id === linked.message);
   if (here) core.jumpTo = linked.message;
   else core.awaitingKeys = linked.message;
+}
+
+/**
+ * Restore the signed-in device before deciding anything.
+ *
+ * The account key is sealed in IndexedDB under a non-extractable device key
+ * (`docs/03` §1), so a reload does not need a password. Reading it is async, and
+ * until it finishes the app genuinely does not know whether anybody is signed
+ * in — so it waits rather than guessing. Guessing wrong means flashing the
+ * sign-in screen at somebody who is signed in, which is the exact "did it lose
+ * my account?" moment this whole mechanism exists to prevent.
+ *
+ * **`?demo=1` skips it.** Every fixture-driven screen in this app is reachable
+ * without an account and always has been; requiring a real sign-up to look at
+ * the room list would make the fake core useless.
+ */
+const demo = page.url.searchParams.has('demo');
+if (!demo) {
+  void session.restore().then((restored) => {
+    if (!restored) void goto('/signin');
+  });
 }
 
 const deepLink = page.url.searchParams.get('settings');

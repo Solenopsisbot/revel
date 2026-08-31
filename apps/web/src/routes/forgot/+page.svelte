@@ -64,10 +64,16 @@ async function reset() {
   try {
     const { resetPassword } = await import('@revel/core');
     const { enrolDeps } = await import('$lib/identity.js');
-    await resetPassword(await enrolDeps(), {
+    const result = await resetPassword(await enrolDeps(), {
       handle: handle.trim(),
       code,
       newPassword: password,
+    });
+    const { saveSession } = await import('@revel/core');
+    await saveSession({
+      accountPub: result.accountPub,
+      handle: result.handle,
+      accountKey: result.accountKey,
     });
     // Both secrets out of memory before leaving. The recovery code still works
     // — resetting does not spend it — but there is no reason for it to sit here.

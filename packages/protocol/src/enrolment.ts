@@ -192,7 +192,14 @@ export type LoginRefusal = z.infer<typeof LoginRefusal>;
  * of the code with a **verifier** derived from RK — see `recovery_verifier` in
  * `revel-crypto/src/envelope.rs` for why that is not RK itself.
  */
-export const RecoverStart = z.object({ handle: z.string().min(1).max(64) });
+/** Which wrap is being opened. `password` is not one of them — that is a login. */
+export const UnlockKind = z.enum(['recovery', 'passkey']);
+export type UnlockKind = z.infer<typeof UnlockKind>;
+
+export const RecoverStart = z.object({
+  handle: z.string().min(1).max(64),
+  kind: UnlockKind.optional(),
+});
 export type RecoverStart = z.infer<typeof RecoverStart>;
 
 export const RecoverStartResponse = z.object({
@@ -212,6 +219,7 @@ export type RecoverStartResponse = z.infer<typeof RecoverStartResponse>;
 
 export const RecoverFinish = z.object({
   handle: z.string().min(1).max(64),
+  kind: UnlockKind.optional(),
   /** `HKDF(RK, "revel/recovery-verifier/v1")`, base64. Proof, never the key. */
   verifier: z.string().base64().max(64),
 });
@@ -220,6 +228,7 @@ export type RecoverFinish = z.infer<typeof RecoverFinish>;
 /** Set a new password after recovery: a fresh OPAQUE record and a fresh wrap. */
 export const ResetPassword = z.object({
   handle: z.string().min(1).max(64),
+  kind: UnlockKind.optional(),
   verifier: z.string().base64().max(64),
   /** The new OPAQUE registration record. */
   record: Opaque,
@@ -273,6 +282,20 @@ export const ChannelContents = z.object({
   delivery: DeliverToChannel.nullable(),
 });
 export type ChannelContents = z.infer<typeof ChannelContents>;
+
+/**
+ * Enrol the passkey wrap — `docs/03` §3's "second low-friction wrap".
+ *
+ * Sent from a device that is signed in, because enrolling a passkey is
+ * something you do *from* an account you already have open. The wrap is a way
+ * back in later, not a way in now.
+ */
+export const PutPasskeyWrap = z.object({
+  blob: WrapBlob,
+  /** `HKDF(PK, …)`. Proof, never the key — see the recovery verifier. */
+  verifier: z.string().base64().max(64),
+});
+export type PutPasskeyWrap = z.infer<typeof PutPasskeyWrap>;
 
 // ---------------------------------------------------------------------------
 // Second factors

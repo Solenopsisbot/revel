@@ -14,7 +14,7 @@
  * life is the wrong trade — so it is imported at the moment a flow starts,
  * which is also the moment a spinner is already justified.
  */
-import type { EnrolDeps, EnvelopeApi, IdpTransport } from '@revel/core';
+import type { EnrolDeps, EnvelopeApi, IdpTransport, PrfProvider } from '@revel/core';
 
 /** Where the IdP lives. Same origin in dev; configurable for a real deployment. */
 const IDP = import.meta.env.VITE_IDP_URL ?? '';
@@ -96,5 +96,98 @@ export function explain(code: string): string {
       return 'This account has no recovery code on file.';
     default:
       return `Something went wrong (${code}).`;
+  }
+}
+
+/**
+ * WebAuthn PRF, as a [`PrfProvider`].
+ *
+ * **This is the one part of the identity stack with no test behind it.** It
+ * needs a real authenticator, a user gesture and a secure context, none of
+ * which exist in a test runner — so it is deliberately the smallest thing it
+ * can be, and everything on either side of it (deriving the key, sealing,
+ * uploading, fetching, unsealing) is tested in `packages/core`.
+ *
+ * The PRF extension is what makes a passkey a *key* rather than a signature: it
+ * returns 32 bytes that this authenticator will reproduce and will not reveal.
+ * Not every authenticator supports it, and one that does not is a passkey we
+ * cannot use — hence `null` rather than an error, because the person did
+ * nothing wrong.
+ */
+const PRF_SALT = new TextEncoder().encode('revel/passkey-wrap/v1');
+
+/** The rp id has to be the registrable domain, not the full origin. */
+const rpId = (): string => location.hostname;
+
+function prfOutput(credential: PublicKeyCredential | null): Uint8Array | null {
+  if (!credential) return null;
+  const results = credential.getClientExtensionResults() as {
+    prf?: { enabled?: boolean; results?: { first?: ArrayBuffer } };
+  };
+  const first = results.prf?.results?.first;
+  return first ? new Uint8Array(first) : null;
+}
+
+export const webAuthnPrf: PrfProvider = {
+  async enrol(handle) {
+    try {
+      const credential = (await navigator.credentials.create({
+        publicKey: {
+          challenge: crypto.getRandomValues(new Uint8Array(32)),
+          rp: { name: 'Revel', id: rpId() },
+          user: {
+            id: new TextEncoder().encode(handle),
+            name: handle,
+            displayName: handle,
+          },
+          pubKeyCredParams: [
+            { type: 'public-key', alg: -8 },
+            { type: 'public-key', alg: -7 },
+            { type: 'public-key', alg: -257 },
+          ],
+          authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
+          // `eval` at creation as well as assertion: some authenticators return
+          // the output straight away, and asking twice is a second prompt.
+          extensions: { prf: { eval: { first: PRF_SALT } } },
+        },
+      })) as PublicKeyCredential | null;
+
+      const direct = prfOutput(credential);
+      if (direct) return direct;
+      // Created, but the output was not returned with it. Ask once more.
+      return credential ? this.assert(handle) : null;
+    } catch (err) {
+      // Declining is a `NotAllowedError`, and it is an answer rather than a
+      // failure — a passkey is optional and refusing one is a real choice.
+      console.error('passkey enrolment did not complete', err);
+      return null;
+    }
+  },
+
+  async assert(_handle) {
+    try {
+      const credential = (await navigator.credentials.get({
+        publicKey: {
+          challenge: crypto.getRandomValues(new Uint8Array(32)),
+          rpId: rpId(),
+          userVerification: 'preferred',
+          extensions: { prf: { eval: { first: PRF_SALT } } },
+        },
+      })) as PublicKeyCredential | null;
+      return prfOutput(credential);
+    } catch (err) {
+      console.error('passkey assertion did not complete', err);
+      return null;
+    }
+  },
+};
+
+/** Whether a passkey is even worth offering here. */
+export async function passkeysAvailable(): Promise<boolean> {
+  if (typeof PublicKeyCredential === 'undefined' || !window.isSecureContext) return false;
+  try {
+    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch {
+    return false;
   }
 }

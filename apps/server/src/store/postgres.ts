@@ -100,6 +100,15 @@ export interface PostgresStoreOptions {
    * because a Host that has not thought about storage yet should still work.
    */
   blobs?: BlobBytes;
+  /**
+   * Extra connection parameters, applied to every connection in the pool.
+   *
+   * `search_path` is the one that matters: it is per connection, so setting it
+   * with a one-off `SET` and then running queries from a pool is a race between
+   * which backend you got. The test suite uses this to keep its tables out of
+   * `public`.
+   */
+  connection?: Record<string, string>;
 }
 
 export class PostgresStore implements Store {
@@ -111,7 +120,11 @@ export class PostgresStore implements Store {
     this.sql =
       typeof options === 'function'
         ? (options as Sql)
-        : postgres(options.url, { max: options.max ?? 10, onnotice: () => {} });
+        : postgres(options.url, {
+            max: options.max ?? 10,
+            onnotice: () => {},
+            ...(options.connection ? { connection: options.connection } : {}),
+          });
     this.#blobs = typeof options === 'function' ? null : (options.blobs ?? null);
   }
 
@@ -1104,20 +1117,27 @@ export class PostgresStore implements Store {
 
   async putWrap(accountPub: string, wrap: StoredWrap): Promise<void> {
     await this.sql`
-      INSERT INTO wraps (account_pub, kind, blob, salt)
-      VALUES (${accountPub}, ${wrap.kind}, ${wrap.blob}, ${wrap.salt ?? null})
+      INSERT INTO wraps (account_pub, kind, blob, salt, verifier)
+      VALUES (${accountPub}, ${wrap.kind}, ${wrap.blob}, ${wrap.salt ?? null},
+              ${wrap.verifier ?? null})
       ON CONFLICT (account_pub, kind) DO UPDATE
-        SET blob = EXCLUDED.blob, salt = EXCLUDED.salt`;
+        SET blob = EXCLUDED.blob, salt = EXCLUDED.salt, verifier = EXCLUDED.verifier`;
   }
 
   async wrapsFor(accountPub: string): Promise<StoredWrap[]> {
     const rows = await this.sql`
-      SELECT kind, blob, salt FROM wraps WHERE account_pub = ${accountPub} ORDER BY kind`;
+      SELECT kind, blob, salt, verifier FROM wraps
+      WHERE account_pub = ${accountPub} ORDER BY kind`;
     return rows.map((r) => ({
       kind: r.kind as StoredWrap['kind'],
       blob: r.blob as string,
       ...(r.salt != null ? { salt: r.salt as string } : {}),
+      ...(r.verifier != null ? { verifier: r.verifier as string } : {}),
     }));
+  }
+
+  async deleteWrap(accountPub: string, kind: 'passkey'): Promise<void> {
+    await this.sql`DELETE FROM wraps WHERE account_pub = ${accountPub} AND kind = ${kind}`;
   }
 
   async putRegistrationRecord(accountPub: string, record: string): Promise<void> {

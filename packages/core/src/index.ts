@@ -39,6 +39,19 @@ export {
   signUp,
 } from './identity/enrol.js';
 export {
+  addPasskeyWrap,
+  type PasskeyDeps,
+  type PrfProvider,
+  unlockWithPasskey,
+} from './identity/passkey.js';
+export {
+  clearSession,
+  loadSession,
+  type Session,
+  type SessionStoreOptions,
+  saveSession,
+} from './identity/session.js';
+export {
   type Candidate,
   type Decision,
   decide,

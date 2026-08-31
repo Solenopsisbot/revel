@@ -390,6 +390,11 @@ export interface Store {
   putWrap(accountPub: string, wrap: StoredWrap): Promise<void>;
   /** Every wrap an account has. Released only after a finished login. */
   wrapsFor(accountPub: string): Promise<StoredWrap[]>;
+  /**
+   * Remove one wrap. Only ever `passkey` — removing `password` or `recovery`
+   * would leave an account with fewer ways back in than it needs.
+   */
+  deleteWrap(accountPub: string, kind: 'passkey'): Promise<void>;
 
   /** Replace the OPAQUE record. What a password change actually is, server-side. */
   putRegistrationRecord(accountPub: string, record: string): Promise<void>;
@@ -447,6 +452,15 @@ export interface StoredWrap {
   blob: string;
   /** Argon2id salt, `recovery` only. Not secret. */
   salt?: string;
+  /**
+   * Proof that the caller holds the secret behind this wrap, for the wraps that
+   * can be fetched without a password — `recovery` and `passkey`.
+   *
+   * `password` wraps have none and never will: that one is released by
+   * finishing an OPAQUE login, which is a stronger check than comparing a hash
+   * and does not need this.
+   */
+  verifier?: string;
 }
 
 export interface LoginSession {
