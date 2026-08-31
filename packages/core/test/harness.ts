@@ -60,13 +60,16 @@ import {
 } from '@revel/server';
 import {
   Attachments,
+  type Decision,
   GroupSync,
   HostSession,
   HttpGroupTransport,
   HttpTransport,
   LiveCore,
+  type LocalEvent,
   MemoryStore,
   type Message,
+  type NotificationSettings,
   RoomSync,
   type SocketLike,
   toAccountId,
@@ -132,8 +135,9 @@ export class World {
 
   static async create(over: { externalSender?: string | null } = {}): Promise<World> {
     await startWasm();
-    // The Host's own external-sender identity, generated per world. Real
-    // deployments must persist it — see `createHostIdentity`.
+    // The Host's own external-sender identity, generated per world — which is
+    // right here and wrong in production, where `hostkey.ts` reads it from a
+    // file and the server refuses to start without one if the store is durable.
     const identity = await createHostIdentity(HOST);
     return new World(
       over.externalSender === undefined ? identity.certificate : over.externalSender,
@@ -331,6 +335,17 @@ export class Client {
    */
   device!: string;
 
+  /** `docs/35` settings this client is running with. Mutable per test. */
+  notifySettings: NotificationSettings = { default: 'everything' };
+  /** Room metadata the engine cannot know; defaults to an ordinary space room. */
+  notifyPlaces = new Map<
+    string,
+    { spaceId: string | null; kind: 'space' | 'dm' | 'group' } | null
+  >();
+  notifyMinute = 12 * 60;
+  /** Every decision this client made, in order. What a person would be told. */
+  notified: { room: string; event: LocalEvent; decision: Decision }[] = [];
+
   rooms!: RoomSync;
   groups!: GroupSync;
   session!: HostSession;
@@ -416,6 +431,24 @@ export class Client {
       account: client.account,
       nonce: () => `${label}-${++client.#counter}-nonce`,
       now: () => world.time,
+      // `docs/35`'s rules, wired the way a real client wires them. Off by
+      // default in the sense that nothing here changes unless a test sets
+      // `notifySettings`; every decision is recorded so a test can assert on
+      // what a person would actually have been told.
+      notify: {
+        settings: () => client.notifySettings,
+        // `has`, not `??` — a test that sets a room to `null` is saying "the
+        // directory has not loaded this", which is a different thing from "no
+        // override", and `??` collapses the two.
+        place: (roomId) =>
+          client.notifyPlaces.has(roomId)
+            ? (client.notifyPlaces.get(roomId) ?? null)
+            : { spaceId: 'space-1', kind: 'space' },
+        minuteOfDay: () => client.notifyMinute,
+        deliver: (room, event, decision) => {
+          client.notified.push({ room, event, decision });
+        },
+      },
     });
 
     client.groups = new GroupSync({
@@ -621,6 +654,16 @@ export class Client {
 
   async say(roomId: string, text: string) {
     return this.rooms.send(roomId, { type: 'm.message', body: text });
+  }
+
+  /** A reply to a specific message. `docs/35` rule 7 turns on this. */
+  async reply(roomId: string, target: string, text: string) {
+    return this.rooms.send(roomId, { type: 'm.message', body: text, replyTo: target });
+  }
+
+  /** A message naming somebody, by account id. `docs/35` rule 6. */
+  async mention(roomId: string, accounts: string[], text: string) {
+    return this.rooms.send(roomId, { type: 'm.message', body: text, mentions: accounts });
   }
 
   /**

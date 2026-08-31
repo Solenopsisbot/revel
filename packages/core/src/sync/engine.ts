@@ -32,6 +32,12 @@ import {
   payloadBytes,
   toAccountId,
 } from '@revel/protocol';
+import {
+  type Candidate,
+  type Decision,
+  decide,
+  type NotificationSettings,
+} from '../notify/rules.js';
 import { addPending, markFailed, markPurged, reduceAll } from '../rooms/reduce.js';
 import { emptyRoom, type LocalEvent, type Message, type RoomState } from '../rooms/state.js';
 import type { LocalStore } from '../store/types.js';
@@ -56,9 +62,41 @@ export interface RoomSyncOptions {
   /** `docs/04` §4: the client honours redactions from non-authors only here. */
   mayModerate?: (account: string) => boolean;
 
+  /**
+   * How to decide whether an incoming event deserves a notification.
+   *
+   * Optional, and absent in every test that is not about notifications. The
+   * engine deliberately does not own settings or room metadata — it knows a
+   * room id and a ciphertext — so the decision is assembled from what the
+   * caller injects here (`docs/35`).
+   */
+  notify?: NotifyDeps;
+
   /** Overridable for tests. */
   nonce?: () => string;
   now?: () => number;
+}
+
+/** What the engine needs in order to run `decide` on an incoming event. */
+export interface NotifyDeps {
+  /** Current settings. A function, because they change while the app runs. */
+  settings(): NotificationSettings;
+  /**
+   * Where this room sits. `null` for a room the directory has not loaded yet,
+   * which suppresses the decision rather than guessing at it.
+   */
+  place(roomId: string): { spaceId: string | null; kind: 'space' | 'dm' | 'group' } | null;
+  /** Local minutes from midnight. Injected, so the decision stays reproducible. */
+  minuteOfDay?(): number;
+  /**
+   * Called for **every** decrypted event, notifying or not.
+   *
+   * Not filtered to `notify === true`, because the other half of `docs/05` §8
+   * lives in the decision too: a muted room still gets its quiet dot, and the
+   * caller needs `mark` to know which. Filtering here would mean the room list
+   * had to work the rest out again.
+   */
+  deliver(roomId: string, event: LocalEvent, decision: Decision): void;
 }
 
 export type RoomListener = (state: RoomState) => void;
@@ -82,6 +120,7 @@ export class RoomSync {
   #transport: Transport;
   #stream?: EventStream;
   #account: string;
+  #notify: NotifyDeps | undefined;
   #mayModerate: ((account: string) => boolean) | undefined;
   #nonce: () => string;
   #now: () => number;
@@ -113,6 +152,7 @@ export class RoomSync {
     this.#stream = options.stream;
     this.#account = options.account;
     this.#mayModerate = options.mayModerate;
+    this.#notify = options.notify;
     this.#nonce = options.nonce ?? (() => crypto.randomUUID());
     this.#now = options.now ?? (() => Date.now());
   }
@@ -292,6 +332,7 @@ export class RoomSync {
     }
 
     if (decrypted.length) await this.#store.putEvents(roomId, decrypted);
+    if (this.#notify && decrypted.length) this.#decideNotifications(roomId, batch, decrypted);
 
     let state = reduceAll(this.state(roomId), decrypted, { mayModerate: this.#mayModerate });
     for (const purge of purges) {
@@ -522,6 +563,65 @@ export class RoomSync {
    * than the conversation, and there is no row for "the membership changed" in
    * a timeline the server cannot see.
    */
+  /**
+   * Run `docs/35`'s rules over a batch that has just been decrypted.
+   *
+   * Deliberately after the store write and before the reducer commit: the event
+   * is durable by the time anything is told about it, so a notification can
+   * never point at something a reload would lose.
+   */
+  #decideNotifications(roomId: string, batch: Event[], decrypted: LocalEvent[]): void {
+    const deps = this.#notify;
+    if (!deps) return;
+    const place = deps.place(roomId);
+    // A room the directory has not loaded yet. Suppressing beats guessing: a
+    // wrong `kind` here turns a DM into a space room and silently downgrades it
+    // to the global default.
+    if (!place) return;
+
+    const settings = deps.settings();
+    const classes = new Map(batch.map((e) => [e.id, e.class]));
+    const state = this.state(roomId);
+
+    for (const local of decrypted) {
+      const payload = local.payload;
+      const message =
+        payload.known && payload.event.type === 'm.message'
+          ? (payload.event as { mentions?: string[]; replyTo?: string })
+          : null;
+
+      const candidate: Candidate = {
+        roomId,
+        spaceId: place.spaceId,
+        kind: place.kind,
+        class: classes.get(local.id) ?? 'normal',
+        sender: local.account,
+        ...(message?.mentions ? { mentions: message.mentions } : {}),
+        // Whose message this replies to, not which message — the rule is "a
+        // reply to *you*". Resolved from room state, which is where the answer
+        // already is; a reply to a message that has been backfilled away simply
+        // does not match, which is the right failure.
+        ...(message?.replyTo && state.byId.get(message.replyTo)?.account
+          ? { replyTo: state.byId.get(message.replyTo)?.account }
+          : {}),
+        // `broadcast` is **not derived here**, and that is a gap rather than a
+        // decision. `docs/04` detects `MENTION_EVERYONE` client-side "on
+        // rendering the ping", which means parsing the rich text body — there is
+        // no flag on the payload to read. Until there is, an `@everyone` reaches
+        // people through the ordinary room setting rather than through rule 8.
+      };
+
+      deps.deliver(
+        roomId,
+        local,
+        decide(candidate, settings, {
+          account: this.#account,
+          ...(deps.minuteOfDay ? { minuteOfDay: deps.minuteOfDay() } : {}),
+        }),
+      );
+    }
+  }
+
   async #decrypt(roomId: string, event: Event): Promise<LocalEvent | null> {
     // Our own echo. See `#outbox`.
     const mine = event.clientNonce ? this.#outbox.get(event.clientNonce) : undefined;

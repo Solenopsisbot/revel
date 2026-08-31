@@ -47,6 +47,7 @@ import {
   verifyDeviceCert,
 } from '@revel/protocol';
 import type { Hono } from 'hono';
+import { generateHostIdentity, type HostIdentity } from './hostkey.js';
 import type { Actor } from './policy.js';
 import type { Device, Store } from './store/types.js';
 
@@ -237,29 +238,16 @@ export function mountAuth(app: Hono, deps: AuthDeps): void {
  * every group opened while it was published, and a group's `external_senders`
  * extension cannot be changed without a commit. A Host that regenerates this on
  * restart silently loses the ability to propose into every group it has ever
- * served. Persisting it is the deployment's job — there is nowhere in this
- * codebase that durably holds a server secret yet, which is why this returns
- * the key rather than hiding it.
+ * served.
+ *
+ * Which is what `hostkey.ts` is for, and why this is now a one-line alias for
+ * [`generateHostIdentity`] rather than a second implementation of it. **This
+ * one is for tests**, which want a throwaway identity and have no file to read;
+ * `index.ts` reads a key file and refuses to start without one whenever the
+ * store is durable.
  */
-export async function createHostIdentity(label = 'host'): Promise<{
-  certificate: string;
-  accountKey: CryptoKey;
-  devicePub: Uint8Array;
-}> {
-  const account = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, [
-    'sign',
-    'verify',
-  ])) as CryptoKeyPair;
-  const device = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, [
-    'sign',
-    'verify',
-  ])) as CryptoKeyPair;
-
-  const accountPub = new Uint8Array(await crypto.subtle.exportKey('raw', account.publicKey));
-  const devicePub = new Uint8Array(await crypto.subtle.exportKey('raw', device.publicKey));
-  const certificate = await issueDeviceCert(account.privateKey, accountPub, devicePub, label);
-
-  return { certificate: toBase64(certificate), accountKey: account.privateKey, devicePub };
+export async function createHostIdentity(label = 'host'): Promise<HostIdentity> {
+  return generateHostIdentity(label);
 }
 
 /**

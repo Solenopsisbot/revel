@@ -1,7 +1,8 @@
 /** Bun entrypoint. Wires the app to Bun's HTTP and WebSocket server. */
 import { SnowflakeFactory } from '@revel/protocol';
 import { createApp } from './app.js';
-import { createHostIdentity, sessionAuthenticator } from './auth.js';
+import { sessionAuthenticator } from './auth.js';
+import { generateHostIdentity, hostKeyPath, parseHostKey, readHostKey } from './hostkey.js';
 import { Hub } from './hub.js';
 import { RateLimiter } from './ratelimit.js';
 import { type Actor, SocketSession } from './socket.js';
@@ -19,6 +20,7 @@ import type { Store } from './store/types.js';
  * lose every message on restart, which is the worst way for a mistake like that
  * to behave. So the choice is printed at boot, every time.
  */
+const durable = !!process.env.DATABASE_URL;
 const store: Store = await (async () => {
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -71,13 +73,54 @@ const idp = process.env.REVEL_IDP ?? host;
 /**
  * This Host's identity as an MLS external sender (`docs/03` §5).
  *
- * Generated per process, which is **wrong for a real deployment**: the key ends
- * up in the group context of every group opened while it was published, and a
- * restart with a new key means the Host can never propose into any of them.
- * There is nowhere in this codebase that durably holds a server secret yet —
- * that lands with `revel init` (`docs/29` §7).
+ * **The identity's durability has to match the store's**, and that is the whole
+ * rule below. The key is published in the group context of every group the Host
+ * is an external sender for, so a fresh one at boot means the Host can never
+ * propose into any group it opened before — and nothing reports it. The groups
+ * are fine, the members are fine, and the server's proposals are simply refused
+ * forever.
+ *
+ * So an ephemeral key is allowed exactly when the groups are ephemeral too. The
+ * moment there is a database, a missing key file is a refusal to start rather
+ * than a warning: this is a misconfiguration that works perfectly for as long as
+ * nobody needs the Host to moderate anything.
  */
-const hostIdentity = await createHostIdentity(host);
+const hostIdentity = await (async () => {
+  // `REVEL_HOST_KEY` takes the file's contents directly, for deployments that
+  // inject secrets as environment rather than as a volume. Raw JSON or base64,
+  // because secret managers disagree about which is less painful.
+  const inline = process.env.REVEL_HOST_KEY;
+  if (inline) {
+    const json = inline.trimStart().startsWith('{')
+      ? inline
+      : Buffer.from(inline, 'base64').toString('utf8');
+    console.log('host key: REVEL_HOST_KEY');
+    return parseHostKey(json);
+  }
+
+  const path = hostKeyPath();
+  const stored = await readHostKey(path);
+  if (stored) {
+    console.log(`host key: ${path}`);
+    return stored;
+  }
+
+  if (durable) {
+    console.error(`no host key at ${path}, and DATABASE_URL is set.`);
+    console.error('');
+    console.error('A generated-at-boot key would work until this Host had to');
+    console.error('propose into a group it opened before the last restart, and');
+    console.error('then fail silently and permanently. Run:');
+    console.error('');
+    console.error('    pnpm init');
+    console.error('');
+    console.error('or set REVEL_HOST_KEY. To run without one, unset DATABASE_URL.');
+    process.exit(1);
+  }
+
+  console.log('host key: ephemeral (fine — the groups are in memory too)');
+  return generateHostIdentity(host);
+})();
 
 /**
  * The address a request came from, for the limiter.

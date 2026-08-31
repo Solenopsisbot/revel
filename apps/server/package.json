@@ -9,7 +9,8 @@
     "./entry": "./src/index.ts"
   },
   "scripts": {
-    "dev": "bun run src/index.ts"
+    "dev": "bun run src/index.ts",
+    "host-key": "bun run src/init.ts"
   },
   "dependencies": {
     "@revel/protocol": "workspace:*",

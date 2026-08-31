@@ -24,3 +24,4 @@ packages/crypto-wasm/*
 # Logs and scratch
 *.log
 /tmp/
+revel-host.json

@@ -80,6 +80,7 @@ export type {
   SealedRecord,
 } from './store/types.js';
 export {
+  type NotifyDeps,
   type RoomListener,
   RoomSync,
   type RoomSyncOptions,

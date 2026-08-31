@@ -1010,10 +1010,10 @@ opened while it was published, and cannot be changed there without a commit. A
 Host that regenerates it on restart silently loses the ability to propose into
 every group it has ever served.
 
-`apps/server/src/index.ts` currently generates it **per process**, which is
-wrong for anything real and is commented as such. There is nowhere in this
-codebase that durably holds a server secret; that arrives with `revel init`
-(`docs/29` §7).
+`apps/server/src/index.ts` generated it **per process**, which was wrong for
+anything real. **Fixed in §29:** `hostkey.ts` holds it in a `0600` file (or
+`REVEL_HOST_KEY`), `pnpm host-key` writes one, and the server refuses to start
+without one whenever `DATABASE_URL` is set.
 
 ---
 
@@ -1656,8 +1656,8 @@ Real migrations — `migrate()` creates what is absent and never alters what is
 there, which is safe at boot and useless for evolving a schema with data in it.
 Blob bytes are in a `bytea` column, which is fine at this scale and wrong at any
 other; the seam is written down where the row is inserted. And the Host's
-external-sender key is still generated per process (§8), which Postgres does not
-fix, because it is a secret and this database is not where secrets go.
+external-sender key was still generated per process (§8) — Postgres does not fix
+that, because it is a secret and a database is not where secrets go; §29 does.
 
 ---
 
@@ -1763,3 +1763,93 @@ default", and computing it in the UI was the reason the second implementation
 existed at all.
 
 878 tests with Postgres, 828 without, `svelte-check` clean.
+
+---
+
+## 29. The Host's key, and the rules engine that had no callers
+
+Two follow-ups, both of the same kind: something specified, implemented and
+tested, that was not actually *load-bearing* yet.
+
+### The key that could not survive a restart
+
+`docs/03` §5 lets a Host act as an MLS **external sender** — it may propose into
+a group it cannot read, which is how a moderator's "remove this device" becomes
+an actual Remove. Its signature key goes in the group's `ExternalSendersExt`,
+and an extension is **part of the group context**, which every member has
+already committed to.
+
+So the key is permanent in a way server secrets usually are not, and
+`index.ts` generated a fresh one at every boot. The failure mode is the bad
+kind: the groups are fine, the members are fine, and the Host's proposals are
+simply refused forever, with nothing reporting it.
+
+§27 made this *worse* rather than exposing it — Postgres meant the groups now
+survive a restart, so a Host would come back holding every group it had ever
+opened and unable to act on any of them.
+
+- `hostkey.ts` reads and writes a `0600` JSON file, or takes `REVEL_HOST_KEY`
+  for deployments that inject secrets as environment rather than volumes.
+- `pnpm host-key` writes one. Named that rather than `init` because `pnpm init`
+  is a pnpm builtin that writes a `package.json`, and a command that does
+  something entirely different depending on whether you typed `run` is a trap.
+- Nothing creates one implicitly, and `writeHostKey` refuses to overwrite. A key
+  that appears by itself is a key nobody backed up, and this one cannot be
+  regenerated from anything.
+- The certificate is **verified on load**, not trusted. A hand-edited file that
+  still parses would otherwise publish a signature key nothing can check, and
+  the failure would surface months later as "the Host's proposals are refused".
+
+**The rule the whole thing turns on: the identity's durability must match the
+store's.** An ephemeral key is fine when the groups are in memory too, so
+`revel dev` is unchanged. The moment `DATABASE_URL` is set, a missing key file
+is a refusal to start with instructions — because this is a misconfiguration
+that works perfectly right up until somebody needs the Host to moderate
+something.
+
+Verified end to end rather than only in unit tests: two boots against the same
+file publish byte-identical `externalSender` at `/.well-known/revel/host`.
+
+And `createHostIdentity` in `auth.ts` is now a one-line alias for
+`generateHostIdentity` rather than a second implementation — the same
+duplication §28 caught in the notification settings, avoided this time by
+noticing it while writing the replacement.
+
+### A pure function that nothing called
+
+`docs/35`'s rules engine was specified, implemented, documented and tested for a
+day with **no callers at all**. Every test passed. A pure function nothing calls
+passes every test it has, which is precisely why "we wrote the tests" is not the
+same claim as "it works".
+
+It is wired into `RoomSync.receive` now, after the store write and before the
+reducer commit — so the event is durable by the time anything is told about it,
+and a notification can never point at something a reload would lose.
+
+The engine deliberately does not own settings or room metadata; it knows a room
+id and a ciphertext. So `NotifyDeps` injects the settings, the room's place, and
+the clock, and `deliver` is called for **every** decrypted event rather than
+only the notifying ones — because the other half of `docs/05` §8 lives in the
+decision too, and the room list needs `mark` to know whether to draw a badge or
+a quiet dot.
+
+Three things worth recording from doing it:
+
+- **`replyTo` in the payload is a message id; the rule is "a reply to *you*".**
+  The engine resolves the author from `RoomState.byId`, which is where the
+  answer already is. A reply to a message that has been backfilled away simply
+  does not match, which is the right failure.
+- **A room the directory has not loaded produces no decision at all.** A guessed
+  `kind` would turn a DM into a space room and silently downgrade it to the
+  global default — the sort of bug nobody would ever trace back to here.
+- **`broadcast` is not derived, and that is a gap rather than a decision.**
+  `docs/04` detects `MENTION_EVERYONE` client-side "on rendering the ping",
+  which means parsing the rich text body; there is no flag on the payload. Until
+  there is, an `@everyone` reaches people through the ordinary room setting
+  rather than through rule 8. Written in the code where the field would go.
+
+`notifywiring.test.ts` drives all of it through the multi-client harness — MLS,
+a server, a socket, a reducer — because that is the difference between the
+function being correct and the function being reached.
+
+897 tests.

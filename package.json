@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "pnpm --filter @revel/web dev",
     "dev:server": "pnpm --filter @revel/server dev",
+    "host-key": "pnpm --filter @revel/server host-key",
     "build": "pnpm --filter @revel/web build",
     "build:wasm": "bash scripts/build-wasm.sh",
     "bench:wasm": "echo '\\n  open http://localhost:8787/bench/wasm/\\n' && python3 -m http.server 8787",
