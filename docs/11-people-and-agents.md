@@ -64,19 +64,31 @@ the server never learns the connection either, since it never sees faces at all.
 The sentence above is true and it is not the whole picture, so the limit belongs
 next to the promise rather than in a results doc somebody has to go and find.
 
-**The server cannot tell. Another member can count.** Every member of a room
-holds the MLS roster — that is not a leak, it is what a client needs in order to
-know whose keys open the room. So somebody in the room can see **how many
-accounts** are in the group, and **how many faces** have spoken. If four faces
-speak in a room with three accounts, somebody there is plural, and narrowing
-*which* somebody is a matter of watching who posts when. No UI change fixes
-this: both counts are things a client legitimately needs.
+**The server cannot tell. Another member in the same room can, exactly.**
 
-So the honest statement is narrower than it reads. Linking off protects against
-**the server**, and against a client that carelessly renders two faces as one
-person — a real failure mode, and one this codebase committed and then fixed
-(`31` §23). It does **not** protect against a member of the same room who is
-paying attention.
+Attribution is cryptographic and it is per *account*: a message's sender is an
+MLS leaf, and the leaf resolves to the account that owns it. The face is a field
+*inside* the message. So if two of your faces both post in one room, every
+member of that room holds two messages that resolve to the same account and
+carry different faces. **That is a direct link, not an inference** — no counting,
+no watching who posts when, nothing to be clever about. A client that renders
+faces rather than accounts is a courtesy, and courtesy is not a security
+boundary: the account id is right there in what every member already received.
+
+Counting only matters in the weaker cases — faces in *different* rooms, or a
+face that has never spoken. There, a member still sees how many accounts are in
+the group and how many faces have spoken, and four faces across three accounts
+still means somebody is plural.
+
+No UI change fixes either. Per-account attribution is what makes a message
+attributable at all, and a room where you cannot tell who is talking is not a
+room.
+
+So the honest statement is much narrower than it reads. Linking off protects
+against **the server**, and against a client that carelessly renders two faces
+as one person — a real failure mode, and one this codebase committed and then
+fixed (`31` §23). Against a member of a room you have used two faces in, it
+protects against nothing at all.
 
 For anyone who needs the stronger property, the answer is already in the design
 and it is a different feature: `17-identity-ux.md`'s **multiple accounts**,
@@ -86,6 +98,12 @@ them. That is the tool for "nobody may know these are the same person". Faces
 are the tool for "I present differently in different places". Presenting the
 weaker one as if it were the stronger one is how somebody gets outed by a
 feature that promised not to do that.
+
+**This has to reach the person, not just the doc.** The face switcher should say
+plainly that faces on one account are linkable inside a shared room, and point
+at a second account for the case where that is not acceptable — at the moment
+somebody picks a second face, which is the moment they are deciding what they
+are relying on.
 
 ### The profile card — "system information should be good"
 

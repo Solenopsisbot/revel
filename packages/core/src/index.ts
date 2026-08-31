@@ -23,6 +23,17 @@ export { LiveCore, type LiveCoreOptions } from './app/live.js';
 export { Attachments, type AttachmentsOptions } from './blobs/attachments.js';
 export { openBlob, type SealedBlob, type SealOptions, sealBlob } from './blobs/seal.js';
 export {
+  type Candidate,
+  type Decision,
+  decide,
+  effectiveSetting,
+  type Loudness,
+  type NotificationSettings,
+  type Reader,
+  type RuleId,
+  type Setting,
+} from './notify/rules.js';
+export {
   addPending,
   dropPending,
   emptyRoom,

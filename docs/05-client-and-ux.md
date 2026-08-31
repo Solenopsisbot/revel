@@ -40,7 +40,9 @@ architecture that makes the UI cheap to get right.
 8. **Notifications you can predict.** One rules screen: per room — everything /
    mentions / nothing; per space — inherit; global — DND, quiet hours, sounds.
    The rule that fired is shown on the notification. Muted things get a quiet
-   dot, never a badge.
+   dot, never a badge. The eleven rules, in order, are `35-notification-rules.md`
+   — including the two that are arguments: a mute beats a direct mention, and
+   nothing at all beats DND.
 9. **Customisable, but never at the cost of a baseline.** Kith's CSS-variable
    seam (theme, accent, radius, density, font, column layout, reduce-motion) is
    in the design system from the first component, synced to the account.

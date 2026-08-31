@@ -1366,26 +1366,35 @@ all."*
 That is true, and it is **not the whole threat.** Building the directory seam
 made the gap concrete, so it belongs written down next to the promise.
 
-### The server cannot tell. Another member can count.
+### The server cannot tell. Another member can just read it.
 
 Faces live inside the ciphertext, so a Host sees accounts and never faces.
-But every member of a room holds the MLS roster, and `DirectoryCore.roster`
-hands it over — that is not a leak, it is what a client needs to know whose keys
-open the room. So a member can see:
 
-- **How many accounts** are in the group (the roster).
-- **How many faces** have spoken (the messages).
+**Corrected on 2026-08-31, and the correction is worse than the original
+finding.** This section first said the leak was a *counting* attack: a member
+sees how many accounts are in the roster and how many faces have spoken, so four
+faces across three accounts means somebody is plural. True, and not the sharp
+edge.
 
-If four faces speak in a room with three accounts, somebody in that room is
-plural, and narrowing which one is a matter of watching who posts when. No UI
-change fixes this: the counts are both things a client legitimately needs.
+The sharp edge is `SyncEngine.#accountFor`. Attribution is per *account* and it
+is cryptographic — a message's sender is an MLS leaf, the leaf resolves through
+the roster to the account that owns it, and the face is a field inside the
+message payload. So **two faces of one account posting in one room hand every
+member a direct link**: two messages, same account, different faces. No
+counting, no timing analysis, nothing to infer. The client renders the face and
+not the account, and that is a courtesy rather than a boundary — the account id
+is already in what every member received.
+
+Counting is the residual case: faces in *different* rooms, or a face that has
+not spoken. No UI change fixes either, because per-account attribution is what
+makes a message attributable at all.
 
 ### Which means the honest statement is narrower than it reads
 
 Linking off protects against **the server**, and against a client that
 carelessly renders two faces as one person — which is a real failure and one
-this codebase committed and then fixed. It does **not** protect against a
-member of the same room who is paying attention.
+this codebase committed and then fixed. Against a member of a room you have used
+two faces in, it protects against nothing at all.
 
 For somebody who needs that stronger property, the answer is already in the
 design and is a different feature: `docs/17`'s **multiple accounts**, which are
@@ -1400,7 +1409,11 @@ that is the kind of misunderstanding that gets somebody outed.
 
 **Decided (2026-08-31): it now does.** `docs/11`'s linking section carries the
 limit inline, under *"what linking-off does not protect against"*, and points at
-`docs/17`'s multiple accounts as the tool for the stronger property. It was
+`docs/17`'s multiple accounts as the tool for the stronger property. It also
+asks for the warning to appear in the **face switcher** — at the moment somebody
+picks a second face, which is the moment they are deciding what they are relying
+on. A limit that lives only in a document is one the person it protects will
+never read. It was
 raised here rather than edited straight in because narrowing a privacy promise
 is Viola's call and not a footnote — but the narrowing does not weaken anything
 real. It describes the system that was always being built; only the sentence
