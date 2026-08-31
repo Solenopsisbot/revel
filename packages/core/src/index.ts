@@ -23,6 +23,22 @@ export { LiveCore, type LiveCoreOptions } from './app/live.js';
 export { Attachments, type AttachmentsOptions } from './blobs/attachments.js';
 export { openBlob, type SealedBlob, type SealOptions, sealBlob } from './blobs/seal.js';
 export {
+  type EnrolDeps,
+  EnrolError,
+  type Enrolled,
+  type EnvelopeApi,
+  type IdpTransport,
+  type RecoverInput,
+  type ResetInput,
+  recover,
+  resetPassword,
+  type SignInInput,
+  type SignUpInput,
+  type SignUpResult,
+  signIn,
+  signUp,
+} from './identity/enrol.js';
+export {
   type Candidate,
   type Decision,
   decide,

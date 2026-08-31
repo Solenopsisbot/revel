@@ -91,6 +91,9 @@ importers:
       '@revel/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@serenity-kit/opaque':
+        specifier: ^1.1.0
+        version: 1.1.0
     devDependencies:
       '@revel/crypto-wasm':
         specifier: workspace:*

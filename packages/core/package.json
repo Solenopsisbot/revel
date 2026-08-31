@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@revel/crypto": "workspace:*",
-    "@revel/protocol": "workspace:*"
+    "@revel/protocol": "workspace:*",
+    "@serenity-kit/opaque": "^1.1.0"
   },
   "devDependencies": {
     "@revel/crypto-wasm": "workspace:*",
