@@ -13,7 +13,7 @@
  *      v2 event does not destroy what it doesn't understand.
  */
 import { z } from 'zod';
-import { AccountId } from './ids.js';
+import { AccountId, RoleId } from './ids.js';
 
 const Id = z.string().regex(/^\d{1,20}$/);
 
@@ -99,6 +99,26 @@ export const EncryptedEvent = z.discriminatedUnion('type', [
      * and a name that tells the next person which of the two belongs here.
      */
     mentions: z.array(AccountId).max(256).optional(),
+    /**
+     * A room-wide address — `@everyone`, or `@here`.
+     *
+     * A *claim* by the sender's client, and **not self-enforcing**. The server
+     * cannot read this field, so a member without `MENTION_EVERYONE` can set it
+     * to `true` and there is nothing here to stop them. `docs/04` puts the other
+     * half on the reader — "client, on rendering the ping" — which means every
+     * client must check the sender's permission before honouring it, and the
+     * notification rules do (`docs/35` rule 8).
+     *
+     * A flag rather than a sentinel in `mentions`: that list is `AccountId`s,
+     * and smuggling a magic string through a typed list is how a permission
+     * check ends up comparing the wrong thing.
+     */
+    mentionsEveryone: z.boolean().optional(),
+    /**
+     * Roles addressed by name. Same rules as above: a claim, checked by the
+     * reader against both the sender's permission and their own roles.
+     */
+    mentionsRoles: z.array(RoleId).max(32).optional(),
     /** Which of the face's avatars to pin to this message. */
     expression: z.string().max(64).optional(),
     /** Honoured client-side. The setting's own copy says a reader can always

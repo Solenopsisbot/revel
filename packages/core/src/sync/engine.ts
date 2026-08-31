@@ -89,6 +89,24 @@ export interface NotifyDeps {
   /** Local minutes from midnight. Injected, so the decision stays reproducible. */
   minuteOfDay?(): number;
   /**
+   * Role ids the reading account holds in this room.
+   *
+   * Needed for `@role` pings. Absent means "no roles", which suppresses them —
+   * the safe direction, since the failure is a missed ping rather than a ping
+   * somebody was not entitled to send.
+   */
+  roles?(roomId: string): string[];
+  /**
+   * Whether `account` may address the whole room (`MENTION_EVERYONE`).
+   *
+   * **This is a permission check the reader has to do**, because the server
+   * cannot. `mentionsEveryone` is inside the ciphertext, so a member without
+   * the permission can set it and the Host will never know; `docs/04` puts
+   * enforcement on the client, "on rendering the ping". Absent means nobody
+   * may, which makes an unwired client quiet rather than exploitable.
+   */
+  mayBroadcast?(roomId: string, account: string): boolean;
+  /**
    * Called for **every** decrypted event, notifying or not.
    *
    * Not filtered to `notify === true`, because the other half of `docs/05` §8
@@ -587,7 +605,12 @@ export class RoomSync {
       const payload = local.payload;
       const message =
         payload.known && payload.event.type === 'm.message'
-          ? (payload.event as { mentions?: string[]; replyTo?: string })
+          ? (payload.event as {
+              mentions?: string[];
+              replyTo?: string;
+              mentionsEveryone?: boolean;
+              mentionsRoles?: string[];
+            })
           : null;
 
       const candidate: Candidate = {
@@ -604,11 +627,14 @@ export class RoomSync {
         ...(message?.replyTo && state.byId.get(message.replyTo)?.account
           ? { replyTo: state.byId.get(message.replyTo)?.account }
           : {}),
-        // `broadcast` is **not derived here**, and that is a gap rather than a
-        // decision. `docs/04` detects `MENTION_EVERYONE` client-side "on
-        // rendering the ping", which means parsing the rich text body — there is
-        // no flag on the payload to read. Until there is, an `@everyone` reaches
-        // people through the ordinary room setting rather than through rule 8.
+        // A room-wide or role-wide ping, **and only if the sender was allowed
+        // to send one**. The claim is inside the ciphertext, so the server
+        // cannot check it and the reader must (`docs/04`: "client, on rendering
+        // the ping"). Without this half, `@everyone` is a field anybody can set
+        // to wake a whole room.
+        ...(message && this.#broadcasts(deps, roomId, local.account, message)
+          ? { broadcast: true }
+          : {}),
       };
 
       deps.deliver(
@@ -620,6 +646,31 @@ export class RoomSync {
         }),
       );
     }
+  }
+
+  /**
+   * Whether this message pings the reader room-wide, permission included.
+   *
+   * Two conditions, and both have to hold: the message has to *claim* a
+   * broadcast that covers this reader, and the sender has to be entitled to
+   * make it. Checking only the first would make `mentionsEveryone` a way for
+   * any member to wake everybody; checking only the second would ping people
+   * for ordinary messages from moderators.
+   */
+  #broadcasts(
+    deps: NotifyDeps,
+    roomId: string,
+    sender: string,
+    message: { mentionsEveryone?: boolean; mentionsRoles?: string[] },
+  ): boolean {
+    const mine = deps.roles?.(roomId) ?? [];
+    const claimed =
+      message.mentionsEveryone === true ||
+      (message.mentionsRoles?.some((role) => mine.includes(role)) ?? false);
+    if (!claimed) return false;
+    // Unwired means nobody may, so a client that has not been given this is
+    // quiet rather than exploitable.
+    return deps.mayBroadcast?.(roomId, sender) ?? false;
   }
 
   async #decrypt(roomId: string, event: Event): Promise<LocalEvent | null> {

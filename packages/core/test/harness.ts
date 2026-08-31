@@ -343,6 +343,10 @@ export class Client {
     { spaceId: string | null; kind: 'space' | 'dm' | 'group' } | null
   >();
   notifyMinute = 12 * 60;
+  /** Role ids this client holds, for `@role` pings. */
+  notifyRoles: string[] = [];
+  /** Accounts this client believes may address the whole room. */
+  notifyBroadcasters = new Set<string>();
   /** Every decision this client made, in order. What a person would be told. */
   notified: { room: string; event: LocalEvent; decision: Decision }[] = [];
 
@@ -445,6 +449,8 @@ export class Client {
             ? (client.notifyPlaces.get(roomId) ?? null)
             : { spaceId: 'space-1', kind: 'space' },
         minuteOfDay: () => client.notifyMinute,
+        roles: () => client.notifyRoles,
+        mayBroadcast: (_room, account) => client.notifyBroadcasters.has(account),
         deliver: (room, event, decision) => {
           client.notified.push({ room, event, decision });
         },
@@ -664,6 +670,16 @@ export class Client {
   /** A message naming somebody, by account id. `docs/35` rule 6. */
   async mention(roomId: string, accounts: string[], text: string) {
     return this.rooms.send(roomId, { type: 'm.message', body: text, mentions: accounts });
+  }
+
+  /** An `@everyone`. Whether it *lands* is the reader's call, not the sender's. */
+  async announce(roomId: string, text: string) {
+    return this.rooms.send(roomId, { type: 'm.message', body: text, mentionsEveryone: true });
+  }
+
+  /** An `@role`. Same — the reader checks both the role and the permission. */
+  async announceRole(roomId: string, roles: string[], text: string) {
+    return this.rooms.send(roomId, { type: 'm.message', body: text, mentionsRoles: roles });
   }
 
   /**

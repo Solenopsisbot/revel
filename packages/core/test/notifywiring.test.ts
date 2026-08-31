@@ -145,6 +145,76 @@ scenarios('a message arriving at a real client', () => {
     await world.close();
   });
 
+  it('notifies on an @everyone from somebody allowed to send one', async () => {
+    const { world, alice, bob, room } = await pair();
+    bob.notifySettings = { default: 'mentions' };
+    bob.notifyBroadcasters.add(alice.account);
+
+    await alice.announce(room, 'server maintenance in ten minutes');
+    await world.settle();
+
+    const decided = bob.notified.filter((n) => n.room === room);
+    expect(decided[0]?.decision).toMatchObject({ notify: true, rule: 'broadcast' });
+    await world.close();
+  });
+
+  it('ignores an @everyone from somebody who may not send one', async () => {
+    // **The security half.** `mentionsEveryone` is inside the ciphertext, so
+    // the server cannot check it — any member can set the flag. `docs/04` puts
+    // enforcement on the reader, "client, on rendering the ping", and without
+    // it the field is a way for anybody to wake a whole room.
+    const { world, alice, bob, room } = await pair();
+    bob.notifySettings = { default: 'mentions' };
+    // alice is *not* in the broadcasters set.
+
+    await alice.announce(room, 'EVERYONE LOOK AT ME');
+    await world.settle();
+
+    const decided = bob.notified.filter((n) => n.room === room);
+    expect(decided[0]?.decision).toMatchObject({ notify: false, rule: 'mentions-only' });
+    await world.close();
+  });
+
+  it('stays quiet by default, so an unwired client is not exploitable', async () => {
+    // No `mayBroadcast` answer at all means nobody may. A client that has not
+    // been given the permission check misses pings rather than honouring
+    // forged ones — the safe direction for the two ways to be wrong.
+    const { world, alice, bob, room } = await pair();
+    bob.notifySettings = { default: 'mentions' };
+    bob.notifyBroadcasters.clear();
+
+    await alice.announce(room, 'anyone there');
+    await world.settle();
+    expect(bob.notified.filter((n) => n.room === room)[0]?.decision.notify).toBe(false);
+    await world.close();
+  });
+
+  it('notifies on an @role the reader actually holds', async () => {
+    const { world, alice, bob, room } = await pair();
+    bob.notifySettings = { default: 'mentions' };
+    bob.notifyBroadcasters.add(alice.account);
+    bob.notifyRoles = ['role-mods'];
+
+    await alice.announceRole(room, ['role-mods'], 'mods, a report came in');
+    await world.settle();
+
+    expect(bob.notified.filter((n) => n.room === room)[0]?.decision.rule).toBe('broadcast');
+    await world.close();
+  });
+
+  it('ignores an @role the reader does not hold', async () => {
+    const { world, alice, bob, room } = await pair();
+    bob.notifySettings = { default: 'mentions' };
+    bob.notifyBroadcasters.add(alice.account);
+    bob.notifyRoles = ['role-everyone'];
+
+    await alice.announceRole(room, ['role-mods'], 'mods only');
+    await world.settle();
+
+    expect(bob.notified.filter((n) => n.room === room)[0]?.decision.notify).toBe(false);
+    await world.close();
+  });
+
   it('suppresses everything under DND, and still marks it', async () => {
     const { world, alice, bob, room } = await pair();
     bob.notifySettings = { default: 'everything', dnd: true };

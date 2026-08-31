@@ -114,8 +114,25 @@ Three things, all decided together:
   (a snowflake is valid base64url), so the name is doing real work.
 - **A reply to your message.** A strong signal and a quiet one — people reply far
   less often than they chat.
-- **`@everyone`, or a role you hold.** Already gated by `MENTION_EVERYONE`
-  (`docs/04`), so only people who may be noisy can be.
+- **`@everyone`, or a role you hold.** Carried as `mentionsEveryone` and
+  `mentionsRoles` on the payload, and **checked by the reader against the
+  sender's `MENTION_EVERYONE` permission.**
+
+  That check is not a formality. The claim is inside the ciphertext, so the
+  server cannot see it — a member without the permission can set the flag and
+  the Host will never know. `docs/04` puts enforcement on the client, *"on
+  rendering the ping"*, which means every reader does it or nobody does. Without
+  it, `mentionsEveryone` is a field any member can use to wake a whole room.
+
+  An unwired client answers "nobody may", so it misses pings rather than
+  honouring forged ones. Of the two ways to be wrong, that is the survivable
+  one.
+
+These are a flag and a list rather than something parsed out of the message
+body. Detecting `@everyone` by reading the rendered text would put a rich-text
+parser inside the rules engine, and would mean the ping and the words that
+produced it could disagree — the sender's client decides what a message
+addresses, and says so in a field.
 
 **A new message in a thread you posted in does not count**, and that was
 decided rather than overlooked. Auto-following threads is how a feature that

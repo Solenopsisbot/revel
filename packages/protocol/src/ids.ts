@@ -107,6 +107,17 @@ export function isSnowflake(v: string): boolean {
 export const AccountId = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'not an account id');
 
 /**
+ * A role id. Opaque, assigned by the space that owns the role.
+ *
+ * Not a snowflake — `role-everyone` is a real one — and a named type rather
+ * than a reused `AccountId`, which it happens to be shape-compatible with. That
+ * compatibility is exactly the trap: `mentions` was typed as the generic
+ * snowflake `Id` because a face id fits it too, and the result was a mention
+ * list that could hold the wrong kind of id and fail silently (`31` §28).
+ */
+export const RoleId = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, 'not a role id');
+
+/**
  * A device public key, as it appears on an event's `sender`.
  *
  * Same encoding as an account id, and a separate type on purpose: they are
