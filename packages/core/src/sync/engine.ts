@@ -368,6 +368,25 @@ export class RoomSync {
         purges.push(event);
         continue;
       }
+      // Already applied. Delivery is at-least-once — the socket pushes an
+      // event and a catch-up page hands over the same one — and the reducer
+      // has always deduplicated by id. Doing it *here* rather than there
+      // matters because the work in between is not free and not idempotent:
+      //
+      // - Feeding the same ciphertext to MLS twice is a replay, and for this
+      //   device's *own* message it is worse than that. The echo is recognised
+      //   by client nonce and the nonce is consumed on first sight, so the
+      //   second copy misses the outbox and goes to `process`, which answers
+      //   "message from self can't be processed" into a `.catch(() => null)`
+      //   that nobody reads.
+      // - It is also a write to the store and a second notification decision
+      //   for an event the room has already seen.
+      //
+      // Safe to read `applied` synchronously here because `receive` holds the
+      // room's turn, so the first copy has finished committing before a second
+      // copy of it can start.
+      if (this.state(roomId).applied.has(event.id)) continue;
+
       // One unreadable event is not a reason to stop syncing a room. It might
       // be a newer client's key, a replay we have already consumed, or someone
       // sending something malformed — none of which the rest of the room

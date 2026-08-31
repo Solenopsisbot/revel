@@ -2101,22 +2101,9 @@ propagated out of `receive` into a socket handler that swallows errors.
 
 Two separate faults, and only one of them is the crypto's:
 
-1. **The wasm trap.** `RuntimeError: memory access out of bounds` from the MLS
-   wasm. Still open, and it needs chasing in the binding rather than in the
-   sync engine.
+1. **The wasm trap.** Still open. Narrowed a long way in §33 below, which is
+   worth reading before picking it up again.
 
-   It has two faces and they are the same fault. On the **receiving** side it
-   comes out of `exportGroup` during `persistCrypto`, which is what this
-   section is about. On the **sending** side it comes out of `encrypt`, and
-   there the message never leaves at all — it sits in the sender's own timeline
-   as `pending/failed`, with `send failed RuntimeError: memory access out of
-   bounds` in the console and nothing on screen to say so.
-
-   The trigger, as far as it has been narrowed: a room in which the *other*
-   device has sent a `silent` event — a read receipt — and both sides then
-   carry on. `pnpm test:unread` hits it in roughly half of runs and reports it
-   by name instead of asserting on it, because a flaky notification test would
-   bury an open crypto bug rather than surface it.
 2. **The engine's response to it.** `receive` let an unrelated failure discard
    work that was already durable. The events were decrypted, written to the
    store and delivered to the notification rules *before* the throw; only the
@@ -2134,3 +2121,96 @@ the thing it is a cache of.
 It also explains why phase 0's advice keeps holding: this needed two accounts, a
 third to be looking elsewhere, a read receipt, and a real socket. Every half of
 it passed its own tests.
+
+
+## 33. Hunting the wasm trap, and what it is not
+
+A day on `RuntimeError: memory access out of bounds`. Not fixed. This is what
+is known, so the next attempt does not start from nothing.
+
+### What actually happens
+
+The **first** fault is always an out-of-bounds access inside a *trivial*
+`Device` method — `dirtyGroups` or the `keyPackagesDirty` getter. Both do
+nothing but take a `Mutex` and read a field. Everything after it is cascade:
+
+- A trapped wasm call never runs its epilogue, so the wasm-bindgen borrow flag
+  on whatever object it was using stays set. The next call to that object gets
+  `recursive use of an object detected which would lead to unsafe aliasing in
+  rust` — which looks like a re-entrancy bug and is not one.
+- `pendingKeyPackages` starts answering `0` while the dirty flag is still
+  `false`. The store cannot reach that state by any code path; it is reading
+  memory that is no longer its own.
+- On the sending side the trap comes out of `persistCrypto` inside `send`, so
+  the message never leaves and sits in the sender's timeline as pending/failed.
+
+So by the time anything is visible, the wasm heap is already corrupt. The
+interesting question is what corrupted it, and none of the obvious answers
+survive contact.
+
+### Ruled out, each by measurement rather than argument
+
+- **Re-entrancy.** A guard around every call at the `Session` boundary, logging
+  any call that begins while another is running. It never fired once.
+- **Use-after-free.** `__wbg_ptr` for the `Device`, the `Account` and every
+  `Group`, sampled at the moment of the trap, is identical to what it was while
+  healthy and non-zero.
+- **Shadow-stack exhaustion.** The stack pointer is exactly `1048560` at the
+  trapping call — a fully unwound 1 MiB stack. Rebuilding with an 8 MiB stack
+  and `--stack-first` did not fix it; it changed the symptom to a renderer
+  crash at the same point, which is a worse failure and not a smaller one.
+- **wasm-bindgen ABI drift.** Crate and CLI are both 0.2.127.
+- **A stale artifact.** Rebuilding reproduces the committed wasm byte for byte.
+- **The crypto sequences themselves.** `bench/wasm/repro.html` drives the real
+  bindings, in a browser, with no server: 400 rounds of encrypt → persist →
+  process → persist in both directions, 200 rounds of deliberately reversed and
+  shuffled delivery, `members()` and the state getters on every round, and
+  key-package churn every tenth. It has never faulted.
+
+### What it does need
+
+The app, and **concurrency**. `Promise.all([alice.send, bob.send,
+bob.markRead])` against one room faults inside about three rounds. The same
+operations issued one after another do not, however many times they are
+repeated.
+
+That is the part worth sitting with: wasm calls provably never overlap — the
+re-entrancy guard proves it, and JavaScript would have to yield inside a
+synchronous call for it to be otherwise. So what concurrency changes is not
+simultaneity. It changes *ordering* and *allocation pattern*: which awaits
+resolve between which wasm calls, and therefore what the heap looks like when
+the next one runs. That points at a dependency rather than at this crate, which
+contains no `unsafe` at all.
+
+### The tool that made it findable
+
+`[profile.wasm-debug]` in `Cargo.toml` — the release profile with `strip` off,
+`debug` on and LTO loosened. The shipping build is stripped, so a trap reports
+`wasm-function[860]` and nothing else. With symbols it reports
+`revel_crypto::wasm::Device::dirty_groups`, which is the whole difference
+between a mystery and a lead.
+
+### One real bug found on the way, and fixed
+
+The client was feeding its **own** messages back into MLS. Delivery is
+at-least-once — the socket pushes an event and a catch-up page hands over the
+same one — and the echo is recognised by client nonce, which is consumed on
+first sight. So the second copy missed the outbox and went to `process`, which
+answered `message from self can't be processed` into a `.catch(() => null)`
+that nobody reads.
+
+`receive` now skips events already in `applied` before decrypting rather than
+after, which is where the deduplication should have been anyway: the work in
+between is a store write, a notification decision and a call into MLS, and none
+of it is idempotent.
+
+It is **not** the cause of the trap — the trap survives the fix — but it was
+real work nobody asked for, hiding an error nobody read.
+
+### Where to go next
+
+Bisect `mls-rs` and `mls-rs-crypto-rustcrypto` versions against the concurrent
+scenario. Failing that, reproduce it headlessly by driving `RoomSync` under
+`wasm-bindgen-test` with a transport that interleaves deliveries on purpose,
+which would turn a three-minute browser run into a fast loop and make it
+something to send upstream.

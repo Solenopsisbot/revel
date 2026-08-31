@@ -21,6 +21,15 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
+# Symbols kept and inlining loosened, so a wasm trap reports a function name
+# instead of an index. Not for shipping — it exists to make faults locatable.
+[profile.wasm-debug]
+inherits = "wasm"
+strip = false
+debug = true
+lto = false
+codegen-units = 16
+
 # Same, optimised for size rather than speed. Kept so the tradeoff can be
 # re-measured rather than argued about; see `docs/31` §5.
 [profile.wasm-size]

@@ -1,0 +1,136 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>revel-crypto, driven directly</title>
+<body><pre id="out">running…</pre>
+<script type="module">
+import init, { Account, Device } from '/packages/crypto-wasm/revel_crypto.js';
+const out = document.getElementById('out');
+const log = (s) => { out.textContent += `\n${s}`; console.log(s); };
+const ENC = new TextEncoder();
+
+/**
+ * Two devices and one group, driven straight against the wasm bindings.
+ *
+ * No server, no socket, no app — which is the point. `docs/31` §33 chases a
+ * `memory access out of bounds` that only appears when the app runs
+ * operations concurrently, and this is the control: every sequence it does
+ * here has been run thousands of times without a fault, so anything that
+ * *does* fault is not one of these.
+ *
+ * What it covers:
+ *
+ * - The steady state a live room produces — `RoomSync` persists crypto after
+ *   every send and every receive, so it is encrypt/export on one device and
+ *   process/export on the other, both ways, forever.
+ * - Deliberately out-of-order and shuffled delivery, which is what two people
+ *   talking at once actually produces on the wire.
+ * - `members()` and the state getters every round, because the app reads them
+ *   on every operation and `members()` hands back wasm objects nothing frees.
+ * - Key-package churn, because `replenish` tops the shelf up as the app runs.
+ *
+ *   pnpm bench:wasm   # then open /bench/wasm/repro.html
+ */
+async function main() {
+  await init();
+  window.__result = { ok: false, round: -1, where: '', error: '' };
+  const gid = ENC.encode('room-repro');
+
+  const acctA = new Account(), acctB = new Account();
+  const a = new Device(acctA, 'a'), b = new Device(acctB, 'b');
+
+  // B publishes key packages, A creates the group and adds B.
+  const kp = b.keyPackage();
+  const ga = a.createGroup(gid);
+  ga.stageAdd(kp);
+  const commit = ga.commit();
+  ga.applyPending();
+  const gb = b.joinGroup(commit.welcome, commit.tree);
+
+  const persist = (dev) => {
+    for (const id of dev.dirtyGroups()) dev.exportGroup(id);
+    if (dev.keyPackagesDirty) dev.exportKeyPackages();
+  };
+
+  // What `stateOf` and `Session.members` do on every operation in the real
+  // client. `members()` hands back wasm objects that JS never frees, which is
+  // the one thing in this sequence that grows without bound.
+  const read = (g) => {
+    const s = { epoch: Number(g.epoch), size: g.size, ownLeaf: g.ownLeaf };
+    const ms = Array.from(g.members(), (m) => ({ leaf: m.leaf, account: m.account, label: m.label }));
+    return s.size + ms.length;
+  };
+
+  // Out-of-order delivery, which is what concurrent sends actually produce:
+  // two devices speak at once and each sees the other's messages interleaved
+  // with its own generations rather than in the order they were made.
+  for (let round = 0; round < 200; round++) {
+    window.__result.round = round;
+    try {
+      window.__result.where = 'ooo:encrypt';
+      const batch = [];
+      for (let k = 0; k < 4; k++) batch.push(ga.encrypt(ENC.encode(`ooo ${round}.${k}`)));
+      persist(a);
+      window.__result.where = 'ooo:process-reversed';
+      for (const m of batch.reverse()) gb.process(m);
+      persist(b);
+      window.__result.where = 'ooo:reply';
+      const back = [];
+      for (let k = 0; k < 4; k++) back.push(gb.encrypt(ENC.encode(`back ${round}.${k}`)));
+      persist(b);
+      window.__result.where = 'ooo:process-shuffled';
+      const shuffled = [back[2], back[0], back[3], back[1]];
+      for (const m of shuffled) ga.process(m);
+      persist(a);
+    } catch (err) {
+      window.__result.error = String(err);
+      log(`OUT-OF-ORDER FAILED at round ${round} in ${window.__result.where}: ${err}`);
+      return;
+    }
+    if (round % 50 === 0) log(`ooo round ${round} ok`);
+  }
+  log('200 out-of-order rounds ok');
+
+  for (let round = 0; round < 400; round++) {
+    window.__result.round = round;
+    try {
+      window.__result.where = 'a.encrypt';
+      const m = ga.encrypt(ENC.encode(`hello ${round}`));
+      window.__result.where = 'a.persist';
+      persist(a);
+      window.__result.where = 'b.process';
+      gb.process(m);
+      window.__result.where = 'b.persist';
+      persist(b);
+
+      // The read receipt: B answers every message with a silent event.
+      window.__result.where = 'b.encrypt';
+      const r = gb.encrypt(ENC.encode(`receipt ${round}`));
+      window.__result.where = 'b.persist2';
+      persist(b);
+      window.__result.where = 'a.process';
+      ga.process(r);
+      window.__result.where = 'a.persist2';
+      persist(a);
+
+      window.__result.where = 'read';
+      read(ga);
+      read(gb);
+
+      // `replenish` tops the shelf back up whenever it runs.
+      if (round % 10 === 0) {
+        window.__result.where = 'keyPackages';
+        for (let i = 0; i < 6; i++) a.keyPackage();
+        persist(a);
+      }
+    } catch (err) {
+      window.__result.error = String(err);
+      log(`FAILED at round ${round} in ${window.__result.where}: ${err}`);
+      return;
+    }
+    if (round % 50 === 0) log(`round ${round} ok`);
+  }
+  window.__result.ok = true;
+  log('400 rounds, no trap');
+}
+main().catch((e) => { window.__result = { ok: false, error: String(e), where: 'setup' }; log(`setup failed: ${e}`); });
+</script>
