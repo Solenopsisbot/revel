@@ -33,7 +33,7 @@ import {
   spaces,
   storage,
 } from './data.js';
-import { facesIn, participantsIn, speakerIn } from './faceShape.js';
+import { facesIn, facesSpokenIn, participantsIn, revealsLink, speakerIn } from './faceShape.js';
 
 /** The account these faces belong to. Exported because 'is this face one of
     mine' is a question components ask too, and routing it through a named
@@ -108,6 +108,13 @@ class Core {
    * list, in one place, or it stops agreeing with itself.
    */
   speakingAsOpen = $state(false);
+  /**
+   * The face chosen in each room, by room id.
+   *
+   * `speakingAs` remains the account-wide default for a room with no choice
+   * yet; this is every deliberate switch, and it stays where it was made.
+   */
+  speakingByRoom = $state<Record<string, string>>({});
 
   /**
    * Connection state.
@@ -493,18 +500,23 @@ class Core {
    * be one mis-click from saying something as the wrong one.
    */
   get speakingHere(): string {
-    return speakerIn(this.dm, this.speakingAs);
+    return speakerIn(this.dm, this.speakingByRoom[this.currentRoomId], this.speakingAs);
   }
 
-  /** Switch face. Writes to the conversation in a DM, to the account otherwise. */
+  /**
+   * Switch face, **in this room only**.
+   *
+   * Per room rather than per account, and not merely for convenience: the
+   * "would this reveal a link" check runs against the room you are in, so a
+   * global selection would let you switch somewhere it is harmless and arrive
+   * somewhere it is not, already set to the face that gives you away. A choice
+   * cannot leak out of the room it was made in.
+   */
   speakHere(faceId: string) {
     const dm = this.dm;
-    if (dm) {
-      if (!dm.mineIds.includes(faceId)) return;
-      dm.speakingAs = faceId;
-      return;
-    }
-    this.speakingAs = faceId;
+    if (dm && !dm.mineIds.includes(faceId)) return;
+    if (!myFaces.includes(faceId)) return;
+    this.speakingByRoom[this.currentRoomId] = faceId;
   }
 
   /**
@@ -517,11 +529,28 @@ class Core {
    * somebody in the same room, so this is the moment that fact becomes true,
    * and the UI asks first.
    */
+  /** My faces that have already spoken in the current room or DM. */
+  get facesSpokenHere(): string[] {
+    return facesSpokenIn(this.messages[this.currentRoomId], myFaces);
+  }
+
+  /**
+   * Would speaking as this face newly connect two of my faces, here?
+   *
+   * The question a space room asks instead of "is this face a member", because
+   * a space room has no per-face membership to join (`docs/03` §4) — every face
+   * is already allowed to post. What is disclosable is two of them turning up
+   * in the same place.
+   */
+  revealsLinkHere(faceId: string): boolean {
+    return revealsLink(this.facesSpokenHere, faceId);
+  }
+
   addFaceHere(faceId: string) {
     const dm = this.dm;
     if (!dm || dm.mineIds.includes(faceId) || !myFaces.includes(faceId)) return;
     dm.mineIds = [...dm.mineIds, faceId];
-    dm.speakingAs = faceId;
+    this.speakingByRoom[dm.id] = faceId;
   }
   get plural() {
     // Plurality is invisible until you use it (`docs/11`). One face, no chip.

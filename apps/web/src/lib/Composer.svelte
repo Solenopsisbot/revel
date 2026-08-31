@@ -124,6 +124,15 @@ function grow(el: HTMLTextAreaElement) {
       {/if}
       {#each core.myFaces as f (f.id)}
         {@const here = core.facesHere === null || core.facesHere.includes(f.id)}
+        <!-- Two different questions, one confirmation. A DM has a participant
+             list, so a face that is not on it has to *join* — and is greyed out
+             until it does. A space room has no per-face membership (`docs/03`
+             §4: roles and audiences are account-level), so every face is
+             already allowed to post and greying one out would be a lie. What
+             is still disclosable there is two of my faces appearing in the same
+             room, because that is what connects them — so the face stays
+             selectable and the click asks once. -->
+        {@const reveals = here && core.revealsLinkHere(f.id)}
         <button
           role={layout.coarse ? undefined : 'option'}
           aria-selected={layout.coarse ? undefined : f.id === core.speakingHere}
@@ -132,12 +141,13 @@ function grow(el: HTMLTextAreaElement) {
           class:sel={f.id === core.speakingHere}
           class:absent={!here}
           onclick={() => {
-            if (here) {
+            if (!here || reveals) {
+              // Not a switch. Either brings a face into a conversation or
+              // connects two of them in front of people — both disclosures.
+              joining = f.id;
+            } else {
               core.speakHere(f.id);
               core.speakingAsOpen = false;
-            } else {
-              // Not a switch. Bringing a face in is a disclosure, so it asks.
-              joining = f.id;
             }
           }}
         >
@@ -147,6 +157,11 @@ function grow(el: HTMLTextAreaElement) {
             <Icon name="check" size={16} />
           {:else if !here}
             <span class="not-here">not in this conversation</span>
+          {:else if reveals}
+            <!-- Stated as the fact, not as a warning. It is not risky to use a
+                 face here; it is just the first time, and the consequence
+                 belongs in the dialog rather than shouted from a list row. -->
+            <span class="not-here">not used here yet</span>
           {/if}
         </button>
       {/each}
@@ -155,21 +170,40 @@ function grow(el: HTMLTextAreaElement) {
 
   {#if joining}
     {@const f = core.faces[joining]}
+    {@const isMember = core.facesHere === null || core.facesHere.includes(joining)}
+    {@const alongside = core.facesSpokenHere
+      .filter((id) => id !== joining)
+      .map((id) => core.faces[id]?.name ?? id)}
     {#if f}
       <div class="scrim" onclick={() => (joining = null)} role="presentation"></div>
       <div class="confirm" role="dialog" aria-modal="true" aria-labelledby="join-title">
+        <!-- Two situations, and they are not the same fact, so they do not get
+             the same sentence. Joining a DM adds a participant *and* connects
+             the faces; speaking in a room only connects them. Saying "add" for
+             the second would describe something that is not happening. -->
         <p class="confirm-title" id="join-title">
-          Bring <span style="color: var(--face-{f.colour})">{f.name}</span> into this conversation?
+          {#if !isMember}
+            Bring <span style="color: var(--face-{f.colour})">{f.name}</span> into this conversation?
+          {:else}
+            Speak as <span style="color: var(--face-{f.colour})">{f.name}</span> here?
+          {/if}
         </p>
         <!-- `docs/11`: faces on one account are *not* unlinkable to somebody in
-             the same room — attribution is per account, and the face is a field
-             inside the message. This is the moment that stops being abstract,
-             so it is the moment to say it, in the words `docs/08` would use:
-             what happens, not how we feel about it. -->
+             the same room — attribution is per account and the face is a field
+             inside the message. This is where that stops being abstract, so it
+             is where to say it, in `docs/08`'s voice: what happens, not how we
+             feel about it. -->
         <p class="confirm-body">
-          Everyone here will see that {f.name} exists, and that {f.name} and
-          {core.faces[core.speakingHere]?.name} are the same account. That cannot
-          be undone by removing them later.
+          {#if !isMember}
+            Everyone here will see that {f.name} exists{alongside.length
+              ? `, and that ${f.name} and ${alongside.join(' and ')} are the same account`
+              : ''}.
+          {:else}
+            {alongside.join(' and ')} {alongside.length > 1 ? 'have' : 'has'} already
+            posted here, so everyone in this room will see that {f.name} and
+            {alongside.join(' and ')} are the same account.
+          {/if}
+          That cannot be undone by deleting the message.
         </p>
         <p class="confirm-body dim">
           If these need to stay unconnected, a separate account is the tool for
@@ -180,12 +214,15 @@ function grow(el: HTMLTextAreaElement) {
           <button
             class="go"
             onclick={() => {
-              if (joining) core.addFaceHere(joining);
+              if (joining) {
+                if (isMember) core.speakHere(joining);
+                else core.addFaceHere(joining);
+              }
               joining = null;
               core.speakingAsOpen = false;
             }}
           >
-            Add {f.name}
+            {isMember ? `Speak as ${f.name}` : `Add ${f.name}`}
           </button>
         </div>
       </div>

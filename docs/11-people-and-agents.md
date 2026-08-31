@@ -99,11 +99,30 @@ are the tool for "I present differently in different places". Presenting the
 weaker one as if it were the stronger one is how somebody gets outed by a
 feature that promised not to do that.
 
-**This has to reach the person, not just the doc.** The face switcher should say
-plainly that faces on one account are linkable inside a shared room, and point
-at a second account for the case where that is not acceptable — at the moment
-somebody picks a second face, which is the moment they are deciding what they
-are relying on.
+**This has to reach the person, not just the doc**, and it does: the face
+switcher asks before a face can do something that connects it to another, and
+points at a second account for the case where that is not acceptable.
+
+Two situations, because they are not the same fact:
+
+- **In a DM**, faces are membership. `mineIds` records which of your faces are
+  in a conversation; one that is not is greyed out, and picking it asks to
+  *bring it in*.
+- **In a space room**, there is no per-face membership to join — roles and
+  audiences are account-level (`03` §4), so every face may already post. What is
+  still disclosable is two of your faces turning up in the same room, since the
+  second one to speak is what joins them up. So the face stays selectable and
+  the click asks once.
+
+The condition is deliberately narrow and self-limiting: nothing to reveal if
+none of your faces has spoken there yet, and nothing to reveal if *this* face
+already has. It fires at most once per face per room, ever — **friction on a
+privacy control is how people learn to click through it.**
+
+The face you pick is remembered **per room**, which is not only convenience: the
+check runs against the room you are in, so an account-wide selection would let
+you switch somewhere it is harmless and arrive somewhere it is not, already set
+to the face that gives you away.
 
 ### The profile card — "system information should be good"
 

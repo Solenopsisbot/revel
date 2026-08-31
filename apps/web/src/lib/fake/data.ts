@@ -1282,14 +1282,7 @@ export interface Dm {
    * dropdown.
    */
   mineIds: string[];
-  /**
-   * Which of your faces you are currently speaking as *here*.
-   *
-   * Per conversation, not global. Somebody who is Ash in one group and June in
-   * another should not have to remember to switch, and should never be one
-   * mis-click from saying something as the wrong one.
-   */
-  speakingAs?: string;
+
   /** Group DMs can be named; 1:1s are named by whoever is in them. */
   name?: string;
   unread?: number;

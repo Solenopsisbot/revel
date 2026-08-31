@@ -42,9 +42,20 @@ export function isHere(dm: Dm | undefined, faceId: string): boolean {
  * conversation, and speaking as somebody who is not in the room would be a
  * worse outcome than ignoring the preference.
  */
-export function speakerIn(dm: Dm | undefined, globalFace: string): string {
+export function speakerIn(
+  dm: Dm | undefined,
+  chosen: string | undefined,
+  globalFace: string,
+): string {
+  // A choice made *in this room* wins, wherever the room is.
+  //
+  // Per room rather than per account, and that is load-bearing rather than a
+  // convenience: the "would this reveal a link" check runs against the room you
+  // are in, so a global selection would let you switch in a room where it is
+  // harmless and arrive in one where it is not, already set to the face that
+  // gives you away. A local choice cannot leak out of the room it was made in.
+  if (chosen && isHere(dm, chosen)) return chosen;
   if (!dm) return globalFace;
-  if (dm.speakingAs && dm.mineIds.includes(dm.speakingAs)) return dm.speakingAs;
   return dm.mineIds[0] ?? globalFace;
 }
 
@@ -58,4 +69,45 @@ export function speakerIn(dm: Dm | undefined, globalFace: string): string {
  */
 export function participantsIn(dm: Dm): string[] {
   return [...dm.mineIds, ...dm.withIds];
+}
+
+/**
+ * Which of my faces have already spoken in a room.
+ *
+ * The basis for the *other* half of this, which applies to space rooms — where
+ * there is no participant list to join. See [`revealsLink`].
+ */
+export function facesSpokenIn(
+  messages: { faceId: string }[] | undefined,
+  mine: readonly string[],
+): string[] {
+  const seen: string[] = [];
+  for (const m of messages ?? []) {
+    if (mine.includes(m.faceId) && !seen.includes(m.faceId)) seen.push(m.faceId);
+  }
+  return seen;
+}
+
+/**
+ * Whether speaking as `faceId` here would newly reveal that two of my faces are
+ * one account.
+ *
+ * **This is the leak, stated exactly.** It has nothing to do with membership —
+ * a space room's membership is per account and every face is already allowed to
+ * post. What tells people something is *two of my faces appearing in the same
+ * room*: attribution is per account and the face is a field inside the message
+ * (`docs/11`), so the second one to speak is the one that joins them up.
+ *
+ * Which makes the condition narrow, and deliberately self-limiting:
+ *
+ * - Nothing to reveal if none of my faces has spoken here — nobody can connect
+ *   a face to anything yet.
+ * - Nothing to reveal if *this* face has already spoken here — the link is
+ *   already out, and asking again would be theatre. Friction on a privacy
+ *   control is how people learn to click through it.
+ *
+ * So it fires at most once per face per room, ever.
+ */
+export function revealsLink(spokenHere: readonly string[], faceId: string): boolean {
+  return spokenHere.length > 0 && !spokenHere.includes(faceId);
 }
