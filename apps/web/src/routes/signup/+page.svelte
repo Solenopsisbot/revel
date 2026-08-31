@@ -178,8 +178,12 @@ async function copy() {
 
       <div class="row">
         <Button disabled={!ready} onclick={create}>{busy ? 'Creating…' : 'Continue'}</Button>
-        <Button variant="ghost" onclick={() => goto('/signin')}>I already have an account</Button>
       </div>
+
+      <!-- Out of the button row and into a footer, matching `/signin`. Sitting
+           next to Continue it read as a second thing to do here; it is a way
+           out of this screen, which is what the footer is for. -->
+      <p class="alt"><a href="/signin">I already have an account</a></p>
     </div>
   {:else if step === 'code'}
     <div class="pane">
@@ -273,6 +277,11 @@ async function copy() {
     letter-spacing: -.035em; font-weight: 600; margin: 10px 0 18px;
   }
   .lede { color: color-mix(in oklab, var(--text) 84%, transparent); margin: 0 0 24px; }
+  .alt {
+    margin-top: 28px; font-size: var(--text-sm);
+    color: color-mix(in oklab, var(--text) 62%, transparent);
+  }
+  .alt a { color: var(--text); }
   .lede.dim { color: color-mix(in oklab, var(--text) 62%, transparent); font-size: var(--text-sm); }
 
   .code {

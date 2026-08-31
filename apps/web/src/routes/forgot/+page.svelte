@@ -197,7 +197,11 @@ async function reset() {
       information to let anyone back in.
     </p>
 
-    <p class="alt"><a href="/signin">Back to sign in</a></p>
+    <p class="alt">
+      <a href="/signin">Back to sign in</a>
+      <span aria-hidden="true">·</span>
+      <a href="/signup">Make an account</a>
+    </p>
   </div>
 </Moment>
 
@@ -239,6 +243,9 @@ async function reset() {
     border-left: 2px solid color-mix(in oklab, var(--text) 20%, transparent);
     padding-left: 16px;
   }
-  .alt { margin-top: 24px; font-size: var(--text-sm); }
+  .alt {
+    margin-top: 24px; font-size: var(--text-sm);
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline;
+  }
   .alt a { color: color-mix(in oklab, var(--text) 70%, transparent); }
 </style>

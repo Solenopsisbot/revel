@@ -202,8 +202,14 @@ async function verify() {
         </div>
       </form>
 
+      <!-- Both ways out of this screen, in one place. Somebody who lands here
+           without an account should not have to work out that "sign up" is
+           somewhere else — and somebody who has one and forgot the password is
+           the other half of the same question. -->
       <p class="alt">
         <a href="/forgot">Forgotten your password?</a>
+        <span aria-hidden="true">·</span>
+        <a href="/signup">Make an account</a>
       </p>
     </div>
   {:else if step === 'twofactor'}
@@ -343,7 +349,11 @@ async function verify() {
   .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--face-gold); animation: pl 1.4s infinite ease-in-out; }
   @keyframes pl { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
 
-  .alt { margin-top: 28px; font-size: var(--text-sm); color: color-mix(in oklab, var(--text) 62%, transparent); }
+  .alt {
+    margin-top: 28px; font-size: var(--text-sm);
+    color: color-mix(in oklab, var(--text) 62%, transparent);
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline;
+  }
   .alt a { color: var(--text); }
   .fine { margin-top: 24px; font-size: var(--text-sm); line-height: 1.7; color: color-mix(in oklab, var(--text) 58%, transparent); }
 </style>
