@@ -52,6 +52,7 @@ use mls_rs::{
 use mls_rs_crypto_rustcrypto::RustCryptoProvider;
 use wasm_bindgen::prelude::*;
 
+use crate::envelope;
 use crate::{
     device::DeviceCert,
     identity::DeviceCertIdentityProvider,
@@ -889,4 +890,83 @@ pub fn read_device_cert(bytes: &[u8]) -> Result<MemberInfo, JsError> {
         account: cert.account_pub.to_vec(),
         label: cert.label,
     })
+}
+
+// ---------------------------------------------------------------------------
+// The account key envelope (`docs/03` §1)
+// ---------------------------------------------------------------------------
+
+/// The three wraps, from the browser.
+///
+/// Thin on purpose — every decision lives in `envelope.rs`, and this exists so
+/// the web client never has to hold a wrapping key in JavaScript for longer
+/// than the call. The account key crosses this boundary exactly twice in a
+/// lifetime: once at sign-up, once at recovery.
+#[wasm_bindgen]
+pub struct Envelope;
+
+#[wasm_bindgen]
+impl Envelope {
+    /// A fresh account key. Random, never derived from a password.
+    #[wasm_bindgen(js_name = generateAccountKey)]
+    pub fn generate_account_key() -> Vec<u8> {
+        envelope::generate_account_key().to_vec()
+    }
+
+    /// The public half, which *is* the account's identity.
+    #[wasm_bindgen(js_name = accountPublic)]
+    pub fn account_public(seed: &[u8]) -> Result<Vec<u8>, JsError> {
+        let seed: [u8; 32] = seed.try_into().map_err(|_| JsError::new("bad account key"))?;
+        Ok(envelope::account_public(&seed).to_vec())
+    }
+
+    /// KEK from OPAQUE's `exportKey`.
+    #[wasm_bindgen(js_name = kekFromExportKey)]
+    pub fn kek_from_export_key(export_key: &[u8]) -> Vec<u8> {
+        envelope::kek_from_export_key(export_key).to_vec()
+    }
+
+    /// RK from a recovery code, via Argon2id. The slow one, by design.
+    #[wasm_bindgen(js_name = recoveryKey)]
+    pub fn recovery_key(code: &str, salt: &[u8]) -> Result<Vec<u8>, JsError> {
+        envelope::recovery_key(code, salt)
+            .map(|k| k.to_vec())
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Seal the account key under a 32-byte wrapping key.
+    #[wasm_bindgen(js_name = wrap)]
+    pub fn wrap(seed: &[u8], wrapping_key: &[u8]) -> Result<Vec<u8>, JsError> {
+        let seed: [u8; 32] = seed.try_into().map_err(|_| JsError::new("bad account key"))?;
+        let key: [u8; 32] = wrapping_key.try_into().map_err(|_| JsError::new("bad wrapping key"))?;
+        envelope::wrap_account_key(&seed, &key).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Open a wrap. A wrong key and tampered bytes give the same error.
+    #[wasm_bindgen(js_name = unwrap)]
+    pub fn unwrap(wrap: &[u8], wrapping_key: &[u8]) -> Result<Vec<u8>, JsError> {
+        let key: [u8; 32] = wrapping_key.try_into().map_err(|_| JsError::new("bad wrapping key"))?;
+        envelope::unwrap_account_key(wrap, &key)
+            .map(|s| s.to_vec())
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// A fresh recovery code, grouped for transcription.
+    #[wasm_bindgen(js_name = generateRecoveryCode)]
+    pub fn generate_recovery_code() -> String {
+        envelope::generate_recovery_code().to_string()
+    }
+
+    /// Uppercase, dashes removed, ambiguous letters folded. Errors if it is not
+    /// a recovery code at all — cheaper than finding out after Argon2id.
+    #[wasm_bindgen(js_name = normaliseRecoveryCode)]
+    pub fn normalise_recovery_code(code: &str) -> Result<String, JsError> {
+        envelope::normalise_recovery_code(code).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// A fresh per-account salt for [`Envelope::recovery_key`]. Not secret.
+    #[wasm_bindgen(js_name = generateSalt)]
+    pub fn generate_salt() -> Vec<u8> {
+        envelope::generate_salt().to_vec()
+    }
 }

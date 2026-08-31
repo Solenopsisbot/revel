@@ -9,6 +9,7 @@
 uniffi::setup_scaffolding!();
 
 pub mod device;
+pub mod envelope;
 /// Native FFI surface (Swift/Kotlin). Not built for wasm — the web reaches the
 /// same core through wasm-bindgen instead.
 #[cfg(not(target_arch = "wasm32"))]
@@ -20,5 +21,6 @@ pub mod store;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 pub use device::{CertError, DeviceCert};
+pub use envelope::{EnvelopeError, Wrap};
 pub use identity::{DeviceCertIdentityProvider, IdentityError};
 pub use store::{LocalGroupStore, LocalKeyPackageStore, StoreError};

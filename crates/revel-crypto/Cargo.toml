@@ -23,6 +23,11 @@ aes-gcm = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
 zeroize = "1"
+# Argon2id for the recovery-code wrap (`docs/03` §1). A recovery code is short
+# enough to be typed by a human, which makes it guessable at hashing speed and
+# not at KDF speed — the memory-hard KDF is the entire reason the wrap is worth
+# anything. RustCrypto's, so it is the same provenance as everything above.
+argon2 = "0.5"
 
 # Entropy on wasm32 has no OS underneath, so getrandom needs an explicit
 # backend. Both major versions are in the tree (rand 0.8 pulls 0.2, newer
