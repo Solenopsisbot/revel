@@ -137,6 +137,12 @@ CREATE TABLE IF NOT EXISTS challenges (
   device_pub text NOT NULL,
   expires_at bigint NOT NULL
 );
+-- Both of the expiry tables below are only self-cleaning on the *read* path,
+-- and the read that would clean them is precisely the one that never comes: an
+-- abandoned sign-in never spends its challenge, and a client holding an expired
+-- token does not present it again. So they need a sweep, and a sweep without an
+-- index is a sequential scan over a table that only grows.
+CREATE INDEX IF NOT EXISTS challenges_expiry ON challenges (expires_at);
 
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash text PRIMARY KEY,
@@ -146,6 +152,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 -- Revoking a device kills every session it holds, in one statement.
 CREATE INDEX IF NOT EXISTS sessions_device ON sessions (device_pub);
+CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions (expires_at);
 
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   device_pub text PRIMARY KEY,

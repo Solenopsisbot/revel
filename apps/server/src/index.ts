@@ -34,6 +34,26 @@ const store: Store = await (async () => {
 const hub = new Hub();
 
 /**
+ * This process's snowflake shard (`docs/04` §6).
+ *
+ * **Every Host process sharing a database needs a different one.** Ids carry a
+ * 12-bit shard so two processes can mint ids in the same millisecond without
+ * colliding; two processes both on shard 0 collide the moment both are busy,
+ * and an id collision is not a soft failure — `appendEvent`'s `ON CONFLICT`
+ * clause arbitrates on `(sender, client_nonce)`, so a primary-key collision
+ * escapes as an unhandled 500 and a blob collision is silent.
+ *
+ * It defaults to 0 because a single process is the common case and needing to
+ * set an environment variable to run one server would be absurd. It is printed
+ * at boot next to the store, because "two Hosts, one database, both on shard 0"
+ * is a misconfiguration that works perfectly until it corrupts something.
+ */
+const shard = Number(process.env.REVEL_SHARD ?? 0);
+console.log(
+  `shard: ${shard}${shard === 0 ? ' (set REVEL_SHARD if this is not the only Host)' : ''}`,
+);
+
+/**
  * The Host's name, as it appears in the challenge a device signs.
  *
  * It is inside the signature, so a signature collected here cannot be presented
@@ -82,7 +102,7 @@ const address = (req: Request): string => {
 const app = createApp({
   store,
   hub,
-  ids: new SnowflakeFactory(0),
+  ids: new SnowflakeFactory(shard),
   authenticate,
   host,
   idp,
@@ -101,6 +121,22 @@ const app = createApp({
       }
     : {}),
 });
+
+/**
+ * Sweep expired challenges and sessions, hourly.
+ *
+ * A method nothing calls is a leak with documentation. Nothing depends on this
+ * for correctness — every read checks expiry itself — so a missed sweep costs
+ * rows and never a wrong answer, and `unref` means it does not hold the process
+ * open on its own.
+ */
+const sweep = setInterval(
+  () => {
+    void store.sweepExpired(Date.now()).catch((err) => console.error('sweep failed', err));
+  },
+  60 * 60 * 1000,
+);
+sweep.unref?.();
 
 const port = Number(process.env.PORT ?? 8080);
 console.log(`revel server on :${port}`);

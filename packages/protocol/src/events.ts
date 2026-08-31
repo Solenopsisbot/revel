@@ -13,6 +13,7 @@
  *      v2 event does not destroy what it doesn't understand.
  */
 import { z } from 'zod';
+import { AccountId } from './ids.js';
 
 const Id = z.string().regex(/^\d{1,20}$/);
 
@@ -77,7 +78,27 @@ export const EncryptedEvent = z.discriminatedUnion('type', [
     attachments: z.array(BlobRef).max(10).optional(),
     replyTo: Id.optional(),
     thread: Id.optional(),
-    mentions: z.array(Id).max(256).optional(),
+    /**
+     * Accounts named in this message.
+     *
+     * **Accounts, not faces.** `Id` here was ambiguous — `FaceRef.id` has the
+     * same shape — and the ambiguity was load-bearing in the wrong direction:
+     * the notification rules test `mentions` against the reading *account*
+     * (`docs/35` rule 6), so a client that put the face id it rendered into
+     * this list would produce silence and no error. Same fix and same reason as
+     * `EventInput.notify`, which this mirrors: the server's wake hint and the
+     * client's mention list have to name the same thing.
+     *
+     * Which *face* was addressed is a rendering question, and lives in `body`
+     * where the mention is written. This list is for deciding.
+     *
+     * **The schema cannot enforce this**, and pretending otherwise would be
+     * worse than the gap: a snowflake is a valid base64url string, so
+     * `AccountId` accepts a face id too. What the type buys is the call site —
+     * handing this a `FaceRef.id` from code that has both is now a type error —
+     * and a name that tells the next person which of the two belongs here.
+     */
+    mentions: z.array(AccountId).max(256).optional(),
     /** Which of the face's avatars to pin to this message. */
     expression: z.string().max(64).optional(),
     /** Honoured client-side. The setting's own copy says a reader can always

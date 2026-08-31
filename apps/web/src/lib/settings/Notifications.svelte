@@ -17,9 +17,9 @@ import Icon from '$lib/Icon.svelte';
 import { layout } from '$lib/layout.svelte.js';
 
 const LEVELS: { id: NotifyLevel; label: string }[] = [
-  { id: 'all', label: 'Everything' },
+  { id: 'everything', label: 'Everything' },
   { id: 'mentions', label: 'Mentions' },
-  { id: 'none', label: 'Nothing' },
+  { id: 'nothing', label: 'Nothing' },
 ];
 
 const n = $derived(core.notifications);

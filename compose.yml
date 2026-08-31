@@ -5,8 +5,14 @@
 # when `DATABASE_URL` is set, so `pnpm test` stays hermetic on a machine with no
 # Docker — which is the property that keeps people running it.
 #
-#   docker compose up -d
+#   docker compose up -d --wait
 #   DATABASE_URL=postgres://revel:revel@localhost:5432/revel pnpm test
+#
+# `--wait`, not bare `up -d`. `up -d` returns when the container has *started*,
+# which on a cold volume is well before `initdb` has finished and the server is
+# accepting connections — so the test run's `migrate()` fires at a closed port
+# and the whole file fails to collect. That is the one case the healthcheck
+# below exists for, and nothing consumes it without `--wait`.
 services:
   postgres:
     image: postgres:17-alpine
@@ -20,8 +26,9 @@ services:
     volumes:
       - revel-pgdata:/var/lib/postgresql/data
     healthcheck:
-      # `pg_isready` returns before the server accepts connections on the first
-      # boot, so the retries are load-bearing rather than decorative.
+      # `pg_isready` returns non-zero until the server is actually accepting
+      # connections, so the retries cover a cold `initdb`. Consumed by
+      # `up -d --wait`; without that flag nothing reads this.
       test: ['CMD-SHELL', 'pg_isready -U revel -d revel']
       interval: 2s
       timeout: 3s

@@ -7,6 +7,7 @@
  * implementation should not touch a single component.
  */
 
+import { resolveSetting } from '@revel/core';
 import { untoned } from '../emoji.js';
 import {
   account,
@@ -693,11 +694,22 @@ class Core {
     spaceId: string,
     roomId: string,
   ): { level: NotifyLevel; from: 'room' | 'space' | 'global' } {
+    // Delegated to `@revel/core` rather than walked here. This used to be its
+    // own room → space → global chain, which made two implementations of the
+    // rule `docs/35` calls the specification — and two implementations of a
+    // precedence rule agree right up until somebody changes one.
     const room = this.spaces.find((s) => s.id === spaceId)?.rooms.find((r) => r.id === roomId);
-    if (room?.notify) return { level: room.notify, from: 'room' };
-    const space = this.notifications.spaces[spaceId];
-    if (space) return { level: space, from: 'space' };
-    return { level: this.notifications.global, from: 'global' };
+    const resolved = resolveSetting(
+      { roomId, spaceId, kind: 'space', class: 'normal', sender: '' },
+      {
+        default: this.notifications.global,
+        spaces: this.notifications.spaces,
+        ...(room?.notify ? { rooms: { [roomId]: room.notify } } : {}),
+      },
+    );
+    // The engine calls the last rung `default` after the field it reads; this
+    // surface has always called it `global`, and it is the one users see.
+    return { level: resolved.level, from: resolved.from === 'default' ? 'global' : resolved.from };
   }
 
   /** Set or clear a room's override. `undefined` returns it to inheriting. */

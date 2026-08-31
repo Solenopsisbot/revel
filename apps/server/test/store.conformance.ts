@@ -26,7 +26,14 @@ import type { Store } from '../src/store/types.js';
 /** Fresh store per test. Returning a cleanup lets Postgres truncate and close. */
 export interface StoreHarness {
   make(): Promise<Store>;
-  /** Called after each test. */
+  /**
+   * Called at the *start* of each test, before `make()`.
+   *
+   * Deliberately setup rather than teardown, and the docstring used to say the
+   * opposite: a suite that only cleans up after itself leaves the last test's
+   * rows behind for whatever runs next, and "whatever runs next" is exactly the
+   * thing that will not know to distrust them.
+   */
   reset(): Promise<void>;
 }
 
@@ -319,6 +326,30 @@ export function describeStore(name: string, harness: StoreHarness): void {
         expect(await store.getSession('hash-expired')).toBeNull();
       });
 
+      it('sweeps expired challenges and sessions, and leaves live ones', async () => {
+        // Neither table cleans itself on the path that matters: an abandoned
+        // sign-in never spends its challenge, and a client holding an expired
+        // token does not present it again. In memory that is a leak a restart
+        // fixes; in a database it is a table that only grows.
+        const now = 1_700_000_000_000;
+        await store.putChallenge(uniq('dead'), { devicePub: 'dev-a', expiresAt: now - 1 });
+        await store.putChallenge(uniq('live'), { devicePub: 'dev-a', expiresAt: now + 60_000 });
+        await store.putSession(uniq('dead'), {
+          devicePub: 'dev-a',
+          accountId: 'acct-a',
+          expiresAt: now - 1,
+        });
+        await store.putSession(uniq('live'), {
+          devicePub: 'dev-a',
+          accountId: 'acct-a',
+          expiresAt: now + 60_000,
+        });
+
+        expect(await store.sweepExpired(now)).toEqual({ challenges: 1, sessions: 1 });
+        // Idempotent, so a timer that fires twice costs nothing.
+        expect(await store.sweepExpired(now)).toEqual({ challenges: 0, sessions: 0 });
+      });
+
       it('drops every session of one device at once', async () => {
         const pub = uniq('dev');
         for (const h of ['a', 'b', 'c']) {
@@ -409,6 +440,12 @@ export function describeStore(name: string, harness: StoreHarness): void {
         expect(purged?.purgedAt).toBeGreaterThan(0);
 
         expect(await store.purgeEvent(room, 'no-such-event')).toBe(false);
+
+        // Purging twice is not two purges. A retried request or a double-clicked
+        // moderation action must not rewrite when the purge happened.
+        const at = purged?.purgedAt;
+        expect(await store.purgeEvent(room, id)).toBe(false);
+        expect((await store.listEvents(room))[0]?.purgedAt).toBe(at);
       });
 
       it('round-trips the optional metadata fields as absent, not null', async () => {
@@ -451,6 +488,38 @@ export function describeStore(name: string, harness: StoreHarness): void {
 
         expect(await store.readBlob(id)).toEqual(bytes);
         expect((await store.getBlob(id))?.hash).toBe('abc');
+      });
+
+      it('keeps the first write and reports what is stored, not what was offered', async () => {
+        // Found by review. Postgres refused the second write and returned the
+        // caller's blob anyway — a 201 for ciphertext that was discarded — and
+        // memory overwrote, silently replacing somebody else's bytes. Both were
+        // wrong in different directions; the honest answer is the row that is
+        // there.
+        const id = uniq('blob');
+        await store.putBlob(blob(id), new Uint8Array([1]));
+
+        const second = await store.putBlob(
+          { ...blob(id), size: 2, hash: 'different' },
+          new Uint8Array([9, 9]),
+        );
+
+        expect(second.hash).toBe('abc');
+        expect(second.size).toBe(4);
+        expect(await store.readBlob(id)).toEqual(new Uint8Array([1]));
+      });
+
+      it('does not let a re-upload quietly un-purge an id', async () => {
+        // The worse half of the same bug: the caller was told `purgedAt: null`
+        // for a row that was still purged with its bytes gone.
+        const id = uniq('blob');
+        await store.putBlob(blob(id), new Uint8Array([1, 2, 3, 4]));
+        await store.purgeBlob(id, 1_700_000_009_000);
+
+        const again = await store.putBlob(blob(id), new Uint8Array([5, 6, 7, 8]));
+        expect(again.purgedAt).toBe(1_700_000_009_000);
+        expect(again.size).toBe(0);
+        expect(await store.readBlob(id)).toBeNull();
       });
 
       it('distinguishes a purge from a 404', async () => {
@@ -555,6 +624,26 @@ export function describeStore(name: string, harness: StoreHarness): void {
         expect((await store.getRoom(roomId))?.groupId).toBe(groupId);
         expect((await store.getGroupRooms(groupId)).map((r) => r.id)).toEqual([roomId]);
         expect((await store.getGroup(groupId))?.epoch).toBe(0);
+      });
+
+      it('does not rewind a group that already exists', async () => {
+        // Found by review. Memory overwrote unconditionally and reported epoch
+        // 0 for a group that had already committed; Postgres did not. A group
+        // rewound to epoch 0 accepts a stale commit built at epoch 0, which is
+        // exactly the fork the locked transaction below exists to prevent.
+        const { roomId, groupId, creator } = await group();
+        await store.appendHandshake({
+          groupId,
+          sender: creator.devicePub,
+          kind: 'commit',
+          epoch: 0,
+          bytes: 'eA==',
+          at: Date.now(),
+        });
+        expect((await store.getGroup(groupId))?.epoch).toBe(1);
+
+        await store.createGroup(groupId, roomId, creator);
+        expect((await store.getGroup(groupId))?.epoch).toBe(1);
       });
 
       it('refuses a commit built from a stale epoch', async () => {
@@ -672,6 +761,55 @@ export function describeStore(name: string, harness: StoreHarness): void {
 
         await store.ackWelcome(joiner, groupId);
         expect(await store.listWelcomes(joiner)).toHaveLength(0);
+      });
+
+      it('adds, welcomes and removes several devices in one commit', async () => {
+        // One person with several devices is the ordinary case — `docs/03` §1
+        // gives every device its own leaf — and the Postgres store batches all
+        // three of these into single statements because they run while the
+        // group row is locked. Every other test here adds exactly one device,
+        // so without this the batched SQL is never executed at all.
+        const { groupId, creator } = await group();
+        const devices = [uniq('dev'), uniq('dev'), uniq('dev')];
+        for (const device of devices) {
+          await store.publishKeyPackages(device, { packages: ['kp1'] });
+          await store.claimKeyPackage(device, groupId);
+        }
+
+        const joined = await store.appendHandshake({
+          groupId,
+          sender: creator.devicePub,
+          kind: 'commit',
+          epoch: 0,
+          bytes: 'eA==',
+          welcome: { bytes: 'd2VsY29tZQ==', devices },
+          added: devices.map((devicePub) => ({ devicePub, accountId: 'acct-multi' })),
+          at: 1_700_000_000_000,
+        });
+        expect(joined.accepted).toBe(true);
+
+        expect((await store.listGroupMembers(groupId)).map((m) => m.devicePub).sort()).toEqual(
+          [creator.devicePub, ...devices].sort(),
+        );
+        for (const device of devices) {
+          expect(await store.listWelcomes(device)).toHaveLength(1);
+          expect(await store.hasClaim(groupId, device)).toBe(false);
+        }
+
+        // And all three back out again, in one commit.
+        await store.appendHandshake({
+          groupId,
+          sender: creator.devicePub,
+          kind: 'commit',
+          epoch: 1,
+          bytes: 'eA==',
+          removed: devices,
+          at: Date.now(),
+        });
+        for (const device of devices) {
+          expect(await store.getGroupMember(groupId, device)).toBeNull();
+          expect(await store.listWelcomes(device)).toHaveLength(0);
+        }
       });
 
       it('takes a removed device queued Welcome away with it', async () => {

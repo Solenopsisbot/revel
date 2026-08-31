@@ -147,6 +147,15 @@ export class MemoryStore implements Store {
     // One step, because a row without bytes is a broken attachment and bytes
     // without a row are storage nobody will ever collect. In Postgres the row
     // is written after the object store confirms.
+    //
+    // **First write wins, and the stored row comes back.** This used to
+    // overwrite, which meant a colliding id silently replaced somebody else's
+    // ciphertext — and re-uploading over a purged id quietly un-purged it.
+    // Postgres refused the write and reported success anyway; both were wrong
+    // in different directions, and the honest answer is the row that is there.
+    const existing = this.blobs.get(blob.id);
+    if (existing) return existing;
+
     this.#blobBytes.set(blob.id, bytes);
     this.blobs.set(blob.id, blob);
     return blob;
@@ -246,6 +255,24 @@ export class MemoryStore implements Store {
     }
   }
 
+  async sweepExpired(now: number) {
+    let challenges = 0;
+    let sessions = 0;
+    for (const [hash, challenge] of this.challenges) {
+      if (challenge.expiresAt < now) {
+        this.challenges.delete(hash);
+        challenges += 1;
+      }
+    }
+    for (const [hash, session] of this.sessions) {
+      if (session.expiresAt < now) {
+        this.sessions.delete(hash);
+        sessions += 1;
+      }
+    }
+    return { challenges, sessions };
+  }
+
   async appendEvent(e: Event) {
     // Idempotency is scoped per device: two devices may legitimately pick the
     // same nonce, and one must not shadow the other.
@@ -270,7 +297,8 @@ export class MemoryStore implements Store {
   async purgeEvent(roomId: string, eventId: string) {
     const list = this.events.get(roomId);
     const found = list?.find((e) => e.id === eventId);
-    if (!found) return false;
+    // Already purged is not a second purge — see the note in `postgres.ts`.
+    if (!found || found.purgedAt) return false;
     found.payload = '';
     found.size = 0;
     found.purgedAt = Date.now();
@@ -344,7 +372,13 @@ export class MemoryStore implements Store {
   }
 
   async createGroup(id: string, roomId: string, creator: GroupMemberInput) {
-    const group: Group = { id, epoch: 0, pendingProposals: 0 };
+    // **Idempotent, like Postgres's `ON CONFLICT DO NOTHING`.** This used to
+    // overwrite unconditionally, which rewound an existing group to epoch 0 —
+    // and a group at epoch 0 accepts a stale commit built at epoch 0, which is
+    // precisely the fork that `appendHandshake`'s locked transaction exists to
+    // prevent. Found by review; the conformance suite never called this twice.
+    const existing = this.groups.get(id);
+    const group: Group = existing ?? { id, epoch: 0, pendingProposals: 0 };
     this.groups.set(id, group);
     const room = this.rooms.get(roomId);
     if (room) room.groupId = id;

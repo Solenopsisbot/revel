@@ -1606,7 +1606,7 @@ of the same contract, and the only way to know that is to check.
 The Postgres half skips when `DATABASE_URL` is unset, so `pnpm test` stays
 hermetic on a machine without Docker. That is a real trade and worth naming: a
 contributor can break Postgres without their local run noticing. It is one
-environment variable and a `docker compose up -d` away.
+environment variable and a `docker compose up -d --wait` away.
 
 ### The ordering bug that has not happened yet
 
@@ -1658,3 +1658,108 @@ Blob bytes are in a `bytea` column, which is fine at this scale and wrong at any
 other; the seam is written down where the row is inserted. And the Host's
 external-sender key is still generated per process (§8), which Postgres does not
 fix, because it is a secret and this database is not where secrets go.
+
+---
+
+## 28. What the review found in §27, one day later
+
+`/code-review` over the three preceding commits, at `high`. It ran the
+conformance suite against real Postgres and then wrote throwaway probes for the
+divergences the suite does *not* cover — five findings experimentally confirmed
+rather than inferred. Worth recording because the pattern is repeatable: **the
+suite proves the two stores agree about what it asks; the interesting bugs are
+in what it does not ask.**
+
+### Three races the conformance suite structurally could not see
+
+**`claimKeyPackage` racing itself.** The outstanding-claim check was an unlocked
+read, so two overlapping claims for the *same* (group, device) both saw "no
+claim", both took a package, and only one was recorded. The shelf went down two
+for one add — exactly the retry-loop drain the authorised claim exists to
+prevent (`docs/03` §5), reintroduced in the gap between the read and the write.
+§27's own concurrency test raced two *different* groups and could never reach
+this path.
+
+**`claimHandle` racing.** Both transactions read the handle as free, both
+inserted, and the loser got a `duplicate key` exception rather than
+`claimed: false`. `accounts.ts` does not catch, so a routine collision became a
+500 where the route is written to return 409 `handle_taken` — and `types.ts`
+promises "the existing binding when the handle is taken".
+
+Both are fixed with a transaction-scoped advisory lock, because in each case the
+row whose *absence* is the problem cannot be locked. Both new tests were checked
+the way §27 argues for: **four failures out of four with the lock removed.**
+
+**And the shard.** `SnowflakeFactory(0)` was hardcoded, which was harmless while
+"one process" was the only mode and became a corruption bug the moment §27 made
+"two processes, one database" the point. Two Hosts on shard 0 mint colliding ids
+within any millisecond both are busy; `appendEvent`'s `ON CONFLICT` arbitrates
+on `(sender, client_nonce)`, so a primary-key collision escapes as an unhandled
+500, and a blob collision was silent. Now `REVEL_SHARD`, printed at boot.
+
+### Two divergences the suite missed by never asking
+
+**`putBlob` on a colliding id.** Postgres refused the write and returned the
+caller's blob anyway — a 201 for ciphertext that was discarded — and worse,
+re-uploading over a *purged* id reported `purgedAt: null` for a row that was
+still purged with its bytes gone. Memory overwrote instead, silently replacing
+somebody else's ciphertext. Both wrong, in opposite directions. Now: first write
+wins, and **the stored row comes back**, in both stores and in the route.
+
+**`createGroup` on an existing id.** Memory reset the group to epoch 0; Postgres
+did not. A group rewound to epoch 0 accepts a stale commit built at epoch 0 —
+which is the fork that `appendHandshake`'s locked transaction exists to close,
+re-opened from the other end.
+
+Both are now conformance tests. The lesson is narrow and useful: the suite tested
+every method, and missed these because it tested each method *once*. The
+divergences live in the second call.
+
+### And the ordinary stuff
+
+`purgeEvent` had no `purged_at IS NULL` guard, so a double-clicked moderation
+action rewrote when the purge happened. `challenges` and `sessions` only clean
+themselves on the read path, and the read that would clean them is the one that
+never comes — an abandoned sign-in never spends its challenge, a client with an
+expired token does not present it again — so there is now `sweepExpired`, two
+indexes, and an hourly timer, because a method nothing calls is a leak with
+documentation. `appendHandshake` took a round trip per device *while holding the
+group lock*, which is the one place in the store where a round trip is charged to
+every other writer; it batches now, and there is a test that adds three devices
+at once, because every other test added exactly one and the batched SQL was
+otherwise never executed. `compose.yml` said `up -d`, which returns before
+Postgres accepts connections on a cold volume — the exact case its own
+healthcheck comment described, and nothing consumed that healthcheck without
+`--wait`.
+
+### The one that was not in the store at all
+
+`EncryptedEvent.mentions` was typed `Id` — the generic snowflake, the same shape
+as `FaceRef.id`. `docs/35` rule 6 promises an `@` at any of your faces reaches
+you, and the engine implements that by matching the reading **account**. So a
+client that put the face id it had just rendered into that list would produce
+**silence, with no error anywhere**. It is `AccountId` now, matching
+`EventInput.notify`, which it mirrors.
+
+Being honest about what that buys: the shape cannot enforce it, because a
+snowflake is a valid base64url string. What it buys is the call site and the
+name. The same class of bug as `notify` being typed as a snowflake (§11) — twice
+now, in the same pair of fields, which suggests the lesson is about the field
+pair rather than about either field.
+
+### And a duplicated rule
+
+`apps/web` already had `NotifyLevel = 'all' | 'mentions' | 'none'` — the same
+three states as `Loudness = 'everything' | 'mentions' | 'nothing'`, spelled
+differently — and its own room → space → global precedence walk. Two spellings
+and two implementations of the rule `docs/35` calls the specification, created
+the same day the specification was written.
+
+The web's names now come from core (`docs/05` §8 says "everything / mentions /
+nothing", so the doc's words win), and `notifyFor` delegates to a new
+`resolveSetting`, which returns **where the setting came from** as well as what
+it is. That was already what the room menu needed to tick "Use the space
+default", and computing it in the UI was the reason the second implementation
+existed at all.
+
+878 tests with Postgres, 828 without, `svelte-check` clean.

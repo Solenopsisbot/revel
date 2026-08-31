@@ -15,6 +15,7 @@ import {
   decide,
   effectiveSetting,
   type NotificationSettings,
+  resolveSetting,
 } from '../src/index.js';
 
 const ME = 'acct-me';
@@ -212,6 +213,20 @@ describe('where a setting comes from', () => {
         }),
       ),
     ).toBe('mentions');
+  });
+
+  it('reports where the setting came from, not just what it is', () => {
+    // Every notification screen in every app answers "what is this set to" and
+    // none of them answer "why". The room menu needs the provenance to tick
+    // "Use the space default", and computing it there would be a second
+    // implementation of the precedence rule.
+    expect(resolveSetting(message(), settings({ rooms: { 'room-1': 'nothing' } })).from).toBe(
+      'room',
+    );
+    expect(resolveSetting(message(), settings({ spaces: { 'space-1': 'nothing' } })).from).toBe(
+      'space',
+    );
+    expect(resolveSetting(message(), settings()).from).toBe('default');
   });
 
   it('keeps DMs out of the global room default', () => {

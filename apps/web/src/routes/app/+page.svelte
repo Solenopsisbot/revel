@@ -10,6 +10,7 @@ import { contextMenu } from '$lib/contextmenu.svelte.js';
 import { applyUrl, syncUrl } from '$lib/deeplink.js';
 import { drawers } from '$lib/drawers.svelte.js';
 import { connection } from '$lib/fake/connection.svelte.js';
+import type { NotifyLevel } from '$lib/fake/data.js';
 import { conversation } from '$lib/fake/conversation.svelte.js';
 import { core, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
 import Icon from '$lib/Icon.svelte';
@@ -147,7 +148,7 @@ function openRoomMenu(e: MouseEvent, roomId: string) {
         core.setRoomNotify(
           core.currentSpaceId,
           roomId,
-          arg === 'inherit' ? undefined : (arg as 'all' | 'mentions' | 'none'),
+          arg === 'inherit' ? undefined : (arg as NotifyLevel),
         );
       }
       if (id === 'mark-read') core.markRead(core.currentSpaceId, roomId);
@@ -193,9 +194,9 @@ function openDmMenu(e: MouseEvent, id: string) {
         header: 'Notifications',
         checked: !dm.notify,
       },
-      { id: 'notify:all', label: 'Everything', checked: dm.notify === 'all' },
+      { id: 'notify:everything', label: 'Everything', checked: dm.notify === 'everything' },
       { id: 'notify:mentions', label: 'Mentions', checked: dm.notify === 'mentions' },
-      { id: 'notify:none', label: 'Nothing', checked: dm.notify === 'none' },
+      { id: 'notify:nothing', label: 'Nothing', checked: dm.notify === 'nothing' },
       {
         id: 'mark-read',
         label: 'Mark as read',
@@ -209,7 +210,7 @@ function openDmMenu(e: MouseEvent, id: string) {
     (picked) => {
       const [verb, arg] = picked.split(':');
       if (verb === 'notify')
-        dm.notify = arg === 'inherit' ? undefined : (arg as 'all' | 'mentions' | 'none');
+        dm.notify = arg === 'inherit' ? undefined : (arg as NotifyLevel);
       if (picked === 'mark-read') {
         dm.unread = undefined;
         dm.mention = false;
@@ -527,7 +528,7 @@ function toggleMembers() {
             class="room"
             class:active={room.id === core.currentRoomId}
             class:unread={!!room.unread}
-            class:quiet={core.notifyFor(core.currentSpaceId, room.id).level === 'none'}
+            class:quiet={core.notifyFor(core.currentSpaceId, room.id).level === 'nothing'}
             onclick={() => {
               core.openRoom(core.currentSpaceId, room.id);
               // A voice room is a place you walk into: one click puts you in

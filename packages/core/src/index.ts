@@ -31,6 +31,7 @@ export {
   type NotificationSettings,
   type Reader,
   type RuleId,
+  resolveSetting,
   type Setting,
 } from './notify/rules.js';
 export {

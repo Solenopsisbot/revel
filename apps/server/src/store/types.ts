@@ -229,6 +229,21 @@ export interface Store {
   deleteDeviceSessions(devicePub: string): Promise<void>;
 
   /**
+   * Delete expired challenges and sessions. Returns how many rows went.
+   *
+   * Both tables clean themselves only on the read path, and the read that would
+   * clean them is the one that never arrives: an abandoned sign-in never spends
+   * its challenge, and a client holding an expired token does not present it
+   * again. In memory that is a leak a restart fixes; in a database it is a
+   * table that only grows, and this is the store meant to survive restarts.
+   *
+   * Called on a timer by the entrypoint. Safe to call concurrently and safe to
+   * never call — nothing depends on it for correctness, because every read
+   * already checks expiry itself.
+   */
+  sweepExpired(now: number): Promise<{ challenges: number; sessions: number }>;
+
+  /**
    * Append an event. Returns the stored event, or the existing one when
    * `clientNonce` has already been used by this device — so a retry after a
    * dropped response cannot duplicate (`docs/04` §2).

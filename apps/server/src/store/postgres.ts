@@ -263,6 +263,20 @@ export class PostgresStore implements Store {
 
   async claimHandle(account: Account): Promise<{ account: Account; claimed: boolean }> {
     return await this.sql.begin(async (sql) => {
+      // Serialise on the handle, for the same reason `claimKeyPackage` does.
+      //
+      // The read below is unlocked, so two accounts claiming one handle at the
+      // same instant both saw it free and both wrote — and the loser did not
+      // get `claimed: false`, it got a `duplicate key` exception. `accounts.ts`
+      // does not catch, so a routine collision became a 500 where the route is
+      // written to return 409 `handle_taken`, and `types.ts` promises "the
+      // existing binding when the handle is taken".
+      //
+      // Namespaced by a constant so this lock space and the key-package one
+      // cannot be confused for each other by a reader.
+      await sql`
+        SELECT pg_advisory_xact_lock(hashtext('revel/handle'), hashtext(${account.handle}))`;
+
       const [holder] = await sql`SELECT * FROM accounts WHERE handle = ${account.handle}`;
       if (holder) return { account: this.#account(holder), claimed: false };
 
@@ -410,6 +424,12 @@ export class PostgresStore implements Store {
     await this.sql`DELETE FROM sessions WHERE device_pub = ${devicePub}`;
   }
 
+  async sweepExpired(now: number): Promise<{ challenges: number; sessions: number }> {
+    const challenges = await this.sql`DELETE FROM challenges WHERE expires_at < ${now}`;
+    const sessions = await this.sql`DELETE FROM sessions WHERE expires_at < ${now}`;
+    return { challenges: challenges.count, sessions: sessions.count };
+  }
+
   async listAccountDevices(
     accountId: string,
     opts: { includeRevoked?: boolean } = {},
@@ -488,9 +508,13 @@ export class PostgresStore implements Store {
     // The bytes go, the row stays. A client that has this cached learns to drop
     // its copy rather than silently diverging from everyone else, and it can
     // only learn that from a tombstone.
+    // `purged_at IS NULL`, like `purgeBlob`. Without it a retried request or a
+    // double-clicked moderation action returns true twice, broadcasts twice,
+    // and rewrites the tombstone's timestamp — losing when the purge actually
+    // happened, which is the one fact the tombstone exists to carry.
     const [row] = await this.sql`
       UPDATE events SET payload = '', size = 0, purged_at = ${Date.now()}
-      WHERE room_id = ${roomId} AND id = ${eventId}
+      WHERE room_id = ${roomId} AND id = ${eventId} AND purged_at IS NULL
       RETURNING id`;
     return !!row;
   }
@@ -512,12 +536,27 @@ export class PostgresStore implements Store {
   }
 
   async putBlob(blob: Blob, bytes: Uint8Array): Promise<Blob> {
-    await this.sql`
+    // **Returns what is stored, not what was offered.** First write wins, and
+    // on a collision the caller gets the row that is actually there.
+    //
+    // This used to `return blob` unconditionally after an `ON CONFLICT DO
+    // NOTHING`, which meant a colliding upload got a 201 and a blob id whose
+    // bytes belonged to somebody else — and re-uploading over a *purged* id
+    // reported `purgedAt: null` for a row that was still purged with its bytes
+    // gone. Claiming to have stored ciphertext that was discarded is the one
+    // answer an upload must never give.
+    const [inserted] = await this.sql`
       INSERT INTO blobs (id, room_id, uploader, size, hash, created_at, purged_at, bytes)
       VALUES (${blob.id}, ${blob.roomId}, ${blob.uploader}, ${blob.size}, ${blob.hash},
               ${blob.createdAt}, ${blob.purgedAt}, ${bytes})
-      ON CONFLICT (id) DO NOTHING`;
-    return blob;
+      ON CONFLICT (id) DO NOTHING
+      RETURNING id, room_id, uploader, size, hash, created_at, purged_at`;
+    if (inserted) return this.#blob(inserted);
+
+    const [existing] = await this.sql`
+      SELECT id, room_id, uploader, size, hash, created_at, purged_at FROM blobs
+      WHERE id = ${blob.id}`;
+    return this.#blob(existing as Row);
   }
 
   async getBlob(id: string): Promise<Blob | null> {
@@ -588,9 +627,15 @@ export class PostgresStore implements Store {
       // holds different private halves than whatever is on the shelf, and
       // adding to a stale shelf means handing out packages nobody can open.
       await sql`DELETE FROM key_packages WHERE device_pub = ${devicePub}`;
-      for (const keyPackage of upload.packages) {
-        await sql`
-          INSERT INTO key_packages (device_pub, key_package) VALUES (${devicePub}, ${keyPackage})`;
+      if (upload.packages.length) {
+        // One statement. `docs/03` §5 has devices keeping 20+ packages on the
+        // shelf, and a routine top-up was 20 serialised round trips inside a
+        // transaction.
+        const rows = upload.packages.map((keyPackage) => ({
+          device_pub: devicePub,
+          key_package: keyPackage,
+        }));
+        await sql`INSERT INTO key_packages ${sql(rows, 'device_pub', 'key_package')}`;
       }
       if (upload.lastResort) {
         await sql`
@@ -603,15 +648,36 @@ export class PostgresStore implements Store {
   }
 
   async keyPackageSupply(devicePub: string): Promise<KeyPackageSupply> {
-    const [counted] = await this.sql`
-      SELECT count(*)::int AS n FROM key_packages WHERE device_pub = ${devicePub}`;
-    const [lastResort] = await this.sql`
-      SELECT 1 FROM last_resort_packages WHERE device_pub = ${devicePub}`;
-    return { available: (counted?.n as number) ?? 0, lastResort: !!lastResort };
+    // Both halves in one statement: this runs on every claim and at the end of
+    // every top-up, and two sequential awaits for one answer is a round trip
+    // spent on nothing.
+    const [row] = await this.sql`
+      SELECT
+        (SELECT count(*)::int FROM key_packages WHERE device_pub = ${devicePub}) AS n,
+        EXISTS(SELECT 1 FROM last_resort_packages WHERE device_pub = ${devicePub}) AS lr`;
+    return { available: (row?.n as number) ?? 0, lastResort: !!row?.lr };
   }
 
   async claimKeyPackage(devicePub: string, groupId: string): Promise<ClaimedPackage | null> {
     return await this.sql.begin(async (sql) => {
+      // Serialise this (group, device) slot for the length of the transaction.
+      //
+      // **Without this the reuse check below is a race that drains a shelf.**
+      // The `SELECT` is an unlocked read, so two overlapping claims for the
+      // same slot both see "no outstanding claim", both fall through to the
+      // `DELETE`, and each takes a *different* one-time package — while only
+      // one of them ends up recorded in `key_package_claims`. The caller handed
+      // the unrecorded one holds a package nothing matches, and the shelf is
+      // down two instead of one. That is exactly the retry-loop drain the
+      // authorised-claim fix exists to stop (`docs/03` §5), reintroduced by the
+      // gap between the read and the write.
+      //
+      // A transaction-scoped advisory lock rather than a row lock, because the
+      // row whose absence is the problem cannot be locked. It is released on
+      // commit or abort with no bookkeeping, and a hash collision between two
+      // unrelated slots costs a little blocking and never correctness.
+      await sql`SELECT pg_advisory_xact_lock(hashtext(${groupId}), hashtext(${devicePub}))`;
+
       // An outstanding claim is reused rather than burning a second package: a
       // commit refused for an epoch conflict gets retried, and a retry loop
       // that ate a package per attempt would be a way to drain somebody's shelf
@@ -826,34 +892,55 @@ export class PostgresStore implements Store {
             WHERE group_trees.epoch <= EXCLUDED.epoch`;
       }
 
-      for (const member of input.added ?? []) {
+      // **Everything below is batched, because the group row is locked.** That
+      // lock is the single serialisation point for a group's whole handshake
+      // log, so a round trip taken while holding it is a round trip every other
+      // commit for that group waits on. A loop here made adding one person with
+      // five devices fifteen serialised round trips; `docs/31` §2's 2,000-member
+      // scenario made it thousands.
+      const added = input.added ?? [];
+      if (added.length) {
+        const rows = added.map((member) => ({
+          group_id: group.id,
+          device_pub: member.devicePub,
+          account_id: member.accountId,
+          added_epoch: epoch,
+          last_active_at: input.at,
+        }));
         await sql`
-          INSERT INTO group_members (group_id, device_pub, account_id, added_epoch, last_active_at)
-          VALUES (${group.id}, ${member.devicePub}, ${member.accountId}, ${epoch}, ${input.at})
+          INSERT INTO group_members ${sql(rows, 'group_id', 'device_pub', 'account_id', 'added_epoch', 'last_active_at')}
           ON CONFLICT (group_id, device_pub) DO UPDATE
             SET added_epoch = EXCLUDED.added_epoch, last_active_at = EXCLUDED.last_active_at`;
       }
-      for (const devicePub of input.removed ?? []) {
+
+      const removed = input.removed ?? [];
+      if (removed.length) {
         await sql`
-          DELETE FROM group_members WHERE group_id = ${group.id} AND device_pub = ${devicePub}`;
+          DELETE FROM group_members
+          WHERE group_id = ${group.id} AND device_pub = ANY(${sql.array(removed)})`;
         // This group's queued Welcome goes with them. One still sitting there
         // would let a removed device walk back in — and only this group's, since
         // the device may be legitimately joining others.
         await sql`
-          DELETE FROM group_welcomes WHERE group_id = ${group.id} AND device_pub = ${devicePub}`;
+          DELETE FROM group_welcomes
+          WHERE group_id = ${group.id} AND device_pub = ANY(${sql.array(removed)})`;
       }
 
-      if (input.welcome) {
-        for (const devicePub of input.welcome.devices) {
-          await sql`
-            INSERT INTO group_welcomes (device_pub, group_id, bytes, created_at)
-            VALUES (${devicePub}, ${group.id}, ${input.welcome.bytes}, ${input.at})
-            ON CONFLICT (device_pub, group_id) DO UPDATE
-              SET bytes = EXCLUDED.bytes, created_at = EXCLUDED.created_at`;
-          await sql`
-            DELETE FROM key_package_claims
-            WHERE group_id = ${group.id} AND device_pub = ${devicePub}`;
-        }
+      if (input.welcome?.devices.length) {
+        const bytes = input.welcome.bytes;
+        const rows = input.welcome.devices.map((device_pub) => ({
+          device_pub,
+          group_id: group.id,
+          bytes,
+          created_at: input.at,
+        }));
+        await sql`
+          INSERT INTO group_welcomes ${sql(rows, 'device_pub', 'group_id', 'bytes', 'created_at')}
+          ON CONFLICT (device_pub, group_id) DO UPDATE
+            SET bytes = EXCLUDED.bytes, created_at = EXCLUDED.created_at`;
+        await sql`
+          DELETE FROM key_package_claims
+          WHERE group_id = ${group.id} AND device_pub = ANY(${sql.array(input.welcome.devices)})`;
       }
 
       return { accepted: true, record, epoch } as const;

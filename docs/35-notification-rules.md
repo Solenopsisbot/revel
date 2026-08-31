@@ -104,6 +104,14 @@ Three things, all decided together:
   different name, so being addressed at one you are not currently speaking as
   still reaches you. The notification names the face, so you know which hat
   somebody wanted.
+
+  Mechanically: `mentions` carries **account ids**, a face resolves to its
+  account when the message is composed, and the face that was addressed lives in
+  the message body where the notification reads it. The field was typed as a
+  generic snowflake — the same shape as a face id — which meant a client putting
+  the face id it had just rendered into that list would produce silence with no
+  error anywhere. It is `AccountId` now, though the shape cannot fully police it
+  (a snowflake is valid base64url), so the name is doing real work.
 - **A reply to your message.** A strong signal and a quiet one — people reply far
   less often than they chat.
 - **`@everyone`, or a role you hold.** Already gated by `MENTION_EVERYONE`

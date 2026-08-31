@@ -6,6 +6,8 @@
  * the interface gets designed by what the interface actually needs, rather
  * than by what happened to be convenient to store.
  */
+
+import type { Loudness } from '@revel/core';
 import { withHistory } from './history.js';
 
 export type FaceColour = 'gold' | 'rose' | 'violet' | 'sky' | 'mint' | 'coral' | 'lilac' | 'aqua';
@@ -118,7 +120,15 @@ export interface Reaction {
  * How loudly a scope notifies. `mentions` is the useful middle and the one
  * most people actually want; `none` still counts unread, it just doesn't push.
  */
-export type NotifyLevel = 'all' | 'mentions' | 'none';
+/**
+ * Re-exported from `@revel/core`, not redefined.
+ *
+ * This was `'all' | 'mentions' | 'none'` — the same three states as the rules
+ * engine, spelled differently, which is how two implementations of one rule
+ * start. `docs/05` §8 says "everything / mentions / nothing" and `docs/35` calls
+ * the rule order the specification, so the core's names are the ones that win.
+ */
+export type NotifyLevel = Loudness;
 
 export interface Room {
   id: string;
@@ -573,7 +583,7 @@ export const spaces: Space[] = [
         name: 'ci-noise',
         kind: 'text',
         category: 'Build',
-        notify: 'none',
+        notify: 'nothing',
         audience: { kind: 'everyone' },
       },
       {
@@ -1151,7 +1161,7 @@ export interface Notifications {
 
 export const notifications: Notifications = {
   global: 'mentions',
-  spaces: { braid: 'all' },
+  spaces: { braid: 'everything' },
   quietHours: { on: true, from: '23:00', to: '08:00' },
   previews: false,
   sound: true,

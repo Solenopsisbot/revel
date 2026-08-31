@@ -88,7 +88,13 @@ export interface Candidate {
   class: 'normal' | 'silent' | 'ephemeral';
   /** The account that sent it, resolved from the MLS leaf. */
   sender: string;
-  /** Accounts named in the payload's `mentions`. */
+  /**
+   * Accounts named in the payload's `mentions` — accounts, never faces.
+   *
+   * The protocol types this `AccountId`, but the shape cannot police it (a
+   * snowflake is valid base64url), so a caller passing face ids gets silence
+   * rather than an error. Hence the name of this field and this sentence.
+   */
   mentions?: string[];
   /** `@everyone`, or a role the reader holds. Gated by `MENTION_EVERYONE`. */
   broadcast?: boolean;
@@ -146,16 +152,34 @@ const BECAUSE: Record<RuleId, string> = {
  * silently not notifying. Nobody means that when they set a default for rooms.
  * So a DM's floor is `everything`, and muting one is an explicit per-room act.
  */
-export function effectiveSetting(candidate: Candidate, settings: NotificationSettings): Loudness {
+export function resolveSetting(
+  candidate: Candidate,
+  settings: NotificationSettings,
+): { level: Loudness; from: 'room' | 'space' | 'default' } {
   const room = settings.rooms?.[candidate.roomId];
-  if (room && room !== 'inherit') return room;
+  if (room && room !== 'inherit') return { level: room, from: 'room' };
 
   if (candidate.spaceId) {
     const space = settings.spaces?.[candidate.spaceId];
-    if (space && space !== 'inherit') return space;
+    if (space && space !== 'inherit') return { level: space, from: 'space' };
   }
 
-  return candidate.kind === 'space' ? settings.default : 'everything';
+  const level = candidate.kind === 'space' ? settings.default : 'everything';
+  return { level, from: 'default' };
+}
+
+/**
+ * Just the level, for callers that only have to decide.
+ *
+ * [`resolveSetting`] is the one to reach for in UI: **every notification screen
+ * in every app answers "what is this set to" and none of them answer "why"**,
+ * which is the only question anybody has. Returning the provenance here means
+ * the room menu can tick "Use the space default" without walking the chain a
+ * second time — and a second walk is a second implementation of the rule
+ * `docs/35` calls the specification.
+ */
+export function effectiveSetting(candidate: Candidate, settings: NotificationSettings): Loudness {
+  return resolveSetting(candidate, settings).level;
 }
 
 /** Whether `minute` falls in `[start, end)`, wrapping past midnight. */
@@ -169,10 +193,16 @@ function withinQuietHours(minute: number, hours: { start: number; end: number })
 
 /** True when this event names the reader, by any of the routes that count. */
 function mentions(candidate: Candidate, reader: Reader): RuleId | null {
-  // An `@` at any of your faces resolves to your account, because a face is
-  // *you* wearing a different name — being addressed at one you are not
-  // currently speaking as still reaches you, and the notification names the
-  // face so you know which hat somebody wanted.
+  // Matched on the **account**, which is what makes "an `@` at any of your
+  // faces" true: a face resolves to its account when the message is composed,
+  // so being addressed at a face you are not currently speaking as still
+  // reaches you. The face that was addressed lives in the message body, which
+  // is where the notification gets the name to show.
+  //
+  // `EncryptedEvent.mentions` is typed `AccountId` for exactly this. It used to
+  // be the generic snowflake `Id` — the same shape as `FaceRef.id` — and a
+  // client that put the face id it had just rendered into that list would have
+  // produced silence here with no error anywhere.
   if (candidate.mentions?.includes(reader.account)) return 'mention';
   if (candidate.replyTo === reader.account) return 'reply';
   if (candidate.broadcast) return 'broadcast';

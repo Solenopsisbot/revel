@@ -92,8 +92,12 @@ export function mountBlobs(app: Hono, deps: BlobDeps): void {
       createdAt: now(),
       purgedAt: null,
     };
-    await deps.store.putBlob(blob, bytes);
-    return c.json({ blob: info(blob) }, 201);
+    // The *stored* row, not the one just built. The id is freshly minted so a
+    // collision means something is wrong upstream — two Hosts on one shard, say
+    // — and in that case the uploader should be told what is actually there
+    // rather than handed a 201 describing bytes that were discarded.
+    const stored = await deps.store.putBlob(blob, bytes);
+    return c.json({ blob: info(stored) }, 201);
   });
 
   /**

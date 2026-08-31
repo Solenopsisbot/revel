@@ -245,7 +245,7 @@ export function buildCommands(ctx: Ctx): Command[] {
       icon: 'bell-off',
       group: 'Configure',
       keywords: 'notifications quiet silence',
-      run: () => void core.setRoomNotify(core.currentSpaceId, core.currentRoomId, 'none'),
+      run: () => void core.setRoomNotify(core.currentSpaceId, core.currentRoomId, 'nothing'),
     },
     {
       id: 'translate-room',

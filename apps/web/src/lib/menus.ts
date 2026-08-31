@@ -20,9 +20,13 @@ function notifyRows(current: NotifyLevel, inherited: boolean, prefix: string): I
       header: 'Notifications',
       checked: inherited,
     },
-    { id: `${prefix}:all`, label: 'Everything', checked: !inherited && current === 'all' },
+    {
+      id: `${prefix}:everything`,
+      label: 'Everything',
+      checked: !inherited && current === 'everything',
+    },
     { id: `${prefix}:mentions`, label: 'Mentions', checked: !inherited && current === 'mentions' },
-    { id: `${prefix}:none`, label: 'Nothing', checked: !inherited && current === 'none' },
+    { id: `${prefix}:nothing`, label: 'Nothing', checked: !inherited && current === 'nothing' },
   ];
 }
 
