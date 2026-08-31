@@ -19,7 +19,16 @@ let draft = $state('');
 let input = $state<HTMLTextAreaElement>();
 let dragging = $state(false);
 
-const face = $derived(core.faces[core.speakingAs]!);
+/** The face this composer sends as — per conversation in a DM, global in a room. */
+const face = $derived(core.faces[core.speakingHere]!);
+
+/**
+ * The face waiting on a confirmation to join this conversation, if any.
+ *
+ * Kept here rather than in `core` because it is one dialog's worth of state and
+ * nothing outside this component can be in the middle of it.
+ */
+let joining = $state<string | null>(null);
 
 /**
  * Whether this composer is the one stray keystrokes belong to. With a thread
@@ -114,20 +123,73 @@ function grow(el: HTMLTextAreaElement) {
         <p class="sheet-title">Speaking as</p>
       {/if}
       {#each core.myFaces as f (f.id)}
+        {@const here = core.facesHere === null || core.facesHere.includes(f.id)}
         <button
           role={layout.coarse ? undefined : 'option'}
-          aria-selected={layout.coarse ? undefined : f.id === core.speakingAs}
-          aria-pressed={layout.coarse ? f.id === core.speakingAs : undefined}
+          aria-selected={layout.coarse ? undefined : f.id === core.speakingHere}
+          aria-pressed={layout.coarse ? f.id === core.speakingHere : undefined}
           class="opt"
-          class:sel={f.id === core.speakingAs}
-          onclick={() => { core.speakingAs = f.id; core.speakingAsOpen = false; }}
+          class:sel={f.id === core.speakingHere}
+          class:absent={!here}
+          onclick={() => {
+            if (here) {
+              core.speakHere(f.id);
+              core.speakingAsOpen = false;
+            } else {
+              // Not a switch. Bringing a face in is a disclosure, so it asks.
+              joining = f.id;
+            }
+          }}
         >
           <Avatar face={f} size={layout.coarse ? 36 : 28} />
           <span style="color: var(--face-{f.colour})">{f.name}</span>
-          {#if f.id === core.speakingAs}<Icon name="check" size={16} />{/if}
+          {#if f.id === core.speakingHere}
+            <Icon name="check" size={16} />
+          {:else if !here}
+            <span class="not-here">not in this conversation</span>
+          {/if}
         </button>
       {/each}
     </div>
+  {/if}
+
+  {#if joining}
+    {@const f = core.faces[joining]}
+    {#if f}
+      <div class="scrim" onclick={() => (joining = null)} role="presentation"></div>
+      <div class="confirm" role="dialog" aria-modal="true" aria-labelledby="join-title">
+        <p class="confirm-title" id="join-title">
+          Bring <span style="color: var(--face-{f.colour})">{f.name}</span> into this conversation?
+        </p>
+        <!-- `docs/11`: faces on one account are *not* unlinkable to somebody in
+             the same room — attribution is per account, and the face is a field
+             inside the message. This is the moment that stops being abstract,
+             so it is the moment to say it, in the words `docs/08` would use:
+             what happens, not how we feel about it. -->
+        <p class="confirm-body">
+          Everyone here will see that {f.name} exists, and that {f.name} and
+          {core.faces[core.speakingHere]?.name} are the same account. That cannot
+          be undone by removing them later.
+        </p>
+        <p class="confirm-body dim">
+          If these need to stay unconnected, a separate account is the tool for
+          that — nothing links two accounts.
+        </p>
+        <div class="confirm-row">
+          <button class="ghost" onclick={() => (joining = null)}>Cancel</button>
+          <button
+            class="go"
+            onclick={() => {
+              if (joining) core.addFaceHere(joining);
+              joining = null;
+              core.speakingAsOpen = false;
+            }}
+          >
+            Add {f.name}
+          </button>
+        </div>
+      </div>
+    {/if}
   {/if}
 
   {#if core.replyTo && !thread}
@@ -198,6 +260,37 @@ function grow(el: HTMLTextAreaElement) {
     transition: background var(--t-fast) var(--ease);
   }
   .opt:hover, .opt.sel { background: var(--ground-3); }
+
+  /* A face that is not in this conversation. Dimmed rather than hidden or
+     disabled: hidden would make it look like the face does not exist, and
+     `disabled` would take it out of the tab order and give a keyboard user no
+     way to reach the one action it does have. It is still a button — it just
+     opens a question instead of switching. */
+  .opt.absent { opacity: 0.45; }
+  .opt.absent:hover { opacity: 1; background: var(--ground-3); }
+  .not-here {
+    margin-left: auto; font-size: var(--text-xs); font-weight: 500;
+    color: var(--text-mute); white-space: nowrap;
+  }
+
+  /* ── "bring this face in" confirmation ─────────────────────────────────── */
+  .scrim { position: fixed; inset: 0; z-index: 47; background: var(--scrim); }
+  .confirm {
+    position: absolute; bottom: calc(100% + 8px); left: 8px; right: 8px;
+    max-width: 380px; z-index: 48;
+    background: var(--ground-2); border: 1px solid var(--line);
+    border-radius: var(--r-md); padding: 14px; box-shadow: var(--shadow-lg);
+  }
+  .confirm-title { margin: 0 0 8px; font-weight: 650; font-size: var(--text-base); }
+  .confirm-body { margin: 0 0 8px; font-size: var(--text-sm); color: var(--text-dim); }
+  .confirm-body.dim { color: var(--text-mute); }
+  .confirm-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+  .confirm-row button {
+    font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer;
+    padding: 8px 14px; border-radius: var(--r-pill); min-height: var(--tap);
+  }
+  .confirm-row .ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  .confirm-row .go { background: var(--accent); border: 0; color: var(--on-accent); }
 
   /* ── bottom sheet (coarse pointers only) ───────────────────────────────── */
   .sheet-scrim { position: fixed; inset: 0; z-index: 45; background: var(--scrim); }

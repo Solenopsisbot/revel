@@ -33,6 +33,7 @@ import {
   spaces,
   storage,
 } from './data.js';
+import { facesIn, participantsIn, speakerIn } from './faceShape.js';
 
 /** The account these faces belong to. Exported because 'is this face one of
     mine' is a question components ask too, and routing it through a named
@@ -258,7 +259,10 @@ class Core {
         notify: dm.notify,
         // Bubbles, per `docs/07`: DMs and group DMs get them by default.
         style: 'bubbles',
-        audience: { kind: 'picked', faceIds: [this.speakingAs, ...dm.withIds] },
+        // Every face in the conversation, mine and theirs — not "the one I
+        // happen to have selected", which made the audience change when I
+        // switched face somewhere else entirely.
+        audience: { kind: 'picked', faceIds: participantsIn(dm) },
       };
     }
     return this.space.rooms.find((r) => r.id === this.currentRoomId) ?? this.space.rooms[0]!;
@@ -460,11 +464,64 @@ class Core {
 
   get roster() {
     const dm = this.dm;
-    if (dm) return [this.faces[this.speakingAs]!, ...dm.withIds.map((id) => this.faces[id]!)];
+    if (dm) return participantsIn(dm).map((id) => this.faces[id]!);
     return (rosters[this.currentRoomId] ?? []).map((id) => this.faces[id]!);
   }
   get myFaces() {
     return myFaces.map((id) => this.faces[id]!);
+  }
+
+  /**
+   * Which of my faces are in the current conversation, or `null` where the
+   * question does not apply.
+   *
+   * `null` for a space room: membership there is per **account** (`docs/03` §4
+   * — roles and audiences are account-level no matter how many faces you speak
+   * as), so every face is available and none of them is a participant in its
+   * own right. A DM is the opposite: it is a list of faces, and being in it is
+   * a fact the other people can see.
+   */
+  get facesHere(): string[] | null {
+    return facesIn(this.dm);
+  }
+
+  /**
+   * The face I am speaking as *right here*.
+   *
+   * Per conversation for a DM, global otherwise. Somebody who is Ash in one
+   * group and June in another should not have to remember which, and must never
+   * be one mis-click from saying something as the wrong one.
+   */
+  get speakingHere(): string {
+    return speakerIn(this.dm, this.speakingAs);
+  }
+
+  /** Switch face. Writes to the conversation in a DM, to the account otherwise. */
+  speakHere(faceId: string) {
+    const dm = this.dm;
+    if (dm) {
+      if (!dm.mineIds.includes(faceId)) return;
+      dm.speakingAs = faceId;
+      return;
+    }
+    this.speakingAs = faceId;
+  }
+
+  /**
+   * Bring one of my faces into this conversation.
+   *
+   * Deliberately its own method rather than a side effect of selecting: the
+   * other people in here will see that this face exists, and — if they were
+   * already talking to another of my faces — that the two are the same account.
+   * `docs/11` is blunt that faces are *not* cryptographically unlinkable to
+   * somebody in the same room, so this is the moment that fact becomes true,
+   * and the UI asks first.
+   */
+  addFaceHere(faceId: string) {
+    const dm = this.dm;
+    if (!dm || dm.mineIds.includes(faceId) || !myFaces.includes(faceId)) return;
+    dm.mineIds = [...dm.mineIds, faceId];
+    dm.speakingAs = faceId;
   }
   get plural() {
     // Plurality is invisible until you use it (`docs/11`). One face, no chip.
@@ -500,9 +557,11 @@ class Core {
     const face = this.faces[faceId];
     if (!face || face.accountId === MY_ACCOUNT) return;
     const id = dmId(MY_ACCOUNT, face.accountId);
-    let dm = this.dms.find((d) => d.id === id);
+    let dm: Dm | undefined = this.dms.find((d) => d.id === id);
     if (!dm) {
-      dm = { id, kind: 'dm', withIds: [faceId] };
+      // Opened as whoever I am right now. A new 1:1 has exactly one of my faces
+      // in it, and adding another is the same deliberate act it is in a group.
+      dm = { id, kind: 'dm', withIds: [faceId], mineIds: [this.speakingAs] };
       this.dms.push(dm);
       this.messages[id] ??= [];
     }
@@ -577,7 +636,7 @@ class Core {
     const list = this.messages[this.currentRoomId] ?? [];
     list.push({
       id,
-      faceId: this.speakingAs,
+      faceId: this.speakingHere,
       body: trimmed,
       at: Date.now(),
       pending: true,
@@ -646,7 +705,7 @@ class Core {
     const m = this.find(messageId);
     if (!m) return;
     const k = untoned(key);
-    const me = this.speakingAs;
+    const me = this.speakingHere;
     m.reactions ??= [];
     const existing = m.reactions.find((r) => r.key === k);
     if (!existing) {

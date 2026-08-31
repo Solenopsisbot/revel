@@ -862,7 +862,11 @@ const recent: Record<string, Message[]> = {
     {
       id: 'd5',
       faceId: 'kiko',
-      body: 'On daylight six of the eight candy colours fall under 3:1 as name colours. The bright values are fine as fills; they just can’t be ink.',
+      // The URL is **in the body**, because that is how somebody sends a link:
+      // they type it. The preview is a card the sender's client attached to it,
+      // not a replacement for it — this fixture used to carry only the card,
+      // which made the link's own text disappear from the message.
+      body: 'On daylight six of the eight candy colours fall under 3:1 as name colours. The bright values are fine as fills; they just can’t be ink. https://www.w3.org/TR/WCAG22/#contrast-minimum',
       at: t(4),
       link: {
         url: 'https://www.w3.org/TR/WCAG22/#contrast-minimum',
@@ -1263,6 +1267,29 @@ export interface Dm {
   kind: 'dm' | 'group';
   /** Faces in the conversation, not counting you. */
   withIds: string[];
+  /**
+   * Which of **your** faces are in this conversation.
+   *
+   * A group DM is a list of faces, not a list of accounts (`docs/11`), and that
+   * has to include your side of it. Without this the roster and the audience
+   * were derived from whichever face happened to be selected globally, so
+   * switching face in one window changed who the app said was in a conversation
+   * somewhere else.
+   *
+   * It is also the membership fact that makes the disclosure real: **a face
+   * being in here is something the other people can see.** Adding one is an act
+   * with a consequence, which is why it needs a confirmation rather than a
+   * dropdown.
+   */
+  mineIds: string[];
+  /**
+   * Which of your faces you are currently speaking as *here*.
+   *
+   * Per conversation, not global. Somebody who is Ash in one group and June in
+   * another should not have to remember to switch, and should never be one
+   * mis-click from saying something as the wrong one.
+   */
+  speakingAs?: string;
   /** Group DMs can be named; 1:1s are named by whoever is in them. */
   name?: string;
   unread?: number;
@@ -1271,12 +1298,23 @@ export interface Dm {
 }
 
 export const dms: Dm[] = [
-  { id: dmId('acct-v', 'acct-r'), kind: 'dm', withIds: ['rae'], unread: 2, mention: true },
-  { id: dmId('acct-v', 'acct-e'), kind: 'dm', withIds: ['emeri'] },
+  {
+    id: dmId('acct-v', 'acct-r'),
+    kind: 'dm',
+    withIds: ['rae'],
+    mineIds: ['viola'],
+    unread: 2,
+    mention: true,
+  },
+  { id: dmId('acct-v', 'acct-e'), kind: 'dm', withIds: ['emeri'], mineIds: ['june'] },
   {
     id: 'dm-group-shapes',
     kind: 'group',
     withIds: ['rae', 'emeri'],
+    // Only one face of this account is in here. `ash` and `june` are greyed out
+    // in the switcher until somebody deliberately brings them in — which is the
+    // whole point of the fixture.
+    mineIds: ['viola'],
     name: 'shapes and complaints',
   },
 ];
