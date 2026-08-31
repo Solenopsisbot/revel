@@ -435,7 +435,36 @@ class Core {
    * and when it last moved. Faces in reply order and de-duplicated, so a
    * back-and-forth between two people reads as two people.
    */
+  /**
+   * Thread summaries for the current room, built once per change.
+   *
+   * **Every rendered message row asks for one.** Before this each ask was a
+   * scan of the whole room, so a windowed list of 150 rows still did 150 full
+   * passes on every keystroke — which is how an arriving message came to take
+   * five seconds in a room of 50,000 (`docs/31` §31). Windowing the list fixed
+   * how much was *rendered*; this fixes how much each row *costs*.
+   *
+   * Only the current room: it is the only one on screen, and indexing the rest
+   * would trade one waste for another.
+   */
+  threadIndex = $derived.by(() => {
+    const index = new Map<string, { count: number; faces: string[]; lastAt: number }>();
+    for (const m of this.messages[this.currentRoomId] ?? []) {
+      if (!m.thread) continue;
+      let entry = index.get(m.thread);
+      if (!entry) index.set(m.thread, (entry = { count: 0, faces: [], lastAt: 0 }));
+      entry.count += 1;
+      if (!entry.faces.includes(m.faceId)) entry.faces.push(m.faceId);
+      // Messages are in order, so the last one wins without a comparison.
+      entry.lastAt = m.at;
+    }
+    return index;
+  });
+
   threadSummary(parentId: string, roomId = this.currentRoomId) {
+    if (roomId === this.currentRoomId) return this.threadIndex.get(parentId) ?? null;
+    // Another room is not on screen, so it is not worth an index — and this
+    // path is only reached by things like a search result preview.
     const replies = this.repliesTo(parentId, roomId);
     if (!replies.length) return null;
     const faces: string[] = [];

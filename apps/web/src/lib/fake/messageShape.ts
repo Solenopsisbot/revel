@@ -142,8 +142,37 @@ export function asCoreMessage(m: FakeMessage, faces: Record<string, Face>): UiMe
  */
 
 /** The room's own timeline: everything that is not a branch (`docs/16`). */
-export function timelineOf(messages: FakeMessage[], faces: Record<string, Face>): UiMessage[] {
-  return messages.filter((m) => !m.thread).map((m) => asCoreMessage(m, faces));
+export function timelineOf(
+  messages: FakeMessage[],
+  faces: Record<string, Face>,
+  limit?: number,
+): UiMessage[] {
+  const inRoom = messages.filter((m) => !m.thread);
+  // **Slice before mapping.** The filter is a scan and costs almost nothing;
+  // `asCoreMessage` allocates an object and resolves a face per message, and
+  // doing that for the whole room on every change is what made an arriving
+  // message take 15 seconds to paint in a large one (`docs/31` §31). The list
+  // only ever renders a window, so only the window needs building.
+  const wanted = limit === undefined ? inRoom : inRoom.slice(Math.max(0, inRoom.length - limit));
+  return wanted.map((m) => asCoreMessage(m, faces));
+}
+
+/** How many messages the room timeline has, without building any of them. */
+export function timelineCount(messages: FakeMessage[]): number {
+  let n = 0;
+  for (const m of messages) if (!m.thread) n++;
+  return n;
+}
+
+/** Where a message sits in the room timeline, or -1. Also without building. */
+export function timelinePosition(messages: FakeMessage[], messageId: string): number {
+  let n = 0;
+  for (const m of messages) {
+    if (m.thread) continue;
+    if (m.id === messageId) return n;
+    n++;
+  }
+  return -1;
 }
 
 /** Everything in the room, branches included. */

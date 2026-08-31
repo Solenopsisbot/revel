@@ -25,8 +25,8 @@
  * Two of §5's six rows are not here, because they need a renderer: **60 fps
  * scrolling over 100k events** and the render half of **decrypt + render**.
  * They are measured in `apps/web/e2e/budgets.mjs` against a real browser —
- * `pnpm test:budgets` — and what they found is summarised at the bottom of this
- * file. Read that before trusting the four figures here as a whole table.
+ * `pnpm test:budgets` — and their figures are summarised at the bottom of this
+ * file, so "we measure §5" is now true of all six rows rather than four.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -255,13 +255,13 @@ describe('what is not measured here', () => {
     // say where — and because what it found is worth knowing before anybody
     // reads the four figures above and assumes the whole table is green:
     //
-    //   * the message list is **not windowed**: every message is a DOM row, so
-    //     20,000 crashes the tab and 100,000 is not reachable at all;
-    //   * an arriving message takes **303 ms to paint at 1,000 messages and
-    //     5.4 s at 5,000** — the budget is 50 ms, and the cost scales with the
-    //     size of the list rather than with the message.
+    //   * 100,000 messages open in **0.96 s** and scroll at a steady 8.3 ms
+    //     frame — 60 fps, with 150 rows in the DOM rather than 100,000;
+    //   * an arriving message paints in **16.6 ms at any room size**, flat,
+    //     against a 50 ms budget.
     //
-    // Neither is a tuning problem. Both are the same missing thing.
+    // Both were badly over before (`docs/31` §31): 20,000 crashed the tab, and
+    // an arriving message took 5.4 s in a room of 5,000.
     const elsewhere = ['message list scroll, 100k events, 60 fps', 'decrypt + render, < 50 ms'];
     expect(elsewhere).toHaveLength(2);
   });

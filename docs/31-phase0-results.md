@@ -2023,9 +2023,46 @@ Both would have passed. A performance test that measures nothing does not fail,
 it congratulates you, so the script now asserts that the scroller actually moved
 and prints a warning when it did not.
 
-### What this means
+### Fixed, and the second fix was the interesting one
 
-Windowing the message list is the fix for both rows, and it is a change to how
-the list is *built* rather than to how fast it runs. It is also now the largest
-known gap between what `docs/29` claims and what the app does — and unlike the
-other five budgets, it is not close.
+| messages | rows in DOM | open | frame p50 | arriving → painted |
+| --- | --- | --- | --- | --- |
+| 1,000 | 150 | 0.59 s | 8.3 ms | **16.6 ms** |
+| 5,000 | 150 | 0.59 s | 8.3 ms | **16.7 ms** |
+| 20,000 | 150 | 0.67 s | 8.3 ms | **16.7 ms** |
+| 50,000 | 150 | 0.78 s | 8.3 ms | **16.7 ms** |
+| 100,000 | 150 | 0.96 s | 8.3 ms | **16.4 ms** |
+
+**Flat.** The cost of an arriving message no longer depends on how long the
+conversation is, which is the property that actually matters — 16.6 ms is also
+the measurement floor here, since the timing waits two animation frames, so the
+true figure is "within one frame" rather than exactly that.
+
+Two changes, and only the first was the obvious one:
+
+1. **The list renders a window.** The last 150 messages, growing upward by 150
+   whenever somebody scrolls near the top, with `scrollTop` corrected in the
+   same tick so the content under the cursor does not jump. No spacers and no
+   estimated heights — a chat log is read from the bottom, so the window can be
+   a real slice rather than a guess about where a variable-height row will land.
+   Verified by scrolling: 150 → 300 → 450 → 750 rows while the scroll position
+   held steady at ~9,010.
+
+2. **The rows stopped costing O(everything) each.** Windowing alone only got
+   100k from "crashes" to 10.9 s per message. The rest was that *every rendered
+   row* called `threadSummary`, and every call scanned the whole room — so a
+   windowed list of 150 rows still did 150 full passes per keystroke. Building
+   the thread index once per change instead took it from 10.9 s to 16 ms.
+
+The second one is the lesson. Windowing fixed how much was **rendered**; it did
+nothing about how much each row **cost**, and the second number was the one
+people would have felt. Both looked like "the list is slow" from outside.
+
+### And it was found by profiling rather than guessing
+
+The first instinct was that the remaining cost had to be the seam mapping every
+message, so that was fixed first — `timelineOf` now slices before it maps. It
+helped (14.9 s → 10.9 s) and it was not the problem. Timing the individual
+operations in the page took ten minutes and showed each scan at ~20 ms against a
+5,200 ms insert: roughly 250 scans per message, which is a per-row number rather
+than a per-list one, and that is what pointed at `threadSummary`.

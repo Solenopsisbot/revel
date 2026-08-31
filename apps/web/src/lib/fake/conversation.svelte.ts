@@ -22,15 +22,34 @@ import {
   type ThreadSummary,
   threadLabelOf,
   threadsOf,
+  timelineCount,
   timelineOf,
+  timelinePosition,
   type UiMessage,
 } from './messageShape.js';
 
 export { asCoreMessage, type ThreadSummary, type UiMessage } from './messageShape.js';
 
 export const conversation = {
-  timeline(roomId: string = core.currentRoomId): UiMessage[] {
-    return timelineOf(core.messages[roomId] ?? [], core.faces);
+  /**
+   * The room timeline, newest last.
+   *
+   * `limit` returns only that many from the end, which is what the message list
+   * asks for: it renders a window, and building the rest is pure waste that
+   * scales with how long the conversation has been going.
+   */
+  timeline(roomId: string = core.currentRoomId, limit?: number): UiMessage[] {
+    return timelineOf(core.messages[roomId] ?? [], core.faces, limit);
+  },
+
+  /** How many the timeline has, without building any of them. */
+  count(roomId: string = core.currentRoomId): number {
+    return timelineCount(core.messages[roomId] ?? []);
+  },
+
+  /** Where a message sits in it, or -1. For widening the window to reach one. */
+  position(messageId: string, roomId: string = core.currentRoomId): number {
+    return timelinePosition(core.messages[roomId] ?? [], messageId);
   },
 
   all(roomId: string = core.currentRoomId): UiMessage[] {

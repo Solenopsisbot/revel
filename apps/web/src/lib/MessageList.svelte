@@ -10,6 +10,27 @@
  *  2. Nothing that arrives may reflow what is above it. The list is
  *     bottom-anchored and every media frame reserves its size in advance,
  *     so growth happens downward into the space the composer sits above.
+ *
+ * ## Windowing
+ *
+ * Only the tail is in the DOM. Before this the list rendered every message it
+ * had, which measured (`docs/31` §31) as:
+ *
+ *   * 20,000 messages **crashed the tab**, and 100,000 never rendered at all —
+ *     against a `docs/29` §5 budget of 60 fps over 100k;
+ *   * an arriving message took **303 ms to paint in a room of 1,000 and 5.4
+ *     seconds in a room of 5,000**, against a budget of 50 ms.
+ *
+ * That second number is the one people feel, and its shape is the giveaway: the
+ * cost scaled with the size of the list rather than with the message, because
+ * both the row derivation and the `{#each}` ran over everything on every
+ * change.
+ *
+ * A chat log is read from the bottom, so the window is the last `size` messages
+ * and it **grows upward** as somebody scrolls back — no spacers, no estimated
+ * heights, no guessing where a variable-height row will land. The cost of that
+ * choice is that reading all the way back to the beginning eventually holds it
+ * all; the cost of the alternative is being wrong about every height, forever.
  */
 
 import { conversation } from './fake/conversation.svelte.js';
@@ -26,11 +47,34 @@ let missed = $state(0);
 // Through the seam (`fake/conversation.svelte.ts`), so these rows are the
 // shape `packages/core` produces rather than the shape the fixtures store.
 // Swapping the source later is a change to that file, not to this one.
-const timeline = $derived(conversation.timeline(core.currentRoomId));
+/** Enough to fill a tall screen twice over, so scrolling has somewhere to go. */
+const WINDOW = 150;
+/** How much more to reveal when somebody reaches the top of the window. */
+const STEP = 150;
+/** How close to the top counts as "reaching" it. */
+const NEAR_TOP = 600;
+
+let windowed = $state(WINDOW);
+
+/** How long the room is. Counted, not built — see `timelineCount`. */
+const total = $derived(conversation.count(core.currentRoomId));
+const more = $derived(total > windowed);
+
+/**
+ * The window, plus one.
+ *
+ * The extra is the message *above* the first visible one, which the first row
+ * needs in order to decide grouping and whether a day starts there. Without it
+ * a date separator would appear mid-conversation every time somebody scrolled
+ * back, and the top message would always look like the start of a new group.
+ */
+const slice = $derived(conversation.timeline(core.currentRoomId, windowed + 1));
+/** Where the rendered rows begin inside `slice`. */
+const from = $derived(more ? 1 : 0);
 
 const rows = $derived(
-  timeline.map((m, i) => {
-    const prev = timeline[i - 1];
+  slice.slice(from).map((m, k) => {
+    const prev = slice[from + k - 1];
     const dayBreak = !prev || newDay(prev.at, m.at);
     const grouped =
       !!prev &&
@@ -52,6 +96,29 @@ function checkBottom() {
   if (!el) return;
   atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   if (atBottom) missed = 0;
+  if (el.scrollTop < NEAR_TOP) reveal();
+}
+
+/**
+ * Show more history, keeping the reader where they are.
+ *
+ * Rows are added *above* the viewport, so without correcting `scrollTop` the
+ * content under the cursor would jump down by however tall the new rows turn
+ * out to be — which is the one thing rule 2 above exists to prevent, arriving
+ * from the other end.
+ */
+function reveal() {
+  if (!more) return;
+  const el = viewport;
+  if (!el) return;
+  const before = el.scrollHeight;
+  windowed += STEP;
+  // After the frame that renders them, because the height is not knowable until
+  // the rows exist — they are variable-height by nature.
+  queueMicrotask(() => {
+    if (!el) return;
+    el.scrollTop += el.scrollHeight - before;
+  });
 }
 
 function toBottom(smooth = true) {
@@ -78,6 +145,10 @@ $effect(() => {
   void core.currentRoomId;
   seen = 0;
   missed = 0;
+  // Back to a small window. Carrying a grown one into another room would mean
+  // switching to a quiet room after reading a long one paid the long room's
+  // cost for nothing.
+  windowed = WINDOW;
   queueMicrotask(() => {
     if (viewport) viewport.scrollTop = viewport.scrollHeight;
     atBottom = true;
@@ -89,6 +160,12 @@ $effect(() => {
 $effect(() => {
   const id = core.jumpTo;
   if (!id) return;
+  // The target may be older than the window. Widening to include it is the
+  // whole reason this looks at the timeline rather than only at the DOM —
+  // otherwise a link to an old message would silently do nothing.
+  const index = conversation.position(id, core.currentRoomId);
+  if (index >= 0 && total - index > windowed) windowed = total - index + STEP;
+
   const el = viewport?.querySelector<HTMLElement>(`#m-${CSS.escape(id)}`);
   el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   const timer = setTimeout(() => (core.jumpTo = null), 1500);
