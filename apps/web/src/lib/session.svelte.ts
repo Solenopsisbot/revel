@@ -29,6 +29,12 @@ class DeviceSession {
       const { loadSession } = await import('@revel/core');
       this.current = await loadSession();
       if (this.current) {
+        // The face book is per account and sealed on this device. Loaded here
+        // rather than lazily, because the composer needs to know who it is
+        // speaking as before anybody can type.
+        const { myFaces } = await import('./faces.svelte.js');
+        await myFaces.load(this.current.accountPub);
+
         // A device token, so this device can act at the Host. Floating on
         // purpose: a Host that is unreachable must not stop the app opening —
         // everything local still works, and the token is retried on next use.
@@ -52,8 +58,10 @@ class DeviceSession {
   async signOut(): Promise<void> {
     const { clearSession } = await import('@revel/core');
     const { forgetDeviceToken } = await import('./identity.js');
+    const { myFaces } = await import('./faces.svelte.js');
     await clearSession();
     forgetDeviceToken();
+    myFaces.forget();
     this.current = null;
   }
 }

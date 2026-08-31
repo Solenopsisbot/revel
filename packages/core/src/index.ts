@@ -45,6 +45,7 @@ export {
   type FaceBook,
   forgetFaces,
   loadFaces,
+  newFaceId,
   refOf,
   removeFace,
   revealsLink,

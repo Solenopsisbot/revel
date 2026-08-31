@@ -45,6 +45,16 @@ export interface Face {
   pronouns?: string;
   /** Blob id of an avatar, once attachments carry one. */
   avatar?: string;
+  /**
+   * The one-line note on the profile card — `docs/11`'s "does the actual work".
+   *
+   * **Local only, for now.** `FaceRef` carries id, name, colour, pronouns and
+   * avatar, and not this — so a note shows on your own card and not on anybody
+   * else's. Fixing that means a new field in a payload that goes into encrypted
+   * history, which `docs/29` §1 says can never be rewritten, so it is a decision
+   * rather than an oversight and it is not made here.
+   */
+  note?: string;
 }
 
 export interface FaceBook {
@@ -53,6 +63,19 @@ export interface FaceBook {
   primary: string;
   /** roomId → face id. See the note above on why this is not one value. */
   byRoom: Record<string, string>;
+}
+
+/**
+ * A fresh face id.
+ *
+ * A snowflake, because `FaceRef.id` is one. Minting it here rather than letting
+ * callers invent one is the difference between a face that travels and a face
+ * that fails its own schema on the way out and arrives as an unknown event.
+ */
+export function newFaceId(now = Date.now()): string {
+  // Millisecond timestamp plus randomness, in the snowflake's decimal range.
+  const random = Math.floor(Math.random() * 1_000_000);
+  return String(BigInt(now) * 1_000_000n + BigInt(random));
 }
 
 /** One book per account, so two accounts on one device do not share faces. */

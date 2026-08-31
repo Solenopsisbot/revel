@@ -7,8 +7,9 @@
  * implementation should not touch a single component.
  */
 
-import { resolveSetting } from '@revel/core';
+import { newFaceId, resolveSetting } from '@revel/core';
 import { untoned } from '../emoji.js';
+import { myFaces } from '../faces.svelte.js';
 import {
   account,
   type Dm,
@@ -22,7 +23,7 @@ import {
   lastRead,
   type Message,
   messages,
-  myFaces,
+  myFaces as myFacesSeed,
   type NotifyLevel,
   notifications,
   type Perm,
@@ -503,8 +504,22 @@ class Core {
     if (dm) return participantsIn(dm).map((id) => this.faces[id]!);
     return (rosters[this.currentRoomId] ?? []).map((id) => this.faces[id]!);
   }
-  get myFaces() {
-    return myFaces.map((id) => this.faces[id]!);
+  get myFaces(): Face[] {
+    // The real book when signed in, the fixtures otherwise. Mapped into the
+    // fixture shape so every screen keeps reading one thing — `accountId` and
+    // `status` are UI concerns the core has no opinion about.
+    if (myFaces.live) {
+      return myFaces.book.faces.map((f) => ({
+        id: f.id,
+        name: f.name,
+        colour: (f.colour ?? 'sky') as FaceColour,
+        ...(f.pronouns ? { pronouns: f.pronouns } : {}),
+        ...(f.note ? { note: f.note } : {}),
+        accountId: MY_ACCOUNT,
+        status: 'here' as const,
+      }));
+    }
+    return myFacesSeed.map((id) => this.faces[id]!);
   }
 
   /**
@@ -529,6 +544,11 @@ class Core {
    * be one mis-click from saying something as the wrong one.
    */
   get speakingHere(): string {
+    // The real book decides when there is one — it is the thing that persists
+    // the choice and the thing whose ids go on the wire.
+    if (myFaces.live) {
+      return myFaces.speaking(this.currentRoomId)?.id ?? '';
+    }
     return speakerIn(this.dm, this.speakingByRoom[this.currentRoomId], this.speakingAs);
   }
 
@@ -542,9 +562,13 @@ class Core {
    * cannot leak out of the room it was made in.
    */
   speakHere(faceId: string) {
+    if (myFaces.live) {
+      void myFaces.speak(this.currentRoomId, faceId);
+      return;
+    }
     const dm = this.dm;
     if (dm && !dm.mineIds.includes(faceId)) return;
-    if (!myFaces.includes(faceId)) return;
+    if (!myFacesSeed.includes(faceId)) return;
     this.speakingByRoom[this.currentRoomId] = faceId;
   }
 
@@ -560,7 +584,8 @@ class Core {
    */
   /** My faces that have already spoken in the current room or DM. */
   get facesSpokenHere(): string[] {
-    return facesSpokenIn(this.messages[this.currentRoomId], myFaces);
+    const mine = myFaces.live ? myFaces.book.faces.map((f) => f.id) : myFacesSeed;
+    return facesSpokenIn(this.messages[this.currentRoomId], mine);
   }
 
   /**
@@ -577,7 +602,7 @@ class Core {
 
   addFaceHere(faceId: string) {
     const dm = this.dm;
-    if (!dm || dm.mineIds.includes(faceId) || !myFaces.includes(faceId)) return;
+    if (!dm || dm.mineIds.includes(faceId) || !myFacesSeed.includes(faceId)) return;
     dm.mineIds = [...dm.mineIds, faceId];
     this.speakingByRoom[dm.id] = faceId;
   }
@@ -926,13 +951,20 @@ class Core {
   }
 
   addFace(name: string, colour: FaceColour = 'sky') {
-    const id = name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-');
-    if (!id || this.faces[id]) return;
-    this.faces[id] = { id, name: name.trim(), colour, accountId: MY_ACCOUNT, status: 'here' };
-    myFaces.push(id);
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (myFaces.live) {
+      void myFaces.create(trimmed, { colour });
+      return;
+    }
+    // **A minted id, not a slug of the name.** `FaceRef.id` is a snowflake, so
+    // a face called "June" with the id `june` fails the payload schema the
+    // moment it reaches a real room — and arrives at the other end as an
+    // unknown event with no face and no error anywhere. The fixtures predate
+    // that being enforced; anything created now gets the right shape.
+    const id = newFaceId();
+    this.faces[id] = { id, name: trimmed, colour, accountId: MY_ACCOUNT, status: 'here' };
+    myFacesSeed.push(id);
   }
 
   // --- actions Wren's buttons call -----------------------------------------
