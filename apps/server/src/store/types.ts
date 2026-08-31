@@ -417,6 +417,14 @@ export interface Enrolment {
   accountPub: string;
   /** The OPAQUE registration record, base64. Opaque to us, permanently. */
   record: string;
+  /**
+   * `HKDF(RK, …)`, base64 — proof the holder knows the recovery code.
+   *
+   * Compared at recovery, never used to open anything. A dump of this table
+   * yields verifiers, and a verifier neither opens a wrap nor inverts to a
+   * code (see `revel-crypto/src/envelope.rs`).
+   */
+  recoveryVerifier: string;
   createdAt: number;
 }
 

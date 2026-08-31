@@ -189,6 +189,7 @@ if (!opaqueServer) {
 const app = createApp({
   store,
   ...(opaqueServer ? { opaque: opaqueServer } : {}),
+  ...(hostIdentity.opaqueSetup ? { decoyKey: hostIdentity.opaqueSetup } : {}),
   hub,
   ids: new SnowflakeFactory(shard),
   authenticate,

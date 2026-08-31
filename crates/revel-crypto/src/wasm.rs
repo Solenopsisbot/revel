@@ -964,6 +964,13 @@ impl Envelope {
         envelope::normalise_recovery_code(code).map_err(|e| JsError::new(&e.to_string()))
     }
 
+    /// Proof of the recovery code, for the IdP. Never the key that opens a wrap.
+    #[wasm_bindgen(js_name = recoveryVerifier)]
+    pub fn recovery_verifier(rk: &[u8]) -> Result<Vec<u8>, JsError> {
+        let rk: [u8; 32] = rk.try_into().map_err(|_| JsError::new("bad recovery key"))?;
+        Ok(envelope::recovery_verifier(&rk).to_vec())
+    }
+
     /// A fresh per-account salt for [`Envelope::recovery_key`]. Not secret.
     #[wasm_bindgen(js_name = generateSalt)]
     pub fn generate_salt() -> Vec<u8> {

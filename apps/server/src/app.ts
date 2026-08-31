@@ -56,6 +56,8 @@ export interface AppDeps {
   externalSender?: string | null;
   /** The OPAQUE server. Absent means this Host does not serve an IdP. */
   opaque?: OpaqueServer;
+  /** A long-lived server secret, for answers about accounts that do not exist. */
+  decoyKey?: string;
   /**
    * Rate limiting. Absent means none, which is right for a test and wrong for
    * anything reachable — `docs/29` §6.
@@ -208,6 +210,9 @@ export function createApp(deps: AppDeps) {
       idp,
       authenticate: deps.authenticate,
       newId: () => deps.ids.next(),
+      // The OPAQUE setup doubles as the decoy key: it is already a long-lived
+      // server secret, and this needs nothing more than that.
+      decoyKey: deps.decoyKey ?? 'revel-decoy',
       ...(deps.now ? { now: deps.now } : {}),
     });
   }

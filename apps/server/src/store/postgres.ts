@@ -1071,6 +1071,7 @@ export class PostgresStore implements Store {
       handle: row.handle as string,
       accountPub: row.account_pub as string,
       record: row.record as string,
+      recoveryVerifier: (row.recovery_verifier as string | null) ?? '',
       createdAt: num(row.created_at),
     };
   }
@@ -1081,9 +1082,9 @@ export class PostgresStore implements Store {
     // with no password in it. The unique index on `account_pub` catches the
     // other direction — one account, one handle.
     const [row] = await this.sql`
-      INSERT INTO enrolments (handle, account_pub, record, created_at)
+      INSERT INTO enrolments (handle, account_pub, record, recovery_verifier, created_at)
       VALUES (${enrolment.handle}, ${enrolment.accountPub}, ${enrolment.record},
-              ${enrolment.createdAt})
+              ${enrolment.recoveryVerifier}, ${enrolment.createdAt})
       ON CONFLICT DO NOTHING
       RETURNING *`;
     return row ? this.#enrolment(row) : null;

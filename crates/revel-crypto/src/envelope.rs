@@ -50,6 +50,9 @@ use zeroize::Zeroizing;
 
 /// Domain separation, so a KEK can never be mistaken for a state key.
 const KEK_INFO: &[u8] = b"revel/account-kek/v1";
+/// Separates the value that *proves* knowledge of a recovery code from the one
+/// that *opens* the wrap. See [`recovery_verifier`].
+const VERIFIER_INFO: &[u8] = b"revel/recovery-verifier/v1";
 /// Bound into every wrap, so a blob from one purpose cannot open under another.
 const WRAP_AAD: &[u8] = b"revel/account-key-wrap/v1";
 
@@ -230,6 +233,34 @@ pub fn normalise_recovery_code(code: &str) -> Result<String, EnvelopeError> {
         return Err(EnvelopeError::BadRecoveryCode);
     }
     Ok(out)
+}
+
+/// Proof that the holder knows the recovery code, without revealing it.
+///
+/// **This closes a gap `docs/03` leaves open.** Signing in fetches the wraps
+/// with a password; recovery by definition has no password, and the obvious
+/// alternative — hand the wraps to anybody who names a handle — is two bad
+/// things at once: a public answer to "does this person have an account here",
+/// and an offline attack surface against every account at once.
+///
+/// So the client derives RK from the code as `docs/03` specifies, and then
+/// derives *this* from RK. The IdP stores it at sign-up and compares it at
+/// recovery. What that buys:
+///
+/// - A stolen database yields verifiers, and a verifier neither opens a wrap
+///   nor inverts to a code — it is 128 bits of entropy behind Argon2id and then
+///   a hash.
+/// - Naming a handle gets you nothing without the code.
+///
+/// It is deliberately *not* the same value as RK. Storing RK itself would mean
+/// a database dump opened every wrap in it, which is the whole thing the
+/// envelope exists to prevent.
+pub fn recovery_verifier(rk: &[u8; 32]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    Hkdf::<Sha256>::new(None, rk)
+        .expand(VERIFIER_INFO, &mut out)
+        .expect("32 is a valid HKDF length");
+    out
 }
 
 /// A fresh salt for [`recovery_key`]. Not secret; per-account.

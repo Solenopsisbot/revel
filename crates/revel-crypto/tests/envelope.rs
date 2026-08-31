@@ -10,7 +10,8 @@
 
 use revel_crypto::envelope::{
     account_public, generate_account_key, generate_recovery_code, generate_salt,
-    kek_from_export_key, normalise_recovery_code, recovery_key, unwrap_account_key,
+    kek_from_export_key, normalise_recovery_code, recovery_key, recovery_verifier,
+    unwrap_account_key,
     wrap_account_key, EnvelopeError,
 };
 
@@ -103,6 +104,36 @@ fn a_truncated_wrap_is_malformed_rather_than_a_panic() {
     for len in 0..12 {
         assert_eq!(unwrap_account_key(&vec![0u8; len], &kek), Err(EnvelopeError::Malformed));
     }
+}
+
+#[test]
+fn the_verifier_proves_the_code_without_opening_anything() {
+    // The gap `docs/03` left: recovery has no password, so something has to
+    // authorise releasing the wrap. A verifier derived from RK does it, and the
+    // separation is the point — storing RK itself would mean a database dump
+    // opened every wrap in it.
+    let account = generate_account_key();
+    let salt = generate_salt();
+    let code = generate_recovery_code();
+
+    let rk = recovery_key(&code, &salt).unwrap();
+    let verifier = recovery_verifier(&rk);
+    let wrap = wrap_account_key(&account, &rk).unwrap();
+
+    // The verifier is not the key, and does not open the wrap.
+    assert_ne!(verifier, *rk);
+    assert_eq!(unwrap_account_key(&wrap, &verifier), Err(EnvelopeError::NotOurs));
+
+    // And it is stable, or recovery would fail for the person who kept the code.
+    assert_eq!(recovery_verifier(&recovery_key(&code, &salt).unwrap()), verifier);
+}
+
+#[test]
+fn a_different_code_gives_a_different_verifier() {
+    let salt = generate_salt();
+    let a = recovery_verifier(&recovery_key(&generate_recovery_code(), &salt).unwrap());
+    let b = recovery_verifier(&recovery_key(&generate_recovery_code(), &salt).unwrap());
+    assert_ne!(a, b);
 }
 
 // ---------------------------------------------------------------------------

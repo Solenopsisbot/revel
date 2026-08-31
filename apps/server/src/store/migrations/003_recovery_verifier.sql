@@ -1,0 +1,18 @@
+-- Proof of the recovery code, so the recovery flow can release a wrap without
+-- a password.
+--
+-- `docs/03` says how RK is derived and not how the wrap is fetched, and the
+-- obvious answer — give the wraps to anybody who names a handle — is wrong
+-- twice: it answers "does this person have an account here" to strangers, and
+-- it hands every account's wrap to an attacker for offline work.
+--
+-- What is stored is `HKDF(RK, "revel/recovery-verifier/v1")`. It is compared
+-- and never used to open anything: a dump of this column yields verifiers, and
+-- a verifier neither opens a wrap nor inverts to a code.
+--
+-- Defaulted to '' rather than added NOT NULL, because an enrolment written
+-- before this migration has no verifier and never will — the code was shown
+-- once and is gone. Those accounts can still sign in; they simply cannot use
+-- the recovery flow, which is the honest outcome and better than a migration
+-- that refuses to apply.
+ALTER TABLE enrolments ADD COLUMN IF NOT EXISTS recovery_verifier text NOT NULL DEFAULT '';

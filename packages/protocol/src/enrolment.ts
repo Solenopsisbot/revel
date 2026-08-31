@@ -103,6 +103,13 @@ export const RegisterFinish = z.object({
   wraps: z.array(Wrap).min(2).max(3),
   /** This device's certificate, signed by the account key. */
   deviceCert: z.string().base64().max(4096),
+  /**
+   * Proof-of-recovery-code, for the recovery flow. Required, like the wrap.
+   *
+   * Uploaded now because there is no later: the code is shown once and the
+   * person is expected to put it somewhere safe and forget it.
+   */
+  recoveryVerifier: z.string().base64().max(64),
 });
 export type RegisterFinish = z.infer<typeof RegisterFinish>;
 
@@ -165,6 +172,61 @@ export const LoginRefusal = z.enum([
   'totp_invalid',
 ]);
 export type LoginRefusal = z.infer<typeof LoginRefusal>;
+
+// ---------------------------------------------------------------------------
+// Recovery
+// ---------------------------------------------------------------------------
+
+/**
+ * "I forgot my password."
+ *
+ * `docs/03` §4 is blunt that the IdP **cannot** reset one — a server-side reset
+ * would hand you a new password and no key — so this opens a different wrap
+ * instead. It is the flow that only ever runs when everything else has already
+ * gone wrong, and the one that decides whether an account is recoverable at all.
+ *
+ * How the wrap is released is a gap `docs/03` leaves open, and the obvious
+ * answer is wrong twice over: handing wraps to anybody who names a handle is a
+ * public answer to "does this person have an account here" *and* an offline
+ * attack surface against every account at once. So the client proves knowledge
+ * of the code with a **verifier** derived from RK — see `recovery_verifier` in
+ * `revel-crypto/src/envelope.rs` for why that is not RK itself.
+ */
+export const RecoverStart = z.object({ handle: z.string().min(1).max(64) });
+export type RecoverStart = z.infer<typeof RecoverStart>;
+
+export const RecoverStartResponse = z.object({
+  /**
+   * The Argon2id salt for this account's recovery wrap.
+   *
+   * **Always answered, even for a handle that does not exist**, with a value
+   * derived from the handle and a server secret. An unknown handle that got a
+   * different shape of answer — or no answer — would make this endpoint a
+   * membership oracle, which is exactly what the rest of the design spends its
+   * effort avoiding. The made-up salt is stable per handle, so asking twice
+   * does not give it away either.
+   */
+  salt: z.string().base64().max(64),
+});
+export type RecoverStartResponse = z.infer<typeof RecoverStartResponse>;
+
+export const RecoverFinish = z.object({
+  handle: z.string().min(1).max(64),
+  /** `HKDF(RK, "revel/recovery-verifier/v1")`, base64. Proof, never the key. */
+  verifier: z.string().base64().max(64),
+});
+export type RecoverFinish = z.infer<typeof RecoverFinish>;
+
+/** Set a new password after recovery: a fresh OPAQUE record and a fresh wrap. */
+export const ResetPassword = z.object({
+  handle: z.string().min(1).max(64),
+  verifier: z.string().base64().max(64),
+  /** The new OPAQUE registration record. */
+  record: Opaque,
+  /** The account key re-wrapped under the new KEK. */
+  wrap: WrapBlob,
+});
+export type ResetPassword = z.infer<typeof ResetPassword>;
 
 // ---------------------------------------------------------------------------
 // Second factors

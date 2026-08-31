@@ -607,6 +607,7 @@ export function describeStore(name: string, harness: StoreHarness): void {
         handle,
         accountPub,
         record: 'an-opaque-registration-record',
+        recoveryVerifier: 'cHJvb2Y',
         createdAt: 1_700_000_000_000,
       });
 
@@ -658,6 +659,13 @@ export function describeStore(name: string, harness: StoreHarness): void {
         await store.putWrap(b, { kind: 'password', blob: 'Yg' });
         expect((await store.wrapsFor(a))[0]?.blob).toBe('YQ');
         expect(await store.wrapsFor(uniq('acct'))).toEqual([]);
+      });
+
+      it('keeps the recovery verifier, which is what recovery compares', async () => {
+        const handle = uniq('handle');
+        const account = uniq('acct');
+        await store.createEnrolment(enrolment(handle, account));
+        expect((await store.getEnrolment(handle))?.recoveryVerifier).toBe('cHJvb2Y');
       });
 
       it('replaces the registration record, which is what a password change is', async () => {

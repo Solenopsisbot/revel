@@ -69,6 +69,7 @@ beforeEach(() => {
     host: 'idp.example',
     idp: 'idp.example',
     opaque: opaqueServer(),
+    decoyKey: 'a-long-lived-server-secret',
   });
 });
 
@@ -81,6 +82,8 @@ const post = (path: string, body: unknown) =>
 
 const ACCOUNT = 'YWNjb3VudC1wdWJsaWMta2V5LWJhc2U2NHVybA';
 const CERT = btoa('a device certificate');
+/** Stands in for `HKDF(RK, …)`. The routes only ever compare it. */
+const VERIFIER = btoa('proof-of-recovery-code');
 const b64 = (s: string) => btoa(s);
 
 /** Register `handle` with `password`. Returns the client's exportKey. */
@@ -106,6 +109,7 @@ async function register(handle: string, password: string, accountPub = ACCOUNT) 
       { kind: 'recovery', blob: b64('wrapped under RK'), salt: b64('salt') },
     ],
     deviceCert: CERT,
+    recoveryVerifier: VERIFIER,
   });
   return { finish, exportKey };
 }
@@ -193,6 +197,7 @@ describe('signing up', () => {
         { kind: 'passkey', blob: b64('b') },
       ],
       deviceCert: CERT,
+      recoveryVerifier: VERIFIER,
     });
     expect(finish.status).toBe(400);
     expect((await finish.json()).error).toBe('wraps_incomplete');
@@ -224,6 +229,7 @@ describe('signing up', () => {
         { kind: 'recovery', blob: b64('b') },
       ],
       deviceCert: CERT,
+      recoveryVerifier: VERIFIER,
     });
     expect(finish.status).toBe(400);
   });
@@ -305,6 +311,119 @@ describe('signing in', () => {
       request: result.finishLoginRequest,
     });
     expect(replay.status).toBe(401);
+  });
+});
+
+describe('recovering', () => {
+  beforeEach(async () => {
+    await register('viola', 'the forgotten one');
+  });
+
+  it('releases the wraps to somebody who proves the code', async () => {
+    // `docs/03` §4: the IdP cannot reset a password, so recovery opens a
+    // different wrap. This is the route that makes that possible at all.
+    const start = await post('/idp/recover/start', { handle: 'viola' });
+    expect(start.status).toBe(200);
+    expect((await start.json()).salt).toBe(b64('salt'));
+
+    const finish = await post('/idp/recover/finish', { handle: 'viola', verifier: VERIFIER });
+    expect(finish.status).toBe(200);
+    const body = await finish.json();
+    expect(body.accountPub).toBe(ACCOUNT);
+    expect(body.wraps.map((w: { kind: string }) => w.kind)).toContain('recovery');
+  });
+
+  it('refuses a wrong verifier', async () => {
+    const finish = await post('/idp/recover/finish', {
+      handle: 'viola',
+      verifier: btoa('not the code'),
+    });
+    expect(finish.status).toBe(401);
+    expect((await finish.json()).error).toBe('bad_credentials');
+  });
+
+  it('answers an unknown handle with a salt, like every other handle', async () => {
+    // **The oracle this endpoint would otherwise be.** An unknown handle that
+    // got no answer, or a different shape of one, would tell a stranger who has
+    // an account here — which is what the rest of this file spends its effort
+    // avoiding.
+    const known = await post('/idp/recover/start', { handle: 'viola' });
+    const unknown = await post('/idp/recover/start', { handle: 'nobody-at-all' });
+
+    expect(unknown.status).toBe(known.status);
+    expect(Object.keys(await unknown.json())).toEqual(Object.keys(await known.json()));
+  });
+
+  it('gives the same made-up salt every time, so asking twice gives nothing away', async () => {
+    // A random one would reveal on the second request that there was nothing
+    // behind it.
+    const first = await (await post('/idp/recover/start', { handle: 'ghost' })).json();
+    const second = await (await post('/idp/recover/start', { handle: 'ghost' })).json();
+    expect(first.salt).toBe(second.salt);
+    // And a different handle gets a different one, or it is not a salt.
+    const other = await (await post('/idp/recover/start', { handle: 'other-ghost' })).json();
+    expect(other.salt).not.toBe(first.salt);
+  });
+
+  it('refuses an unknown handle at finish exactly as it refuses a wrong code', async () => {
+    const unknown = await post('/idp/recover/finish', {
+      handle: 'nobody-at-all',
+      verifier: VERIFIER,
+    });
+    const wrong = await post('/idp/recover/finish', {
+      handle: 'viola',
+      verifier: btoa('wrong'),
+    });
+    expect(unknown.status).toBe(wrong.status);
+    expect(await unknown.json()).toEqual(await wrong.json());
+  });
+
+  it('resets the password and leaves the recovery code working', async () => {
+    // `docs/03` §1: a password change is a new record and one re-wrap. The
+    // recovery wrap is untouched, so the code somebody just used still works —
+    // otherwise recovering would spend the only thing that made it possible.
+    const { clientRegistrationState, registrationRequest } = opaque.client.startRegistration({
+      password: 'a brand new password',
+    });
+    const start = await post('/idp/register/start', {
+      handle: 'viola',
+      request: registrationRequest,
+    });
+    const { registrationRecord } = opaque.client.finishRegistration({
+      clientRegistrationState,
+      registrationResponse: (await start.json()).response,
+      password: 'a brand new password',
+    });
+
+    const reset = await post('/idp/recover/reset', {
+      handle: 'viola',
+      verifier: VERIFIER,
+      record: registrationRecord,
+      wrap: b64('rewrapped under the new KEK'),
+    });
+    expect(reset.status).toBe(200);
+
+    // The new password works...
+    const fresh = await login('viola', 'a brand new password');
+    expect(fresh.finish.status).toBe(200);
+    // ...the old one does not...
+    const stale = await login('viola', 'the forgotten one');
+    expect(stale.finish.status).toBe(401);
+    // ...and the recovery code still does.
+    const again = await post('/idp/recover/finish', { handle: 'viola', verifier: VERIFIER });
+    expect(again.status).toBe(200);
+  });
+
+  it('will not reset a password without the code', async () => {
+    const reset = await post('/idp/recover/reset', {
+      handle: 'viola',
+      verifier: btoa('nope'),
+      record: 'AAAA',
+      wrap: b64('mine now'),
+    });
+    expect(reset.status).toBe(401);
+    // And the original password still works, which is the point.
+    expect((await login('viola', 'the forgotten one')).finish.status).toBe(200);
   });
 });
 
