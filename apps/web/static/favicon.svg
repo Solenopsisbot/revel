@@ -1,0 +1,46 @@
+<!--
+  The mark, as an app icon (docs/15-mark.md, adopted 2026-08-27).
+
+  Three overlapping discs, each ringed in the plate colour so they stay distinct
+  where they cross: "a few people in a place, everyone visible". Rotated 18
+  degrees about its centroid, already baked into the coordinates. A stable
+  triangle is a diagram of a group; a tilted one is a moment.
+
+  The face-coloured variant on the violet plate from design/index.html's
+  .applogo. docs/15 says the colour variant is the mark at its best, and an app
+  icon is the one place it always has its own plate rather than borrowing a
+  background.
+
+  Literal hex rather than tokens: a favicon is fetched as its own document and
+  never sees the page's custom properties. The values are the aqua, gold and
+  rose from packages/ui/src/tokens.css, and the stroke is the plate's own shadow
+  tone so the rings read as gaps rather than as outlines.
+
+  (Written without double hyphens on purpose. XML forbids them inside a comment,
+  and naming the CSS variables the ordinary way made this file fail to parse and
+  render as a broken image at every size.)
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0.55" y2="1">
+      <stop offset="0" stop-color="#6f3fc9"/>
+      <stop offset="1" stop-color="#3d2378"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 22% radius: a rounded square, close enough to a squircle that platform
+       masks (circular on Android, rounded on iOS) crop it without clipping a
+       disc. -->
+  <rect width="100" height="100" rx="22" fill="url(#plate)"/>
+
+  <!-- The mark at 60%, centred. Matches `.applogo`'s 32-in-56 proportion, which
+       leaves enough plate that the silhouette still reads when a platform
+       rounds the corners harder than we do. -->
+  <g transform="translate(20 20) scale(0.6)">
+    <g stroke="#351f66" stroke-width="7">
+      <circle cx="29.58" cy="42.08" r="21" fill="#35d6d6"/>
+      <circle cx="63.82" cy="30.96" r="21" fill="#ffd84d"/>
+      <circle cx="56.59" cy="66.96" r="21" fill="#ec4c8c"/>
+    </g>
+  </g>
+</svg>
