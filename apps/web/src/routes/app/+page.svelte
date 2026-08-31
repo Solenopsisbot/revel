@@ -133,7 +133,30 @@ $effect(() => {
   if (!live.running || homed) return;
   homed = true;
   core.scope = 'home';
-  if (core.dms.length) core.openHome(core.dms[0]!.id);
+});
+
+/**
+ * Open the first conversation, once there is one to open.
+ *
+ * A separate effect because the room list arrives *after* the core starts —
+ * `live.running` is true the moment the stack exists and the Host has not been
+ * asked yet. Doing both in one effect meant a reload landed on a fixture room
+ * with an empty timeline, which reads exactly like "my messages are gone".
+ *
+ * Guarded on still being on a fixture room, so it never steals focus from
+ * somebody who has already clicked somewhere.
+ */
+let opened = false;
+$effect(() => {
+  if (!live.running || opened) return;
+  const dms = core.dms;
+  if (!dms.length) return;
+  if (core.scope === 'home' && dms.some((d) => d.id === core.currentRoomId)) {
+    opened = true;
+    return;
+  }
+  opened = true;
+  core.openHome(dms[0]!.id);
 });
 
 const demo = page.url.searchParams.has('demo');
@@ -563,7 +586,13 @@ function toggleMembers() {
     </button>
     <hr class="rail-sep" />
 
-    {#each core.spaces as space (space.id)}
+    <!-- Fixture spaces are hidden once there is a real account, because there
+         is no such thing as a real space yet: `packages/core` has no
+         `SpaceCore`, and `apps/server` leaves them to phase 3 on the grounds
+         that "half a space is worse than none". Showing Solexsis to somebody
+         who signed up an hour ago would let them click into a stranger's
+         conversation and read it as their own. -->
+    {#each live.running ? [] : core.spaces as space (space.id)}
       <button
         class="space"
         class:active={core.scope === 'space' && space.id === core.currentSpaceId}
@@ -574,7 +603,9 @@ function toggleMembers() {
         title={space.name}
       >{space.initial}</button>
     {/each}
-    <button class="space add" title="Add a space"><Icon name="plus" size={20} /></button>
+    {#if !live.running}
+      <button class="space add" title="Add a space"><Icon name="plus" size={20} /></button>
+    {/if}
   </nav>
 
   <aside class="sidebar">

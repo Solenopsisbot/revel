@@ -75,6 +75,12 @@ export interface RoomSyncOptions {
   /** Overridable for tests. */
   nonce?: () => string;
   now?: () => number;
+  /**
+   * How to wake up later. Paired with `now`: a test that moves the clock by
+   * hand needs to move the timers with it, and a real `setTimeout` would still
+   * be sitting there waiting for wall-clock seconds that never pass.
+   */
+  schedule?: (fn: () => void, ms: number) => () => void;
 }
 
 /** What the engine needs in order to run `decide` on an incoming event. */
@@ -142,6 +148,7 @@ export class RoomSync {
   #mayModerate: ((account: string) => boolean) | undefined;
   #nonce: () => string;
   #now: () => number;
+  #schedule: (fn: () => void, ms: number) => () => void;
 
   #rooms = new Map<string, RoomState>();
   #groups = new Map<string, string>();
@@ -173,6 +180,14 @@ export class RoomSync {
     this.#notify = options.notify;
     this.#nonce = options.nonce ?? (() => crypto.randomUUID());
     this.#now = options.now ?? (() => Date.now());
+    this.#schedule =
+      options.schedule ??
+      ((fn, ms) => {
+        const timer = setTimeout(fn, ms);
+        // Never hold a process open just to say somebody stopped typing.
+        (timer as { unref?: () => void }).unref?.();
+        return () => clearTimeout(timer);
+      });
   }
 
   // -- rooms and groups -----------------------------------------------------
@@ -431,9 +446,14 @@ export class RoomSync {
       this.#typingListeners.set(key, set);
     }
     set.add(listener);
+    this.#armTypingExpiry(key);
     return () => {
       set.delete(listener);
-      if (set.size === 0) this.#typingListeners.delete(key);
+      if (set.size === 0) {
+        this.#typingListeners.delete(key);
+        this.#typingExpiry.get(key)?.();
+        this.#typingExpiry.delete(key);
+      }
     };
   }
 
@@ -504,10 +524,44 @@ export class RoomSync {
     return key;
   }
 
+  /**
+   * One pending expiry wake-up per place, while somebody is typing there.
+   *
+   * `typing()` drops stale entries as it notices them, which is enough for a
+   * caller that polls. A caller that *watches* never asks again on its own, so
+   * without this the indicator for somebody who stopped typing without sending
+   * a `stop` — a closed laptop, a dropped socket — stays on screen forever.
+   * Bounded by construction: one timer per place that has live typing, cleared
+   * as soon as the place goes quiet.
+   */
+  #typingExpiry = new Map<string, () => void>();
+
   #notifyPlace(key: string): void {
     const [roomId, thread] = key.split('/');
     const who = this.typing(roomId as string, thread);
     for (const listener of this.#typingListeners.get(key) ?? []) listener(who);
+    this.#armTypingExpiry(key);
+  }
+
+  /** Wake up when the longest-standing notice here goes stale, and re-notify. */
+  #armTypingExpiry(key: string): void {
+    this.#typingExpiry.get(key)?.();
+    this.#typingExpiry.delete(key);
+    if (!this.#typingListeners.has(key)) return;
+
+    const held = this.#typing.get(key);
+    if (!held?.size) return;
+    // The soonest moment this place could look different: when the *oldest*
+    // notice still standing crosses the TTL.
+    const oldest = Math.min(...[...held.values()].map((e) => e.at));
+    const due = oldest + RoomSync.TYPING_TTL_MS - this.#now();
+    this.#typingExpiry.set(
+      key,
+      this.#schedule(() => {
+        this.#typingExpiry.delete(key);
+        this.#notifyPlace(key);
+      }, Math.max(due, 0) + 1),
+    );
   }
 
   /**

@@ -13,6 +13,7 @@
  * When one of these fails it is because the system is wrong, which is the whole
  * reason to pay for the setup.
  */
+import { RoomSync } from '@revel/core';
 import { describe, expect, it } from 'vitest';
 import { type Client, World, wasmBuilt } from './harness.js';
 
@@ -819,9 +820,53 @@ scenarios('typing', () => {
     await world.settle();
     expect(bob.typing(room)).toEqual(['alice']);
 
-    // No timer and no cleanup pass: the entry is dropped when somebody asks.
+    // The entry is dropped when somebody asks.
     world.advance(10_000);
     expect(bob.typing(room)).toEqual([]);
+    await world.close();
+  });
+
+  it('tells a watcher when it expires, without being asked again', async () => {
+    // The lazy sweep in `typing()` is enough for a caller that polls. A UI
+    // watches, and nothing arrives when somebody *stops* — so without a
+    // wake-up the indicator for a client that died mid-sentence stays on
+    // screen forever. This is the test that was missing when it did.
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    const seen: string[][] = [];
+    const unwatch = bob.rooms.watchTyping(room, (who) => seen.push(who.map((w) => w.account)));
+
+    await host.startTyping(room);
+    await world.settle();
+    expect(seen.at(-1)).toEqual([host.account]);
+
+    // Alice's laptop shuts. No `stop` is ever sent.
+    world.advance(RoomSync.TYPING_TTL_MS + 1000);
+    expect(seen.at(-1)).toEqual([]);
+
+    // And it does not keep waking up once the place is quiet.
+    const settled = seen.length;
+    world.advance(60_000);
+    expect(seen.length).toBe(settled);
+
+    unwatch();
+    await world.close();
+  });
+
+  it('stops waking up once nobody is watching', async () => {
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    let calls = 0;
+    const unwatch = bob.rooms.watchTyping(room, () => calls++);
+    await host.startTyping(room);
+    await world.settle();
+    const before = calls;
+
+    unwatch();
+    world.advance(RoomSync.TYPING_TTL_MS + 1000);
+    expect(calls).toBe(before);
     await world.close();
   });
 });

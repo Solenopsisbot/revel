@@ -94,7 +94,35 @@ class Core {
 
   /** Who is typing here. Omit `thread` for the room itself. */
   typing(roomId = this.currentRoomId, thread?: string): string[] {
+    if (live.running) {
+      // Face ids, because that is what the indicator renders. A typing notice
+      // carries the face its sender is wearing (`docs/03` §7), so somebody
+      // typing as Ash shows as Ash rather than as an account nobody recognises
+      // — and somebody with no face shows as nothing at all rather than as a
+      // blank name.
+      return live
+        .typingIn(roomId, thread)
+        .map((who) => who.face?.id)
+        .filter((id): id is string => !!id);
+    }
     return this.typingIn[thread ? `${roomId}/${thread}` : roomId] ?? [];
+  }
+  /**
+   * The names to put in a typing indicator.
+   *
+   * Separate from `typing` because a real typing notice arrives *carrying* its
+   * face — there is no id-to-face map for faces that belong to other people,
+   * only the snapshot each event brings with it. Fixture faces resolve through
+   * `this.faces` as they always did.
+   */
+  typingNames(roomId = this.currentRoomId, thread?: string): string[] {
+    if (live.running) {
+      return live
+        .typingIn(roomId, thread)
+        .map((who) => who.face?.name)
+        .filter((name): name is string => !!name);
+    }
+    return this.typing(roomId, thread).map((f) => this.faces[f]?.name ?? f);
   }
   membersOpen = $state(true);
   /** The message being replied to, if any. Cleared on send or Escape. */
@@ -1145,6 +1173,10 @@ class Core {
 
   /** Someone else typing, so the indicator has something to show. */
   simulateTyping(faceId: string, ms = 3200, thread?: string) {
+    // Fixture theatre. In a real conversation the only thing that should make
+    // an indicator appear is somebody actually typing, so this is off the
+    // moment there is a real room behind the screen.
+    if (live.running) return;
     const key = thread ? `${this.currentRoomId}/${thread}` : this.currentRoomId;
     const here = this.typingIn[key] ?? [];
     if (!here.includes(faceId)) this.typingIn[key] = [...here, faceId];

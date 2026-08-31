@@ -271,8 +271,26 @@ export class World {
    */
   time = Date.now();
 
+  /** Wake-ups the engine asked for, so `advance` can fire the due ones. */
+  #timers = new Set<{ at: number; fn: () => void }>();
+
+  /** Hand to `RoomSync` as `schedule`, so its timers run on this clock. */
+  schedule = (fn: () => void, ms: number): (() => void) => {
+    const timer = { at: this.time + ms, fn };
+    this.#timers.add(timer);
+    return () => this.#timers.delete(timer);
+  };
+
   advance(ms: number): void {
     this.time += ms;
+    // Fire what came due, oldest first. A callback may schedule another
+    // wake-up, which is why the due set is snapshotted before running any of
+    // it rather than iterated live.
+    const due = [...this.#timers].filter((t) => t.at <= this.time).sort((a, b) => a.at - b.at);
+    for (const timer of due) {
+      this.#timers.delete(timer);
+      timer.fn();
+    }
   }
 
   /** How many events have been POSTed, for asserting that a throttle throttles. */
@@ -438,6 +456,7 @@ export class Client {
       account: client.account,
       nonce: () => `${label}-${++client.#counter}-nonce`,
       now: () => world.time,
+      schedule: world.schedule,
       // `docs/35`'s rules, wired the way a real client wires them. Off by
       // default in the sense that nothing here changes unless a test sets
       // `notifySettings`; every decision is recorded so a test can assert on

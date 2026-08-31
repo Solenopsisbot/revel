@@ -228,7 +228,11 @@ class LiveConversation implements ConversationCore {
     roomId: string,
     options: { face?: FaceRef; thread?: string } = {},
   ): Promise<void> {
-    await this.#rooms.setTyping(roomId, options);
+    // Same default as `send`. A typing notice that arrived facelessly while the
+    // message that followed it wore a face would show the room two different
+    // people for one person's sentence.
+    const face = options.face ?? this.#faceFor?.(roomId);
+    await this.#rooms.setTyping(roomId, { ...options, face });
   }
 
   async stopTyping(roomId: string, thread?: string): Promise<void> {

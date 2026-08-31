@@ -61,6 +61,8 @@ class Live {
     for (const off of this.#unwatch) off();
     this.#unwatch = [];
     this.#watching.clear();
+    this.#watchingTyping.clear();
+    this.#typing.clear();
     this.#rooms.clear();
     await this.stack?.close().catch(() => {});
     this.stack = null;
@@ -142,6 +144,48 @@ class Live {
         });
     }
     return accountPub.slice(0, 8);
+  }
+
+  #typing = new Map<string, { account: string; face?: { id: string; name: string } }[]>();
+  #watchingTyping = new Set<string>();
+
+  /**
+   * Who is typing in a room, or in one of its threads.
+   *
+   * Subscribed on first read, like `room`. Typing is `ephemeral` — never
+   * stored, dropped if nobody is listening (`docs/03` §7) — so there is nothing
+   * to fetch and the only way to know is to have been listening.
+   */
+  typingIn(roomId: string, thread?: string): { account: string; face?: { id: string; name: string } }[] {
+    void this.version;
+    const stack = this.stack;
+    if (!stack) return [];
+    const key = thread ? `${roomId}/${thread}` : roomId;
+
+    if (!this.#watchingTyping.has(key)) {
+      this.#watchingTyping.add(key);
+      this.#unwatch.push(
+        stack.core.conversation.watchTyping(
+          roomId,
+          (who) => {
+            this.#typing.set(key, who);
+            this.version++;
+          },
+          thread,
+        ),
+      );
+    }
+    return this.#typing.get(key) ?? [];
+  }
+
+  /** Say that this account is typing, as whichever face is speaking here. */
+  async setTyping(roomId: string, thread?: string): Promise<void> {
+    await this.stack?.core.conversation.setTyping(roomId, { thread }).catch(() => {});
+  }
+
+  /** Say the composer went quiet, so the indicator drops now rather than on TTL. */
+  async stopTyping(roomId: string, thread?: string): Promise<void> {
+    await this.stack?.core.conversation.stopTyping(roomId, thread).catch(() => {});
   }
 
   /** The socket, polled because `WebSocketStream` reports by callback. */

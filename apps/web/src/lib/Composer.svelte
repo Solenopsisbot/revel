@@ -4,6 +4,7 @@ import { conversation } from './fake/conversation.svelte.js';
 import { core } from './fake/core.svelte.js';
 import Icon from './Icon.svelte';
 import { layout } from './layout.svelte.js';
+import { live } from './live.svelte.js';
 
 /**
  * The thread this composer posts into, if it is the one in a thread panel.
@@ -47,11 +48,22 @@ let joining = $state<string | null>(null);
  */
 const active = $derived(thread ? core.openThreadId === thread : !core.openThreadId);
 
+/**
+ * Tell the room somebody is typing. Safe to call per keystroke — `RoomSync`
+ * owns the throttle, deliberately, so that the obvious call site is the
+ * correct one and no composer has to keep its own copy of the interval.
+ */
+function announceTyping() {
+  if (!live.running) return;
+  void live.setTyping(core.currentRoomId, thread);
+}
+
 function submit() {
   // Clearing the reply target is `core.send`'s job, not the composer's.
   if (thread) core.sendToThread(thread, draft);
   else core.send(draft);
   draft = '';
+  if (live.running) void live.stopTyping(core.currentRoomId, thread);
   // Someone replies, so the typing indicator and arrival animation have
   // something to do.
   core.simulateTyping('rae', 2600, thread);
@@ -275,7 +287,10 @@ function grow(el: HTMLTextAreaElement) {
       bind:this={input}
       bind:value={draft}
       onkeydown={onKey}
-      oninput={(e) => grow(e.currentTarget)}
+      oninput={(e) => {
+        grow(e.currentTarget);
+        announceTyping();
+      }}
       rows="1"
       placeholder={thread
         ? 'Reply in thread'
