@@ -326,20 +326,19 @@ export async function resetPassword(deps: EnrolDeps, input: ResetInput): Promise
 // ---------------------------------------------------------------------------
 
 /**
- * Mint this device's key and register its certificate.
+ * Mint this device's key and certificate.
  *
  * Every flow that produces an account key is running on a device that does not
- * have one yet, so this is the same three lines each time: generate, sign,
- * upload. Uploading is best-effort — a Host that is unreachable must not turn a
- * successful sign-in into a failure, and the certificate is re-registrable at
- * any time because registration is idempotent.
+ * have one yet, so this is the same two lines each time: generate, sign.
+ *
+ * **It does not register the certificate**, deliberately. Registration is the
+ * first step of authenticating — the Host has to know a device before it will
+ * issue a challenge for it — so doing it here as well meant every sign-in
+ * posted the same certificate twice and hit the rate limiter twice as fast.
+ * One owner, and it is the caller that actually needs the result.
  */
 async function enrolThisDevice(deps: EnrolDeps, accountKey: Uint8Array): Promise<DeviceMaterial> {
-  const device = await deps.signDeviceCert(accountKey, deps.deviceLabel ?? 'this device');
-  await deps.transport
-    .post('/idp/devices', { certificate: b64(device.certificate) })
-    .catch(() => undefined);
-  return device;
+  return deps.signDeviceCert(accountKey, deps.deviceLabel ?? 'this device');
 }
 
 interface StoredWrapWire {

@@ -54,7 +54,7 @@ async function create() {
       deviceLabel: 'this browser',
     });
     code = result.recoveryCode;
-    enrolled = { handle: result.handle, accountKey: result.accountKey };
+    enrolled = { handle: result.handle, accountKey: result.accountKey, device: result.device };
     // Sealed to this device before the code is shown, so a reload during the
     // "write it down" step does not lose the account that was just created
     // (`docs/03` §1). The key is non-extractable and the password is not
@@ -80,7 +80,11 @@ async function create() {
 /** `null` until asked; `false` means this device simply cannot do it. */
 let passkeys = $state<boolean | null>(null);
 /** The account key, kept only across the passkey step. */
-let enrolled: { handle: string; accountKey: Uint8Array } | null = null;
+let enrolled: {
+  handle: string;
+  accountKey: Uint8Array;
+  device?: { certificate: Uint8Array; deviceSecret: Uint8Array };
+} | null = null;
 
 $effect(() => {
   if (step !== 'passkey' || passkeys !== null) return;
@@ -102,7 +106,18 @@ async function addPasskey() {
   error = '';
   try {
     const { addPasskeyWrap } = await import('@revel/core');
-    const { enrolDeps, webAuthnPrf } = await import('$lib/identity.js');
+    const { enrolDeps, webAuthnPrf, authenticateDevice } = await import('$lib/identity.js');
+    // Enrolling a wrap is an authenticated act, and this is the first moment
+    // the device needs to be one — sign-up has produced a certificate but
+    // nothing has exchanged it for a token yet.
+    const token = await authenticateDevice({
+      accountKey: enrolled.accountKey,
+      ...(enrolled.device ? { device: enrolled.device } : {}),
+    });
+    if (!token) {
+      error = 'Could not reach your provider. Your recovery code still works.';
+      return;
+    }
     await addPasskeyWrap(
       { ...(await enrolDeps()), prf: webAuthnPrf, authorization: '' },
       { handle: enrolled.handle, accountKey: enrolled.accountKey },

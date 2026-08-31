@@ -14,6 +14,7 @@
     "preview": "pnpm --filter @revel/web preview",
     "test": "vitest run",
     "test:rust": "cargo test -p revel-crypto",
+    "test:passkey": "node apps/web/e2e/passkey.mjs",
     "test:wasm": "cargo test -p revel-crypto --target wasm32-unknown-unknown --test wasm",
     "typecheck": "tsc --build --force",
     "lint": "biome check ."
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.0",
     "@types/node": "^26.4.0",
+    "playwright": "^1.62.1",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
   }

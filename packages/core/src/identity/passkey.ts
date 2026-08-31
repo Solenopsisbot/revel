@@ -133,11 +133,9 @@ export async function unlockWithPasskey(
   const accountKey = envelope.unwrap(unb64(wrap.blob), key);
   // A passkey unlock is a sign-in on a device that has no device key yet, so it
   // mints one like every other path that produces an account key.
+  // Minted, not registered — registering is the first step of authenticating,
+  // and doing it in both places posts the same certificate twice.
   const device = await deps.signDeviceCert(accountKey, deps.deviceLabel ?? 'this device');
-  await deps.transport
-    .post('/idp/devices', { certificate: b64(device.certificate) })
-    .catch(() => undefined);
-
   return { accountPub: body.accountPub, handle: body.handle, accountKey, device };
 }
 
