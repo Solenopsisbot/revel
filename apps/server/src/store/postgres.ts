@@ -46,11 +46,13 @@ import type {
   Challenge,
   ClaimedPackage,
   Device,
+  Enrolment,
   Group,
   GroupMember,
   GroupMemberInput,
   HandshakeAppend,
   HandshakeResult,
+  LoginSession,
   Membership,
   Override,
   Role,
@@ -59,6 +61,8 @@ import type {
   Store,
   StoredPushSubscription,
   StoredWelcome,
+  StoredWrap,
+  TotpSecret,
 } from './types.js';
 
 type Sql = postgres.Sql<Record<string, never>>;
@@ -437,6 +441,9 @@ export class PostgresStore implements Store {
   async sweepExpired(now: number): Promise<{ challenges: number; sessions: number }> {
     const challenges = await this.sql`DELETE FROM challenges WHERE expires_at < ${now}`;
     const sessions = await this.sql`DELETE FROM sessions WHERE expires_at < ${now}`;
+    // Login sessions leak the same way and for the same reason: an abandoned
+    // sign-in never finishes, so nothing ever reads the row that would clear it.
+    await this.sql`DELETE FROM login_sessions WHERE expires_at < ${now}`;
     return { challenges: challenges.count, sessions: sessions.count };
   }
 
@@ -1053,5 +1060,111 @@ export class PostgresStore implements Store {
   async getTree(groupId: string): Promise<{ epoch: number; tree: string } | null> {
     const [row] = await this.sql`SELECT epoch, tree FROM group_trees WHERE group_id = ${groupId}`;
     return row ? { epoch: row.epoch as number, tree: row.tree as string } : null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Enrolment
+  // ---------------------------------------------------------------------------
+
+  #enrolment(row: Row): Enrolment {
+    return {
+      handle: row.handle as string,
+      accountPub: row.account_pub as string,
+      record: row.record as string,
+      createdAt: num(row.created_at),
+    };
+  }
+
+  async createEnrolment(enrolment: Enrolment): Promise<Enrolment | null> {
+    // `DO NOTHING`, never an upsert: overwriting would let anybody who knows a
+    // handle replace the record and the wraps, which is an account takeover
+    // with no password in it. The unique index on `account_pub` catches the
+    // other direction — one account, one handle.
+    const [row] = await this.sql`
+      INSERT INTO enrolments (handle, account_pub, record, created_at)
+      VALUES (${enrolment.handle}, ${enrolment.accountPub}, ${enrolment.record},
+              ${enrolment.createdAt})
+      ON CONFLICT DO NOTHING
+      RETURNING *`;
+    return row ? this.#enrolment(row) : null;
+  }
+
+  async getEnrolment(handle: string): Promise<Enrolment | null> {
+    const [row] = await this.sql`SELECT * FROM enrolments WHERE handle = ${handle}`;
+    return row ? this.#enrolment(row) : null;
+  }
+
+  async getEnrolmentByAccount(accountPub: string): Promise<Enrolment | null> {
+    const [row] = await this.sql`SELECT * FROM enrolments WHERE account_pub = ${accountPub}`;
+    return row ? this.#enrolment(row) : null;
+  }
+
+  async putWrap(accountPub: string, wrap: StoredWrap): Promise<void> {
+    await this.sql`
+      INSERT INTO wraps (account_pub, kind, blob, salt)
+      VALUES (${accountPub}, ${wrap.kind}, ${wrap.blob}, ${wrap.salt ?? null})
+      ON CONFLICT (account_pub, kind) DO UPDATE
+        SET blob = EXCLUDED.blob, salt = EXCLUDED.salt`;
+  }
+
+  async wrapsFor(accountPub: string): Promise<StoredWrap[]> {
+    const rows = await this.sql`
+      SELECT kind, blob, salt FROM wraps WHERE account_pub = ${accountPub} ORDER BY kind`;
+    return rows.map((r) => ({
+      kind: r.kind as StoredWrap['kind'],
+      blob: r.blob as string,
+      ...(r.salt != null ? { salt: r.salt as string } : {}),
+    }));
+  }
+
+  async putRegistrationRecord(accountPub: string, record: string): Promise<void> {
+    await this.sql`UPDATE enrolments SET record = ${record} WHERE account_pub = ${accountPub}`;
+  }
+
+  async putLoginSession(id: string, session: LoginSession): Promise<void> {
+    await this.sql`
+      INSERT INTO login_sessions (id, account_pub, handle, state, expires_at)
+      VALUES (${id}, ${session.accountPub}, ${session.handle}, ${session.state},
+              ${session.expiresAt})
+      ON CONFLICT (id) DO UPDATE
+        SET state = EXCLUDED.state, expires_at = EXCLUDED.expires_at`;
+  }
+
+  async takeLoginSession(id: string): Promise<LoginSession | null> {
+    // Deleted as it is read. Same rule as a challenge: a state that can be
+    // spent twice is a replay.
+    const [row] = await this.sql`DELETE FROM login_sessions WHERE id = ${id} RETURNING *`;
+    if (!row) return null;
+    const session: LoginSession = {
+      accountPub: row.account_pub as string,
+      handle: row.handle as string,
+      state: row.state as string,
+      expiresAt: num(row.expires_at),
+    };
+    return session.expiresAt < Date.now() ? null : session;
+  }
+
+  async getTotp(accountPub: string): Promise<TotpSecret | null> {
+    const [row] = await this.sql`SELECT * FROM totp_secrets WHERE account_pub = ${accountPub}`;
+    if (!row) return null;
+    return {
+      secret: row.secret as string,
+      lastCounter: numOrNull(row.last_counter),
+      confirmedAt: numOrNull(row.confirmed_at),
+    };
+  }
+
+  async putTotp(accountPub: string, secret: TotpSecret): Promise<void> {
+    await this.sql`
+      INSERT INTO totp_secrets (account_pub, secret, last_counter, confirmed_at)
+      VALUES (${accountPub}, ${secret.secret}, ${secret.lastCounter}, ${secret.confirmedAt})
+      ON CONFLICT (account_pub) DO UPDATE
+        SET secret = EXCLUDED.secret,
+            last_counter = EXCLUDED.last_counter,
+            confirmed_at = EXCLUDED.confirmed_at`;
+  }
+
+  async deleteTotp(accountPub: string): Promise<void> {
+    await this.sql`DELETE FROM totp_secrets WHERE account_pub = ${accountPub}`;
   }
 }

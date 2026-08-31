@@ -364,6 +364,88 @@ export interface Store {
   /** The public ratchet tree, kept out of band so Welcomes stay small. */
   putTree(groupId: string, epoch: number, tree: string): Promise<void>;
   getTree(groupId: string): Promise<{ epoch: number; tree: string } | null>;
+
+  // -------------------------------------------------------------------------
+  // Enrolment: OPAQUE, wraps, second factors (`docs/03` §3)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Create an enrolment, if the handle is free.
+   *
+   * Returns `null` when it is taken. Not an upsert: overwriting an enrolment
+   * would let anybody who knows a handle replace the record and the wraps, and
+   * "sign up with somebody else's handle" would be an account takeover with no
+   * password involved at all.
+   */
+  createEnrolment(enrolment: Enrolment): Promise<Enrolment | null>;
+  getEnrolment(handle: string): Promise<Enrolment | null>;
+  getEnrolmentByAccount(accountPub: string): Promise<Enrolment | null>;
+
+  /**
+   * Replace one wrap, leaving the others.
+   *
+   * The whole reason the wraps are separate blobs: changing a password is one
+   * write, and it must not disturb the recovery wrap (`docs/03` §1).
+   */
+  putWrap(accountPub: string, wrap: StoredWrap): Promise<void>;
+  /** Every wrap an account has. Released only after a finished login. */
+  wrapsFor(accountPub: string): Promise<StoredWrap[]>;
+
+  /** Replace the OPAQUE record. What a password change actually is, server-side. */
+  putRegistrationRecord(accountPub: string, record: string): Promise<void>;
+
+  /**
+   * A login exchange in flight.
+   *
+   * OPAQUE is two round trips and the server holds state between them. Kept
+   * here rather than in memory so it survives the process, short-lived because
+   * a login half-finished an hour ago is not a login.
+   */
+  putLoginSession(id: string, session: LoginSession): Promise<void>;
+  /** Single use — taken, not read, for the same reason a challenge is. */
+  takeLoginSession(id: string): Promise<LoginSession | null>;
+
+  /** The account's second factor, if it has one. */
+  getTotp(accountPub: string): Promise<TotpSecret | null>;
+  putTotp(accountPub: string, secret: TotpSecret): Promise<void>;
+  deleteTotp(accountPub: string): Promise<void>;
+}
+
+/** An account as the IdP knows it: a record it cannot invert, wraps it cannot open. */
+export interface Enrolment {
+  handle: string;
+  accountPub: string;
+  /** The OPAQUE registration record, base64. Opaque to us, permanently. */
+  record: string;
+  createdAt: number;
+}
+
+export interface StoredWrap {
+  kind: 'password' | 'recovery' | 'passkey';
+  blob: string;
+  /** Argon2id salt, `recovery` only. Not secret. */
+  salt?: string;
+}
+
+export interface LoginSession {
+  accountPub: string;
+  handle: string;
+  /** The server's half of the OPAQUE exchange, base64. */
+  state: string;
+  expiresAt: number;
+}
+
+export interface TotpSecret {
+  secret: string;
+  /**
+   * The highest counter step already spent, or null before the first use.
+   *
+   * This is what makes a code single-use. Without it a phished code stays valid
+   * for its whole window, which is most of what a second factor is for.
+   */
+  lastCounter: number | null;
+  /** Null until the first correct code proves the app was actually set up. */
+  confirmedAt: number | null;
 }
 
 /**

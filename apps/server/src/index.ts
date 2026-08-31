@@ -160,8 +160,35 @@ const address = (req: Request): string => {
   return 'shared';
 };
 
+// The IdP, when the host key file carries an OPAQUE setup. A v1 file predates
+// it and simply does not serve one — the same shape as `security.txt` with no
+// contact: a missing capability rather than a broken deployment.
+const opaqueServer = hostIdentity.opaqueSetup
+  ? await (async () => {
+      const opaque = await import('@serenity-kit/opaque');
+      await opaque.ready;
+      const serverSetup = hostIdentity.opaqueSetup as string;
+      console.log(`idp: serving (${idp})`);
+      return {
+        createRegistrationResponse: (i: { userIdentifier: string; registrationRequest: string }) =>
+          opaque.server.createRegistrationResponse({ serverSetup, ...i }),
+        startLogin: (i: {
+          userIdentifier: string;
+          registrationRecord: string;
+          startLoginRequest: string;
+        }) => opaque.server.startLogin({ serverSetup, ...i }),
+        finishLogin: (i: { serverLoginState: string; finishLoginRequest: string }) =>
+          opaque.server.finishLogin(i),
+      };
+    })()
+  : undefined;
+if (!opaqueServer) {
+  console.log('idp: not served (host key has no OPAQUE setup — write a new one to enable)');
+}
+
 const app = createApp({
   store,
+  ...(opaqueServer ? { opaque: opaqueServer } : {}),
   hub,
   ids: new SnowflakeFactory(shard),
   authenticate,

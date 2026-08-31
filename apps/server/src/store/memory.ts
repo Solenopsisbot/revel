@@ -7,11 +7,13 @@ import type {
   Challenge,
   ClaimedPackage,
   Device,
+  Enrolment,
   Group,
   GroupMember,
   GroupMemberInput,
   HandshakeAppend,
   HandshakeResult,
+  LoginSession,
   Membership,
   Override,
   Role,
@@ -20,6 +22,8 @@ import type {
   Store,
   StoredPushSubscription,
   StoredWelcome,
+  StoredWrap,
+  TotpSecret,
 } from './types.js';
 
 /** One device's key package shelf. */
@@ -269,6 +273,11 @@ export class MemoryStore implements Store {
         this.sessions.delete(hash);
         sessions += 1;
       }
+    }
+    // Login sessions leak the same way — an abandoned sign-in never finishes,
+    // so nothing ever reads the row that would clear it.
+    for (const [id, login] of this.loginSessions) {
+      if (login.expiresAt < now) this.loginSessions.delete(id);
     }
     return { challenges, sessions };
   }
@@ -526,5 +535,78 @@ export class MemoryStore implements Store {
 
   async getTree(groupId: string) {
     return this.trees.get(groupId) ?? null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Enrolment
+  // -------------------------------------------------------------------------
+
+  enrolments = new Map<string, Enrolment>();
+  /** account pub → its wraps, by kind. One of each, replaceable. */
+  wraps = new Map<string, Map<string, StoredWrap>>();
+  loginSessions = new Map<string, LoginSession>();
+  totp = new Map<string, TotpSecret>();
+
+  async createEnrolment(enrolment: Enrolment) {
+    // Not an upsert. Overwriting would let anybody who knows a handle replace
+    // the record and the wraps — an account takeover with no password in it.
+    if (this.enrolments.has(enrolment.handle)) return null;
+    // And one handle per account, which Postgres enforces with a unique index
+    // on `account_pub`. Two handles resolving to one account would make the
+    // wraps reachable by a name their owner did not choose.
+    if (await this.getEnrolmentByAccount(enrolment.accountPub)) return null;
+    this.enrolments.set(enrolment.handle, enrolment);
+    return enrolment;
+  }
+
+  async getEnrolment(handle: string) {
+    return this.enrolments.get(handle) ?? null;
+  }
+
+  async getEnrolmentByAccount(accountPub: string) {
+    for (const e of this.enrolments.values()) if (e.accountPub === accountPub) return e;
+    return null;
+  }
+
+  async putWrap(accountPub: string, wrap: StoredWrap) {
+    const set = this.wraps.get(accountPub) ?? new Map<string, StoredWrap>();
+    set.set(wrap.kind, wrap);
+    this.wraps.set(accountPub, set);
+  }
+
+  async wrapsFor(accountPub: string): Promise<StoredWrap[]> {
+    return [...(this.wraps.get(accountPub)?.values() ?? [])].sort((a, b) =>
+      a.kind.localeCompare(b.kind),
+    );
+  }
+
+  async putRegistrationRecord(accountPub: string, record: string) {
+    const enrolment = await this.getEnrolmentByAccount(accountPub);
+    if (enrolment) this.enrolments.set(enrolment.handle, { ...enrolment, record });
+  }
+
+  async putLoginSession(id: string, session: LoginSession) {
+    this.loginSessions.set(id, session);
+  }
+
+  async takeLoginSession(id: string) {
+    const session = this.loginSessions.get(id);
+    // Single use, deleted as it is read — the same rule as a challenge, and for
+    // the same reason: a state that can be spent twice is a replay.
+    this.loginSessions.delete(id);
+    if (!session) return null;
+    return session.expiresAt < Date.now() ? null : session;
+  }
+
+  async getTotp(accountPub: string) {
+    return this.totp.get(accountPub) ?? null;
+  }
+
+  async putTotp(accountPub: string, secret: TotpSecret) {
+    this.totp.set(accountPub, secret);
+  }
+
+  async deleteTotp(accountPub: string) {
+    this.totp.delete(accountPub);
   }
 }

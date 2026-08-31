@@ -44,17 +44,33 @@ export interface HostIdentity {
   certificate: string;
   accountKey: CryptoKey;
   devicePub: Uint8Array;
+  /** The OPAQUE server setup, when this file has one. See [`StoredHostKey`]. */
+  opaqueSetup?: string;
 }
 
-/** Version 1 of the on-disk shape. */
+/** The on-disk shape. */
 interface StoredHostKey {
-  v: 1;
+  v: 1 | 2;
   label: string;
   /** PKCS#8, base64. */
   accountKey: string;
   deviceKey: string;
   /** The certificate these two produce. Stored so the file is self-describing. */
   certificate: string;
+  /**
+   * The OPAQUE server setup (`docs/03` §3). Added in v2.
+   *
+   * Long-lived and irreplaceable in exactly the way the signature key is: every
+   * registration record in the database was produced against *this* setup, so
+   * a new one invalidates every password on the IdP at once. It lives here
+   * rather than in the database for the reason given above — a dump of the data
+   * should not also be a dump of the secrets.
+   *
+   * Optional in the type so a v1 file still parses. A Host with a v1 file
+   * simply does not serve the IdP, which is the same shape as `security.txt`
+   * with no contact: a missing capability rather than a broken one.
+   */
+  opaqueSetup?: string;
 }
 
 /** Copied rather than passed through, for the reason `identity.ts` gives: a
@@ -91,6 +107,7 @@ export async function generateHostIdentity(label: string): Promise<HostIdentity>
 /** Serialise a freshly generated identity, for `revel init` to write. */
 export async function serialiseHostIdentity(
   label: string,
+  opaqueSetup?: string,
 ): Promise<{ file: StoredHostKey; identity: HostIdentity }> {
   const account = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, [
     'sign',
@@ -109,7 +126,7 @@ export async function serialiseHostIdentity(
 
   return {
     file: {
-      v: 1,
+      v: 2,
       label,
       accountKey: toBase64(
         new Uint8Array(await crypto.subtle.exportKey('pkcs8', account.privateKey)),
@@ -118,8 +135,14 @@ export async function serialiseHostIdentity(
         new Uint8Array(await crypto.subtle.exportKey('pkcs8', device.privateKey)),
       ),
       certificate,
+      ...(opaqueSetup ? { opaqueSetup } : {}),
     },
-    identity: { certificate, accountKey: account.privateKey, devicePub },
+    identity: {
+      certificate,
+      accountKey: account.privateKey,
+      devicePub,
+      ...(opaqueSetup ? { opaqueSetup } : {}),
+    },
   };
 }
 
@@ -139,7 +162,9 @@ export async function parseHostKey(json: string): Promise<HostIdentity> {
     throw new Error('host key is not JSON');
   }
   const file = parsed as Partial<StoredHostKey>;
-  if (file.v !== 1) throw new Error(`host key version ${String(file.v)} is not supported`);
+  if (file.v !== 1 && file.v !== 2) {
+    throw new Error(`host key version ${String(file.v)} is not supported`);
+  }
   if (!file.accountKey || !file.deviceKey || !file.certificate) {
     throw new Error('host key is missing a field');
   }
@@ -149,7 +174,12 @@ export async function parseHostKey(json: string): Promise<HostIdentity> {
   if (!(await verifyDeviceCert(cert))) throw new Error('host key certificate does not verify');
 
   const accountKey = await importPrivate(file.accountKey);
-  return { certificate: file.certificate, accountKey, devicePub: cert.devicePub };
+  return {
+    certificate: file.certificate,
+    accountKey,
+    devicePub: cert.devicePub,
+    ...(file.opaqueSetup ? { opaqueSetup: file.opaqueSetup } : {}),
+  };
 }
 
 /** Read a host key file. `null` when there is no file — not an error. */
@@ -171,11 +201,15 @@ export async function readHostKey(path: string): Promise<HostIdentity | null> {
  * in the group context of every group the Host has ever been published into,
  * and there is no recovering it from anywhere else.
  */
-export async function writeHostKey(path: string, label: string): Promise<HostIdentity> {
+export async function writeHostKey(
+  path: string,
+  label: string,
+  opaqueSetup?: string,
+): Promise<HostIdentity> {
   const existing = await readHostKey(path).catch(() => null);
   if (existing) throw new Error(`${path} already exists — refusing to overwrite a host key`);
 
-  const { file, identity } = await serialiseHostIdentity(label);
+  const { file, identity } = await serialiseHostIdentity(label, opaqueSetup);
   await mkdir(dirname(path), { recursive: true });
   // `0600` before anything is in it, so the secret is never briefly readable.
   await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600, flag: 'wx' });

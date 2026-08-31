@@ -17,20 +17,28 @@
  * that writes a `package.json`, and a command that does something entirely
  * different depending on whether you typed `run` is a trap.
  */
+import * as opaque from '@serenity-kit/opaque';
 import { hostKeyPath, writeHostKey } from './hostkey.js';
 
 const path = process.argv[2] ?? hostKeyPath();
 const label = process.env.REVEL_HOST ?? `localhost:${process.env.PORT ?? 8080}`;
 
 try {
-  const identity = await writeHostKey(path, label);
+  await opaque.ready;
+  // The OPAQUE server setup goes in the same file as the signature key, and is
+  // irreplaceable in the same way: every registration record in the database
+  // was produced against *this* setup, so a new one invalidates every password
+  // on the IdP at once.
+  const identity = await writeHostKey(path, label, opaque.server.createSetup());
   console.log(`wrote ${path} (mode 0600)`);
   console.log(`  host:        ${label}`);
   console.log(`  certificate: ${identity.certificate.slice(0, 32)}…`);
   console.log('');
-  console.log('Back this up. It cannot be regenerated: it is published in the');
-  console.log('group context of every group this Host becomes an external sender');
-  console.log('for, and losing it means never being able to propose into them.');
+  console.log('Back this up. Neither key in it can be regenerated:');
+  console.log('  * the signature key is published in the group context of every');
+  console.log('    group this Host becomes an external sender for;');
+  console.log('  * the OPAQUE setup is what every password on this IdP was');
+  console.log('    registered against, so replacing it locks everybody out.');
 } catch (err) {
   console.error(`revel init: ${(err as Error).message}`);
   process.exit(1);

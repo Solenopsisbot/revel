@@ -602,6 +602,124 @@ export function describeStore(name: string, harness: StoreHarness): void {
     });
 
     // -------------------------------------------------------------------------
+    describe('enrolment', () => {
+      const enrolment = (handle: string, accountPub: string) => ({
+        handle,
+        accountPub,
+        record: 'an-opaque-registration-record',
+        createdAt: 1_700_000_000_000,
+      });
+
+      it('creates an enrolment and finds it either way round', async () => {
+        const handle = uniq('handle');
+        const account = uniq('acct');
+        expect(await store.createEnrolment(enrolment(handle, account))).not.toBeNull();
+
+        expect((await store.getEnrolment(handle))?.accountPub).toBe(account);
+        expect((await store.getEnrolmentByAccount(account))?.handle).toBe(handle);
+      });
+
+      it('refuses a handle that is taken, rather than overwriting it', async () => {
+        // Overwriting would let anybody who knows a handle replace the record
+        // and the wraps — an account takeover with no password in it.
+        const handle = uniq('handle');
+        const first = uniq('acct');
+        await store.createEnrolment(enrolment(handle, first));
+
+        expect(await store.createEnrolment(enrolment(handle, uniq('acct')))).toBeNull();
+        expect((await store.getEnrolment(handle))?.accountPub).toBe(first);
+      });
+
+      it('refuses a second handle for one account', async () => {
+        const account = uniq('acct');
+        await store.createEnrolment(enrolment(uniq('handle'), account));
+        expect(await store.createEnrolment(enrolment(uniq('handle'), account))).toBeNull();
+      });
+
+      it('replaces one wrap and leaves the others', async () => {
+        // `docs/03` §1: a password change is one write. A change that disturbed
+        // the recovery wrap would turn a routine action into an account loss.
+        const account = uniq('acct');
+        await store.putWrap(account, { kind: 'password', blob: 'b25l' });
+        await store.putWrap(account, { kind: 'recovery', blob: 'dHdv', salt: 'c2FsdA' });
+        await store.putWrap(account, { kind: 'password', blob: 'dGhyZWU' });
+
+        const wraps = await store.wrapsFor(account);
+        expect(wraps).toHaveLength(2);
+        expect(wraps.find((w) => w.kind === 'password')?.blob).toBe('dGhyZWU');
+        expect(wraps.find((w) => w.kind === 'recovery')?.blob).toBe('dHdv');
+        expect(wraps.find((w) => w.kind === 'recovery')?.salt).toBe('c2FsdA');
+      });
+
+      it('keeps one account wraps out of another', async () => {
+        const a = uniq('acct');
+        const b = uniq('acct');
+        await store.putWrap(a, { kind: 'password', blob: 'YQ' });
+        await store.putWrap(b, { kind: 'password', blob: 'Yg' });
+        expect((await store.wrapsFor(a))[0]?.blob).toBe('YQ');
+        expect(await store.wrapsFor(uniq('acct'))).toEqual([]);
+      });
+
+      it('replaces the registration record, which is what a password change is', async () => {
+        const handle = uniq('handle');
+        const account = uniq('acct');
+        await store.createEnrolment(enrolment(handle, account));
+        await store.putRegistrationRecord(account, 'a-new-record');
+        expect((await store.getEnrolment(handle))?.record).toBe('a-new-record');
+      });
+
+      it('spends a login session exactly once', async () => {
+        // An OPAQUE server state that can be spent twice is a replay.
+        const id = uniq('login');
+        await store.putLoginSession(id, {
+          accountPub: 'acct-a',
+          handle: 'viola',
+          state: 'server-state',
+          expiresAt: Date.now() + 60_000,
+        });
+        expect((await store.takeLoginSession(id))?.state).toBe('server-state');
+        expect(await store.takeLoginSession(id)).toBeNull();
+      });
+
+      it('refuses an expired login session, and still consumes it', async () => {
+        const id = uniq('login');
+        await store.putLoginSession(id, {
+          accountPub: 'acct-a',
+          handle: 'viola',
+          state: 'stale',
+          expiresAt: Date.now() - 1,
+        });
+        expect(await store.takeLoginSession(id)).toBeNull();
+        expect(await store.takeLoginSession(id)).toBeNull();
+      });
+
+      it('stores a second factor, unconfirmed until it is confirmed', async () => {
+        // An enrolment that gated logins before a correct code proved the app
+        // was actually set up would lock somebody out with a typo.
+        const account = uniq('acct');
+        await store.putTotp(account, { secret: 'ABCD', lastCounter: null, confirmedAt: null });
+        expect(await store.getTotp(account)).toEqual({
+          secret: 'ABCD',
+          lastCounter: null,
+          confirmedAt: null,
+        });
+
+        await store.putTotp(account, {
+          secret: 'ABCD',
+          lastCounter: 42,
+          confirmedAt: 1_700_000_000_000,
+        });
+        const confirmed = await store.getTotp(account);
+        expect(confirmed?.confirmedAt).toBe(1_700_000_000_000);
+        // The spent counter is what makes a code single-use.
+        expect(confirmed?.lastCounter).toBe(42);
+
+        await store.deleteTotp(account);
+        expect(await store.getTotp(account)).toBeNull();
+      });
+    });
+
+    // -------------------------------------------------------------------------
     describe('groups and the handshake log', () => {
       /** A group with its room bound and one member device. */
       async function group() {

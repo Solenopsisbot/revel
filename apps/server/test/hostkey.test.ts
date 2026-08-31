@@ -101,7 +101,35 @@ describe('reading one', () => {
   });
 
   it('rejects a version it does not understand', async () => {
-    await expect(parseHostKey(JSON.stringify({ v: 2 }))).rejects.toThrow(/version 2/);
+    // v1 and v2 are both readable — v2 added the OPAQUE setup, and a v1 file
+    // still works, it just does not serve an IdP. Anything beyond that is a
+    // file written by a newer build, and guessing at its shape is worse than
+    // refusing it.
+    await expect(parseHostKey(JSON.stringify({ v: 3 }))).rejects.toThrow(/version 3/);
+    await expect(parseHostKey(JSON.stringify({ v: 0 }))).rejects.toThrow(/version 0/);
+  });
+
+  it('reads a v1 file, which simply has no OPAQUE setup', async () => {
+    const path = join(dir, 'host.json');
+    await writeHostKey(path, 'chat.example');
+    const file = JSON.parse(await readFile(path, 'utf8'));
+    file.v = 1;
+    delete file.opaqueSetup;
+    await writeFile(path, JSON.stringify(file));
+
+    const identity = await readHostKey(path);
+    expect(identity).not.toBeNull();
+    expect(identity?.opaqueSetup).toBeUndefined();
+  });
+
+  it('round-trips the OPAQUE setup when there is one', async () => {
+    // It is as irreplaceable as the signature key: every registration record in
+    // the database was produced against *this* setup, so a new one invalidates
+    // every password on the IdP at once.
+    const path = join(dir, 'host.json');
+    const written = await writeHostKey(path, 'chat.example', 'the-opaque-setup');
+    expect(written.opaqueSetup).toBe('the-opaque-setup');
+    expect((await readHostKey(path))?.opaqueSetup).toBe('the-opaque-setup');
   });
 
   it('rejects a file that is missing a field', async () => {

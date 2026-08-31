@@ -11,6 +11,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { mountAccounts } from './accounts.js';
 import { mountAuth } from './auth.js';
 import { mountBlobs } from './blobs.js';
+import { mountEnrolment, type OpaqueServer } from './enrolment.js';
 import { mountGroups, nudgeCommitter } from './groups.js';
 import type { Hub } from './hub.js';
 import { canPurge, canRead, canSend } from './policy.js';
@@ -53,6 +54,8 @@ export interface AppDeps {
    * opened against it will refuse external proposals.
    */
   externalSender?: string | null;
+  /** The OPAQUE server. Absent means this Host does not serve an IdP. */
+  opaque?: OpaqueServer;
   /**
    * Rate limiting. Absent means none, which is right for a test and wrong for
    * anything reachable — `docs/29` §6.
@@ -70,6 +73,14 @@ export interface AppDeps {
    * — everything arrives on the next open — and a poor one on a phone.
    */
   push?: { sender?: PushSender; includeRoom?: boolean };
+  /**
+   * The clock, for the parts that need one injected.
+   *
+   * Only the IdP takes it so far: TOTP is time-based, so a test that cannot
+   * move the clock cannot test a code expiring, being replayed a step later, or
+   * the window boundary — which is most of what there is to get wrong.
+   */
+  now?: () => number;
 }
 
 const denialStatus: Record<string, ContentfulStatusCode> = {
@@ -186,6 +197,21 @@ export function createApp(deps: AppDeps) {
   const idp = deps.idp ?? deps.host ?? 'localhost';
   mountWellKnown(app, { ...(deps.security ? { security: deps.security } : {}) });
   mountAuth(app, { store: deps.store, host: deps.host ?? 'localhost' });
+
+  // The IdP, when this Host has an OPAQUE setup to serve it with. Absent means
+  // the routes are simply not mounted — the same shape as `security.txt` with
+  // no contact: a missing capability rather than a broken one.
+  if (deps.opaque) {
+    mountEnrolment(app, {
+      store: deps.store,
+      opaque: deps.opaque,
+      idp,
+      authenticate: deps.authenticate,
+      newId: () => deps.ids.next(),
+      ...(deps.now ? { now: deps.now } : {}),
+    });
+  }
+
   mountAccounts(app, {
     store: deps.store,
     idp,

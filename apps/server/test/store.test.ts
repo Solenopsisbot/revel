@@ -55,6 +55,10 @@ if (url) {
     'handshake_log',
     'group_welcomes',
     'group_trees',
+    'enrolments',
+    'wraps',
+    'login_sessions',
+    'totp_secrets',
   ];
 
   await store.migrate();

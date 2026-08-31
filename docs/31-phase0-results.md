@@ -1853,3 +1853,102 @@ a server, a socket, a reducer — because that is the difference between the
 function being correct and the function being reached.
 
 897 tests.
+
+---
+
+## 30. Phase 1 identity: OPAQUE, the wraps, and a second factor
+
+`docs/06`'s phase 1 line — "OPAQUE register/login; account key; three wraps
+(password, recovery code, passkey)" — built as far as the server and the crypto
+go. What is here: the envelope, the IdP, and TOTP. What is not: the QR
+device-add flow, WebAuthn/passkey enrolment, and the client UI for any of it.
+
+### The envelope (§, and its own commit)
+
+Covered above. The one thing worth repeating is the rule the API enforces:
+**a sign-up must carry both the password wrap and the recovery wrap**, checked
+at the server rather than trusted to the client. An account with only the first
+is one where forgetting the password is fatal, and it looks completely fine
+until the day it isn't.
+
+### OPAQUE
+
+`@serenity-kit/opaque`, which wraps the `opaque-ke` crate — the option
+`docs/03` §14 already named. Not written here, and that is the decision: an
+augmented PAKE is exactly the kind of thing where a subtly wrong implementation
+passes every test you think to write.
+
+What the IdP stores is a registration record it cannot invert and three wraps it
+cannot open. **A dump of this database is not a way into anybody's messages**,
+and there is no `password_hash` column anywhere to be tempted by. There is a
+test that asserts the password does not appear anywhere in what was stored,
+which is a low bar and worth having on the floor.
+
+Three decisions in the routes:
+
+- **One refusal for three failures.** Wrong password, unknown handle and spent
+  session all return `bad_credentials`. Telling them apart is an oracle for
+  which handles exist, and "does this person have an account here" is not a
+  stranger's question to have answered.
+- **`register/start` does not check whether the handle is taken.** It hands back
+  a response derived from the request and nothing about the account, so
+  answering identically either way keeps it from being a handle oracle for
+  anybody who has not yet committed to a registration. The real check is the
+  insert at `finish`.
+- **The second factor is asked for after the password checks out, never
+  before.** Asking first would tell somebody guessing passwords when they had
+  got one right — precisely the signal 2FA exists to deny them.
+
+### TOTP, and the parts that are not the maths
+
+RFC 6238 in fifty lines rather than a dependency, checked against the RFC's own
+published vectors — the only honest way to test an algorithm somebody else
+specified. The maths is the easy half. The parts that bite:
+
+- **Constant-time comparison.** A `===` leaks through timing how many leading
+  digits were right, which turns one million-guess space into six thousand-guess
+  ones. Every step in the window is checked even after a match, so the time does
+  not depend on *which* step matched either.
+- **A used code is not a code.** The accepted counter is persisted and refused
+  next time. Without it, a code phished thirty seconds ago still works — which
+  is most of what 2FA was meant to stop. The confirmation at enrolment spends a
+  code like any other use, because setup is exactly when somebody is being
+  walked through it by a stranger on the phone.
+- **An unconfirmed secret never gates a login.** Otherwise a mistyped enrolment
+  locks somebody out of their own account.
+
+### And the setup key, which is as irreplaceable as the signature key
+
+The OPAQUE server setup goes in the host key file (v2), for the reason §29 gave
+about the signature key: **every registration record in the database was
+produced against this setup**, so a new one invalidates every password on the
+IdP at once. A v1 file still parses and simply does not serve an IdP — a missing
+capability rather than a broken deployment, the same shape as `security.txt`
+with no contact.
+
+### What the tests found
+
+Two things, both the sort that only appear when something real runs:
+
+**The wire format was wrong.** `Opaque` was typed `z.string().base64()` and the
+library emits **base64url**. That rejects every real message while accepting
+every hand-written fixture, which is exactly how it surfaced — sixteen tests
+failing at once with "invalid type: unit value". Wraps stay standard base64,
+because unlike the protocol messages that encoding *is* ours.
+
+**Memory let one account hold two handles.** Postgres has a unique index on
+`account_pub`; the in-memory store checked only the handle. Two handles
+resolving to one account would make the wraps reachable by a name their owner
+did not choose. Caught by the conformance suite, which is the third divergence
+it has found — and, as in §28, by asking a question nobody had asked before
+rather than by any change to the code.
+
+1,050 tests.
+
+### Still missing from phase 1
+
+The QR device-add flow (`docs/03` §3's convenient case), WebAuthn/passkey
+enrolment for the third wrap, and every screen. The recovery flow exists as
+crypto and as storage and has no UI, which means it cannot yet be *used* — and
+`docs/03` is explicit that a recovery path people cannot find is one that does
+not exist.
