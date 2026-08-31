@@ -28,6 +28,9 @@ zeroize = "1"
 # not at KDF speed — the memory-hard KDF is the entire reason the wrap is worth
 # anything. RustCrypto's, so it is the same provenance as everything above.
 argon2 = "0.5"
+# X25519 for the device-handoff seal (`src/transfer.rs`). Already in the tree via
+# mls-rs-crypto-rustcrypto; named here so the version is pinned where it is used.
+x25519-dalek = { version = "2", features = ["static_secrets"] }
 
 # Entropy on wasm32 has no OS underneath, so getrandom needs an explicit
 # backend. Both major versions are in the tree (rand 0.8 pulls 0.2, newer

@@ -229,6 +229,52 @@ export const ResetPassword = z.object({
 export type ResetPassword = z.infer<typeof ResetPassword>;
 
 // ---------------------------------------------------------------------------
+// Adding a device from one you are holding (`docs/03` §3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The convenient path: nothing typed.
+ *
+ * A new device shows a QR carrying a single-use transfer key; an existing one
+ * scans it, confirms a fingerprint, and sends the account key sealed to that
+ * key. **Possession of an enrolled device is itself the second factor**, which
+ * is why this path does not ask for one.
+ *
+ * The IdP relays and cannot read: what crosses it is sealed under a key it
+ * never had, and it holds the bytes for minutes rather than indefinitely.
+ */
+export const OpenChannel = z.object({
+  /** The new device's single-use transfer public key, base64. */
+  transferPub: z.string().base64().max(64),
+});
+export type OpenChannel = z.infer<typeof OpenChannel>;
+
+export const OpenChannelResponse = z.object({
+  channel: z.string().min(8).max(128),
+  /** When it stops existing. Short — a QR on a screen is not a durable thing. */
+  expiresAt: z.number().int(),
+});
+export type OpenChannelResponse = z.infer<typeof OpenChannelResponse>;
+
+/** What the existing device posts, once the person has confirmed. */
+export const DeliverToChannel = z.object({
+  /** The account key sealed to the transfer key. Opaque to the IdP. */
+  sealed: z.string().base64().max(4096),
+  /** The new device's certificate, signed by the account key. */
+  deviceCert: z.string().base64().max(4096),
+  accountPub: AccountId,
+  handle: z.string().min(1).max(64),
+});
+export type DeliverToChannel = z.infer<typeof DeliverToChannel>;
+
+/** What the new device polls for. `null` until the other side has answered. */
+export const ChannelContents = z.object({
+  transferPub: z.string().base64().max(64),
+  delivery: DeliverToChannel.nullable(),
+});
+export type ChannelContents = z.infer<typeof ChannelContents>;
+
+// ---------------------------------------------------------------------------
 // Second factors
 // ---------------------------------------------------------------------------
 

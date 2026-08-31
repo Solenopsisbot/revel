@@ -53,6 +53,7 @@ use mls_rs_crypto_rustcrypto::RustCryptoProvider;
 use wasm_bindgen::prelude::*;
 
 use crate::envelope;
+use crate::transfer;
 use crate::{
     device::DeviceCert,
     identity::DeviceCertIdentityProvider,
@@ -975,5 +976,53 @@ impl Envelope {
     #[wasm_bindgen(js_name = generateSalt)]
     pub fn generate_salt() -> Vec<u8> {
         envelope::generate_salt().to_vec()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Handing an account key to a device you are holding (`docs/03` §3)
+// ---------------------------------------------------------------------------
+
+/// The single-use transfer key behind the QR device-add flow.
+#[wasm_bindgen]
+pub struct Transfer;
+
+#[wasm_bindgen]
+impl Transfer {
+    /// A fresh single-use keypair. The secret never leaves the new device.
+    #[wasm_bindgen(js_name = generateKey)]
+    pub fn generate_key() -> Vec<u8> {
+        transfer::generate_transfer_key().0.to_vec()
+    }
+
+    /// The public half. Goes in the QR.
+    #[wasm_bindgen(js_name = publicKey)]
+    pub fn public_key(secret: &[u8]) -> Result<Vec<u8>, JsError> {
+        let secret: [u8; 32] = secret.try_into().map_err(|_| JsError::new("bad transfer key"))?;
+        Ok(transfer::transfer_public(&secret).to_vec())
+    }
+
+    /// Seal the account key to a transfer public key, on the existing device.
+    #[wasm_bindgen(js_name = seal)]
+    pub fn seal(recipient: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, JsError> {
+        let recipient: [u8; 32] =
+            recipient.try_into().map_err(|_| JsError::new("bad transfer key"))?;
+        Ok(transfer::seal_to(&recipient, plaintext))
+    }
+
+    /// Open it, on the new device.
+    #[wasm_bindgen(js_name = open)]
+    pub fn open(secret: &[u8], sealed: &[u8]) -> Result<Vec<u8>, JsError> {
+        let secret: [u8; 32] = secret.try_into().map_err(|_| JsError::new("bad transfer key"))?;
+        transfer::open_with(&secret, sealed)
+            .map(|v| v.to_vec())
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// The fingerprint both screens show, so a swapped QR is visible.
+    #[wasm_bindgen(js_name = fingerprint)]
+    pub fn fingerprint(public: &[u8]) -> Result<String, JsError> {
+        let public: [u8; 32] = public.try_into().map_err(|_| JsError::new("bad transfer key"))?;
+        Ok(transfer::fingerprint(&public))
     }
 }

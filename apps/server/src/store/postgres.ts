@@ -46,6 +46,7 @@ import type {
   Challenge,
   ClaimedPackage,
   Device,
+  EnrolChannel,
   Enrolment,
   Group,
   GroupMember,
@@ -444,6 +445,7 @@ export class PostgresStore implements Store {
     // Login sessions leak the same way and for the same reason: an abandoned
     // sign-in never finishes, so nothing ever reads the row that would clear it.
     await this.sql`DELETE FROM login_sessions WHERE expires_at < ${now}`;
+    await this.sql`DELETE FROM enrol_channels WHERE expires_at < ${now}`;
     return { challenges: challenges.count, sessions: sessions.count };
   }
 
@@ -1143,6 +1145,51 @@ export class PostgresStore implements Store {
       expiresAt: num(row.expires_at),
     };
     return session.expiresAt < Date.now() ? null : session;
+  }
+
+  #channel(row: Row): EnrolChannel {
+    return {
+      transferPub: row.transfer_pub as string,
+      delivery: (row.delivery as string | null) ?? null,
+      expiresAt: num(row.expires_at),
+    };
+  }
+
+  async putChannel(id: string, channel: EnrolChannel): Promise<void> {
+    await this.sql`
+      INSERT INTO enrol_channels (id, transfer_pub, delivery, expires_at)
+      VALUES (${id}, ${channel.transferPub}, ${channel.delivery}, ${channel.expiresAt})
+      ON CONFLICT (id) DO NOTHING`;
+  }
+
+  async getChannel(id: string): Promise<EnrolChannel | null> {
+    const [row] = await this.sql`SELECT * FROM enrol_channels WHERE id = ${id}`;
+    if (!row) return null;
+    const channel = this.#channel(row);
+    if (channel.expiresAt < Date.now()) {
+      await this.sql`DELETE FROM enrol_channels WHERE id = ${id}`;
+      return null;
+    }
+    return channel;
+  }
+
+  async deliverChannel(id: string, delivery: string): Promise<boolean> {
+    // `delivery IS NULL` in the WHERE, so this is once and only once: a channel
+    // that accepted a second delivery would let anybody who saw the QR
+    // overwrite what the real device sent.
+    const [row] = await this.sql`
+      UPDATE enrol_channels SET delivery = ${delivery}
+      WHERE id = ${id} AND delivery IS NULL AND expires_at >= ${Date.now()}
+      RETURNING id`;
+    return !!row;
+  }
+
+  async takeChannel(id: string): Promise<EnrolChannel | null> {
+    const channel = await this.getChannel(id);
+    // Deleted only once there is something to take, so polling before the other
+    // device has answered does not destroy the channel it is waiting on.
+    if (channel?.delivery) await this.sql`DELETE FROM enrol_channels WHERE id = ${id}`;
+    return channel;
   }
 
   async getTotp(accountPub: string): Promise<TotpSecret | null> {

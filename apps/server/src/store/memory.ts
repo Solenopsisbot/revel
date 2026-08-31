@@ -7,6 +7,7 @@ import type {
   Challenge,
   ClaimedPackage,
   Device,
+  EnrolChannel,
   Enrolment,
   Group,
   GroupMember,
@@ -596,6 +597,37 @@ export class MemoryStore implements Store {
     this.loginSessions.delete(id);
     if (!session) return null;
     return session.expiresAt < Date.now() ? null : session;
+  }
+
+  channels = new Map<string, EnrolChannel>();
+
+  async putChannel(id: string, channel: EnrolChannel) {
+    this.channels.set(id, channel);
+  }
+
+  async getChannel(id: string) {
+    const channel = this.channels.get(id);
+    if (!channel) return null;
+    if (channel.expiresAt < Date.now()) {
+      this.channels.delete(id);
+      return null;
+    }
+    return channel;
+  }
+
+  async deliverChannel(id: string, delivery: string) {
+    const channel = await this.getChannel(id);
+    // Once. A channel that accepted a second delivery would let anybody who
+    // saw the QR overwrite what the real device sent.
+    if (!channel || channel.delivery) return false;
+    this.channels.set(id, { ...channel, delivery });
+    return true;
+  }
+
+  async takeChannel(id: string) {
+    const channel = await this.getChannel(id);
+    if (channel?.delivery) this.channels.delete(id);
+    return channel;
   }
 
   async getTotp(accountPub: string) {

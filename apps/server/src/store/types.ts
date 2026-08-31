@@ -405,6 +405,20 @@ export interface Store {
   /** Single use — taken, not read, for the same reason a challenge is. */
   takeLoginSession(id: string): Promise<LoginSession | null>;
 
+  /**
+   * A device-handoff channel (`docs/03` §3's convenient case).
+   *
+   * The IdP relays and cannot read: what crosses it is sealed under a key it
+   * never had. Short-lived, because a QR on a screen is not a durable thing —
+   * and because a channel that outlived the moment would be a place to leave
+   * something for a device that never came.
+   */
+  putChannel(id: string, channel: EnrolChannel): Promise<void>;
+  getChannel(id: string): Promise<EnrolChannel | null>;
+  /** Delivered exactly once, then gone. */
+  deliverChannel(id: string, delivery: string): Promise<boolean>;
+  takeChannel(id: string): Promise<EnrolChannel | null>;
+
   /** The account's second factor, if it has one. */
   getTotp(accountPub: string): Promise<TotpSecret | null>;
   putTotp(accountPub: string, secret: TotpSecret): Promise<void>;
@@ -440,6 +454,14 @@ export interface LoginSession {
   handle: string;
   /** The server's half of the OPAQUE exchange, base64. */
   state: string;
+  expiresAt: number;
+}
+
+export interface EnrolChannel {
+  /** The new device's single-use transfer public key, base64. */
+  transferPub: string;
+  /** What the existing device delivered, JSON, or null while waiting. */
+  delivery: string | null;
   expiresAt: number;
 }
 

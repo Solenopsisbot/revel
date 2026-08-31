@@ -16,11 +16,13 @@ pub mod envelope;
 pub mod ffi;
 pub mod identity;
 pub mod store;
+pub mod transfer;
 /// Web FFI surface (wasm-bindgen). Native platforms reach the same core
 /// through UniFFI instead — see `ffi`.
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 pub use device::{CertError, DeviceCert};
 pub use envelope::{EnvelopeError, Wrap};
+pub use transfer::TransferError;
 pub use identity::{DeviceCertIdentityProvider, IdentityError};
 pub use store::{LocalGroupStore, LocalKeyPackageStore, StoreError};

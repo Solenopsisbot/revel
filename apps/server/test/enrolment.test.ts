@@ -427,6 +427,134 @@ describe('recovering', () => {
   });
 });
 
+describe('adding a device from one you are holding', () => {
+  const TRANSFER_PUB = btoa('a-single-use-transfer-public-key');
+
+  beforeEach(async () => {
+    await register('viola', 'pw');
+  });
+
+  it('relays a sealed key from the old device to the new one', async () => {
+    // `docs/03` §3's convenient case. Possession of an enrolled device is the
+    // second factor, which is why nothing here asks for a code.
+    const opened = await post('/idp/enrol/channel', { transferPub: TRANSFER_PUB });
+    expect(opened.status).toBe(201);
+    const { channel } = await opened.json();
+
+    // Nothing there yet, and polling must not destroy the channel.
+    const waiting = await app.request(`/idp/enrol/channel/${channel}`);
+    expect((await waiting.json()).delivery).toBeNull();
+
+    actor = { accountId: ACCOUNT, devicePub: 'old-device' };
+    const delivery = {
+      sealed: btoa('the account key, sealed to the transfer key'),
+      deviceCert: CERT,
+      accountPub: ACCOUNT,
+      handle: 'viola',
+    };
+    const sent = await post(`/idp/enrol/channel/${channel}`, delivery);
+    expect(sent.status).toBe(204);
+
+    const arrived = await app.request(`/idp/enrol/channel/${channel}`);
+    expect((await arrived.json()).delivery).toEqual(delivery);
+  });
+
+  it('opens a channel without credentials, because the new device has none', () => {
+    // The whole point: the new device has nothing yet — that is what it is here
+    // to get. What stops this being useful to a stranger is that nothing
+    // arrives unless somebody with an enrolled device confirms.
+    actor = null;
+    return post('/idp/enrol/channel', { transferPub: TRANSFER_PUB }).then((res) =>
+      expect(res.status).toBe(201),
+    );
+  });
+
+  it('refuses a delivery from somebody not signed in', async () => {
+    const { channel } = await (
+      await post('/idp/enrol/channel', { transferPub: TRANSFER_PUB })
+    ).json();
+    actor = null;
+    const sent = await post(`/idp/enrol/channel/${channel}`, {
+      sealed: btoa('x'),
+      deviceCert: CERT,
+      accountPub: ACCOUNT,
+      handle: 'viola',
+    });
+    expect(sent.status).toBe(401);
+  });
+
+  it('refuses a delivery for an account that is not the sender own', async () => {
+    // **The one that matters.** Without this check any signed-in device could
+    // push its own account key into somebody else's pending channel — enrolling
+    // *their* new device into *your* account, with no way for them to notice.
+    const { channel } = await (
+      await post('/idp/enrol/channel', { transferPub: TRANSFER_PUB })
+    ).json();
+    actor = { accountId: 'c29tZWJvZHktZWxzZQ', devicePub: 'their-device' };
+
+    const sent = await post(`/idp/enrol/channel/${channel}`, {
+      sealed: btoa('my key, in your channel'),
+      deviceCert: CERT,
+      accountPub: ACCOUNT,
+      handle: 'viola',
+    });
+    expect(sent.status).toBe(403);
+
+    const still = await app.request(`/idp/enrol/channel/${channel}`);
+    expect((await still.json()).delivery).toBeNull();
+  });
+
+  it('accepts exactly one delivery', async () => {
+    // A channel that took a second would let anybody who saw the QR overwrite
+    // what the real device sent.
+    const { channel } = await (
+      await post('/idp/enrol/channel', { transferPub: TRANSFER_PUB })
+    ).json();
+    actor = { accountId: ACCOUNT, devicePub: 'old-device' };
+    const body = {
+      sealed: btoa('first'),
+      deviceCert: CERT,
+      accountPub: ACCOUNT,
+      handle: 'viola',
+    };
+
+    expect((await post(`/idp/enrol/channel/${channel}`, body)).status).toBe(204);
+    const second = await post(`/idp/enrol/channel/${channel}`, {
+      ...body,
+      sealed: btoa('second'),
+    });
+    expect(second.status).toBe(404);
+  });
+
+  it('is gone once the new device has taken it', async () => {
+    const { channel } = await (
+      await post('/idp/enrol/channel', { transferPub: TRANSFER_PUB })
+    ).json();
+    actor = { accountId: ACCOUNT, devicePub: 'old-device' };
+    await post(`/idp/enrol/channel/${channel}`, {
+      sealed: btoa('x'),
+      deviceCert: CERT,
+      accountPub: ACCOUNT,
+      handle: 'viola',
+    });
+
+    expect((await app.request(`/idp/enrol/channel/${channel}`)).status).toBe(200);
+    // Consumed. The sealed key does not sit at the IdP after it has arrived.
+    expect((await app.request(`/idp/enrol/channel/${channel}`)).status).toBe(404);
+  });
+
+  it('tells the new device when the QR stops being good', async () => {
+    // Five minutes: long enough to find the other device and unlock it, short
+    // enough that a QR left on a screen in a café stops being an invitation.
+    // The *expiry itself* is a store behaviour and is tested there, where the
+    // clock can actually be driven.
+    const { expiresAt } = await (
+      await post('/idp/enrol/channel', { transferPub: TRANSFER_PUB })
+    ).json();
+    expect(expiresAt - clock).toBe(5 * 60_000);
+  });
+});
+
 describe('the second factor', () => {
   beforeEach(async () => {
     await register('viola', 'pw');

@@ -29,8 +29,10 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import {
+  DeliverToChannel,
   LoginFinish,
   LoginStart,
+  OpenChannel,
   RecoverFinish,
   RecoverStart,
   RegisterFinish,
@@ -322,6 +324,75 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     await deps.store.putRegistrationRecord(enrolment.accountPub, body.data.record);
     await deps.store.putWrap(enrolment.accountPub, { kind: 'password', blob: body.data.wrap });
     return c.json({ ok: true });
+  });
+
+  // -------------------------------------------------------------------------
+  // Adding a device from one you are holding (`docs/03` §3)
+  // -------------------------------------------------------------------------
+
+  /**
+   * How long a QR is good for.
+   *
+   * Five minutes: long enough to find the other device and unlock it, short
+   * enough that a QR left on a screen in a café stops being an invitation. A
+   * channel that outlived the moment would be somewhere to leave something for
+   * a device that never came.
+   */
+  const CHANNEL_MS = 5 * 60_000;
+
+  app.post('/idp/enrol/channel', async (c) => {
+    const body = OpenChannel.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+
+    // **Unauthenticated, deliberately.** The whole point is that the new device
+    // has no credentials yet — that is what it is here to get. What stops this
+    // being useful to a stranger is that nothing arrives unless somebody with
+    // an enrolled device scans the QR and taps confirm.
+    const channel = deps.newId();
+    const expiresAt = now() + CHANNEL_MS;
+    await deps.store.putChannel(channel, {
+      transferPub: body.data.transferPub,
+      delivery: null,
+      expiresAt,
+    });
+    return c.json({ channel, expiresAt }, 201);
+  });
+
+  app.get('/idp/enrol/channel/:id', async (c) => {
+    // Polled by the new device. `takeChannel` only consumes once there is
+    // something to take, so polling before the other side has answered does not
+    // destroy the channel it is waiting on.
+    const channel = await deps.store.takeChannel(c.req.param('id'));
+    if (!channel) return c.json({ error: 'no_such_channel' }, 404);
+    return c.json({
+      transferPub: channel.transferPub,
+      delivery: channel.delivery ? JSON.parse(channel.delivery) : null,
+    });
+  });
+
+  app.post('/idp/enrol/channel/:id', async (c) => {
+    // Posted by the *existing* device, which is signed in. Possession of an
+    // enrolled device is the second factor here (`docs/03` §3), which is why
+    // this path never asks for a code.
+    const actor = await deps.authenticate?.(c.req.raw);
+    if (!actor) return c.json({ error: 'unauthenticated' }, 401);
+
+    const body = DeliverToChannel.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+
+    // The account being handed over has to be the one doing the handing. Without
+    // this, any signed-in device could push its own account key into somebody
+    // else's pending channel — which would enrol *their* new device into *your*
+    // account, and the person holding it would have no way to notice.
+    if (body.data.accountPub !== actor.accountId) {
+      return c.json({ error: 'wrong_account' }, 403);
+    }
+
+    const delivered = await deps.store.deliverChannel(c.req.param('id'), JSON.stringify(body.data));
+    // Once. A channel that accepted a second delivery would let anybody who saw
+    // the QR overwrite what the real device sent.
+    if (!delivered) return c.json({ error: 'no_such_channel' }, 404);
+    return c.body(null, 204);
   });
 
   // -------------------------------------------------------------------------

@@ -701,6 +701,45 @@ export function describeStore(name: string, harness: StoreHarness): void {
         expect(await store.takeLoginSession(id)).toBeNull();
       });
 
+      it('relays a handoff exactly once, then forgets it', async () => {
+        // The IdP relays and cannot read — what crosses is sealed under a key it
+        // never had. What it *must* get right is the counting: once in, once
+        // out, and gone.
+        const id = uniq('chan');
+        await store.putChannel(id, {
+          transferPub: 'dHJhbnNmZXI',
+          delivery: null,
+          expiresAt: Date.now() + 60_000,
+        });
+
+        // Polling before the other side answers must not destroy the channel
+        // the new device is waiting on.
+        expect((await store.takeChannel(id))?.delivery).toBeNull();
+        expect((await store.takeChannel(id))?.transferPub).toBe('dHJhbnNmZXI');
+
+        expect(await store.deliverChannel(id, '{"sealed":"x"}')).toBe(true);
+        // Once. A second delivery would let anybody who saw the QR overwrite
+        // what the real device sent.
+        expect(await store.deliverChannel(id, '{"sealed":"y"}')).toBe(false);
+
+        expect((await store.takeChannel(id))?.delivery).toBe('{"sealed":"x"}');
+        // Consumed: the sealed key does not sit at the IdP after it arrives.
+        expect(await store.takeChannel(id)).toBeNull();
+      });
+
+      it('lets a channel expire, because a QR is not a durable thing', async () => {
+        const id = uniq('chan');
+        await store.putChannel(id, {
+          transferPub: 'dHJhbnNmZXI',
+          delivery: null,
+          expiresAt: Date.now() - 1,
+        });
+        expect(await store.getChannel(id)).toBeNull();
+        // And an expired one cannot be delivered into, or a stale QR would stay
+        // an invitation indefinitely.
+        expect(await store.deliverChannel(id, '{}')).toBe(false);
+      });
+
       it('stores a second factor, unconfirmed until it is confirmed', async () => {
         // An enrolment that gated logins before a correct code proved the app
         // was actually set up would lock somebody out with a typo.

@@ -59,6 +59,7 @@ if (url) {
     'wraps',
     'login_sessions',
     'totp_secrets',
+    'enrol_channels',
   ];
 
   await store.migrate();
