@@ -314,3 +314,40 @@ export function roomStateOf(
     nameAt: undefined,
   } as unknown as RoomState;
 }
+
+// ---------------------------------------------------------------------------
+// The other direction: a real `Message`, as this UI renders them
+// ---------------------------------------------------------------------------
+
+/**
+ * A core `Message` in the shape the components read.
+ *
+ * The two are nearly the same — `UiMessage` is `Message` plus the fields the
+ * fixtures exercise that the protocol has not grown — so this adds the two that
+ * are genuinely missing and is honest about the one it cannot fill.
+ */
+export function fromCoreMessage(m: Message): UiMessage {
+  return {
+    ...m,
+    ...(m.reactions
+      ? {
+          reactions: m.reactions.map((r) => ({
+            key: r.key,
+            accounts: r.accounts,
+            // **Empty, and not guessable.** A reaction is by *account*
+            // (`docs/04` §2) because a reaction is a person's and a face is a
+            // presentation of one. Which face somebody was wearing when they
+            // reacted is not on the wire, so the hover tooltip shows accounts
+            // for real rooms and faces for fixtures — rather than this
+            // inventing an answer that would be wrong the moment anybody used
+            // two faces in a room.
+            faces: [],
+          })),
+        }
+      : {}),
+    // Narrowed once, here. A real body is a node tree; every renderer today
+    // handles strings, and the day one is not a string this is the line that
+    // has to grow a renderer rather than twenty components.
+    text: typeof m.body === 'string' ? m.body : '',
+  } as UiMessage;
+}

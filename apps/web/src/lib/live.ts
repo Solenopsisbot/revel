@@ -26,7 +26,6 @@
  * This is the other one, chosen at runtime — see `session.svelte.ts`.
  */
 
-import type { Session } from '@revel/core';
 import {
   Attachments,
   GroupSync,
@@ -36,11 +35,14 @@ import {
   IndexedDbStore,
   LiveCore,
   RoomSync,
+  refOf,
+  type Session,
   type SocketLike,
   toAccountId,
   WebSocketStream,
 } from '@revel/core';
 import { LocalCryptoEngine } from '@revel/crypto';
+import { myFaces } from './faces.svelte.js';
 
 /** Where the Host lives. Same origin in dev, behind the vite proxy. */
 const HOST = import.meta.env.VITE_HOST_URL ?? '';
@@ -220,6 +222,13 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
     transport,
     stream,
     attachments: new Attachments({ transport }),
+    // Which face speaks in a room. Asked per send rather than captured here,
+    // because the answer is per room and changes while the app runs — and
+    // because the book belongs to the session, not to the sync engines.
+    faceFor: (roomId) => {
+      const face = myFaces.speaking(roomId);
+      return face ? refOf(face) : undefined;
+    },
   });
 
   return {

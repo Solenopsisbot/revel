@@ -10,12 +10,14 @@ import CommandBar from '$lib/command/CommandBar.svelte';
 import { contextMenu } from '$lib/contextmenu.svelte.js';
 import { applyUrl, syncUrl } from '$lib/deeplink.js';
 import { drawers } from '$lib/drawers.svelte.js';
+import { myFaces } from '$lib/faces.svelte.js';
 import { connection } from '$lib/fake/connection.svelte.js';
 import { conversation } from '$lib/fake/conversation.svelte.js';
 import { core, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
 import type { NotifyLevel } from '$lib/fake/data.js';
 import Icon from '$lib/Icon.svelte';
 import { layout } from '$lib/layout.svelte.js';
+import { live } from '$lib/live.svelte.js';
 import MessageList from '$lib/MessageList.svelte';
 import { lightbox } from '$lib/media/lightbox.svelte.js';
 import { memberMenu, roomMenu, spaceMenu } from '$lib/menus.js';
@@ -85,6 +87,22 @@ if (Number.isFinite(seed) && seed > 0) {
     body: `message ${i} — ${'the quick brown fox '.repeat(1 + (i % 4))}`,
     at: base + i * 1000,
   }));
+}
+
+/**
+ * `?e2e=1` publishes the app's own singletons on `window`.
+ *
+ * Not a convenience: a browser test that reaches for a module by URL gets a
+ * *different instance* than the app, because Vite serves `…svelte.ts` and
+ * `…svelte.js` as separate module records and the app's specifier resolves to
+ * one of them. Two copies of `core` look identical, respond to writes, and
+ * render nothing — which cost an hour before it was noticed.
+ *
+ * Publishing what the component actually holds removes the question entirely.
+ * Gated so it never exists in an ordinary session.
+ */
+if (page.url.searchParams.has('e2e')) {
+  (window as unknown as Record<string, unknown>).__revel = { core, live, session, myFaces };
 }
 
 const demo = page.url.searchParams.has('demo');

@@ -35,6 +35,12 @@ class DeviceSession {
         const { myFaces } = await import('./faces.svelte.js');
         await myFaces.load(this.current.accountPub);
 
+        // The real core. Floating on purpose: it opens a socket and a database
+        // and talks to a Host, and none of that may stop the app rendering —
+        // `live.error` is what the connection banner reads if it fails.
+        const { live } = await import('./live.svelte.js');
+        void live.start(this.current);
+
         // A device token, so this device can act at the Host. Floating on
         // purpose: a Host that is unreachable must not stop the app opening —
         // everything local still works, and the token is retried on next use.
@@ -59,6 +65,8 @@ class DeviceSession {
     const { clearSession } = await import('@revel/core');
     const { forgetDeviceToken } = await import('./identity.js');
     const { myFaces } = await import('./faces.svelte.js');
+    const { live } = await import('./live.svelte.js');
+    await live.stop();
     await clearSession();
     forgetDeviceToken();
     myFaces.forget();

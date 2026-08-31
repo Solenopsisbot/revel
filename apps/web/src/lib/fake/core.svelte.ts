@@ -10,6 +10,7 @@
 import { newFaceId, resolveSetting } from '@revel/core';
 import { untoned } from '../emoji.js';
 import { myFaces } from '../faces.svelte.js';
+import { live } from '../live.svelte.js';
 import {
   account,
   type Dm,
@@ -715,6 +716,25 @@ class Core {
     if (!this.postedIn.includes(this.currentRoomId)) {
       this.postedIn = [...this.postedIn, this.currentRoomId];
     }
+
+    // The real core when one is running. It does its own optimistic insert —
+    // `addPending` puts the message on screen before it encrypts, which is the
+    // 16 ms budget `docs/29` §5 sets and the reason `send` is ordered the way
+    // it is — so this must not also make a fixture row, or the message appears
+    // twice and one of them never resolves.
+    if (live.running) {
+      const room = this.currentRoomId;
+      const replyTo = thread ? undefined : (this.replyTo ?? undefined);
+      void live
+        .stack!.core.conversation.send(room, trimmed, {
+          ...(replyTo ? { replyTo } : {}),
+          ...(thread ? { thread } : {}),
+        })
+        .catch((err: unknown) => console.error('send failed', err));
+      this.replyTo = null;
+      return;
+    }
+
     const id = `local-${crypto.randomUUID()}`;
     const list = this.messages[this.currentRoomId] ?? [];
     list.push({

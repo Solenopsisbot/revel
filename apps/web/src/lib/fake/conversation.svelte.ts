@@ -13,10 +13,13 @@
  * how they are written — which is the property that lets the same components
  * sit on `LiveCore` later, where the reactivity comes from `watch()` instead.
  */
+
+import { live } from '../live.svelte.js';
 import { core } from './core.svelte.js';
 import {
   allOf,
   findIn,
+  fromCoreMessage,
   repliesOf,
   roomStateOf,
   type ThreadSummary,
@@ -30,6 +33,17 @@ import {
 
 export { asCoreMessage, type ThreadSummary, type UiMessage } from './messageShape.js';
 
+/**
+ * The live room, when a signed-in device is running the real core.
+ *
+ * `null` means fixtures — which is every screen reachable without an account,
+ * and is not a degraded mode. The two are different sources of truth and the
+ * seam is where they are told apart, exactly as `docs/33` intended.
+ */
+function liveRoom(roomId: string) {
+  return live.running ? live.room(roomId) : null;
+}
+
 export const conversation = {
   /**
    * The room timeline, newest last.
@@ -39,16 +53,31 @@ export const conversation = {
    * scales with how long the conversation has been going.
    */
   timeline(roomId: string = core.currentRoomId, limit?: number): UiMessage[] {
+    const room = liveRoom(roomId);
+    if (room) {
+      // `timeline` on the core already excludes thread replies, which is the
+      // same rule `timelineOf` applies to the fixtures (`docs/16`: a thread is
+      // a branch inside a room, not part of its main line).
+      const all = live.stack!.core.conversation.timeline(roomId);
+      const wanted = limit === undefined ? all : all.slice(Math.max(0, all.length - limit));
+      return wanted.map(fromCoreMessage);
+    }
     return timelineOf(core.messages[roomId] ?? [], core.faces, limit);
   },
 
   /** How many the timeline has, without building any of them. */
   count(roomId: string = core.currentRoomId): number {
+    const room = liveRoom(roomId);
+    if (room) return live.stack!.core.conversation.timeline(roomId).length;
     return timelineCount(core.messages[roomId] ?? []);
   },
 
   /** Where a message sits in it, or -1. For widening the window to reach one. */
   position(messageId: string, roomId: string = core.currentRoomId): number {
+    const room = liveRoom(roomId);
+    if (room) {
+      return live.stack!.core.conversation.timeline(roomId).findIndex((m) => m.id === messageId);
+    }
     return timelinePosition(core.messages[roomId] ?? [], messageId);
   },
 
@@ -61,6 +90,11 @@ export const conversation = {
   },
 
   find(messageId: string, roomId: string = core.currentRoomId): UiMessage | undefined {
+    const room = liveRoom(roomId);
+    if (room) {
+      const found = room.byId.get(messageId);
+      return found ? fromCoreMessage(found) : undefined;
+    }
     return findIn(core.messages[roomId] ?? [], core.faces, messageId);
   },
 

@@ -43,12 +43,15 @@ await page.waitForFunction(
 await page.getByRole('button', { name: 'Continue' }).click();
 await page.waitForSelector('text=YOUR RECOVERY CODE', { timeout: 60000 });
 
-await page.goto(`${APP}/app`, { waitUntil: 'load' });
+// `?e2e=1` publishes the app's own singletons — importing them by URL gets a
+// different module instance, which looks identical and is not the one the UI
+// renders from.
+await page.goto(`${APP}/app?e2e=1`, { waitUntil: 'load' });
 await page.waitForTimeout(3000);
 
 // ---------------------------------------------------------------------------
 const fresh = await page.evaluate(async () => {
-  const { myFaces } = await import('/src/lib/faces.svelte.ts');
+  const { myFaces } = window.__revel;
   return {
     live: myFaces.live,
     count: myFaces.book.faces.length,
@@ -61,7 +64,7 @@ ok('and starts with no faces, rather than fixtures', fresh.count === 0, fresh);
 // ---------------------------------------------------------------------------
 console.log('\ncreating a face');
 const made = await page.evaluate(async () => {
-  const { myFaces } = await import('/src/lib/faces.svelte.ts');
+  const { myFaces } = window.__revel;
   const face = await myFaces.create('Ash', { colour: 'aqua', pronouns: 'they/them' });
   return { face, count: myFaces.book.faces.length, primary: myFaces.book.primary };
 });
@@ -74,10 +77,13 @@ ok('its id is a snowflake the wire will accept', /^\d{1,20}$/.test(made.face.id)
 
 // ---------------------------------------------------------------------------
 console.log('\nacross a reload');
-await page.goto(`${APP}/app`, { waitUntil: 'load' });
+// `?e2e=1` publishes the app's own singletons — importing them by URL gets a
+// different module instance, which looks identical and is not the one the UI
+// renders from.
+await page.goto(`${APP}/app?e2e=1`, { waitUntil: 'load' });
 await page.waitForTimeout(3000);
 const after = await page.evaluate(async () => {
-  const { myFaces } = await import('/src/lib/faces.svelte.ts');
+  const { myFaces } = window.__revel;
   return {
     live: myFaces.live,
     faces: myFaces.book.faces.map((f) => ({ id: f.id, name: f.name, pronouns: f.pronouns })),
@@ -94,7 +100,7 @@ ok('and the same id', after.faces[0]?.id === made.face.id);
 // ---------------------------------------------------------------------------
 console.log('\nchoosing per room');
 const chosen = await page.evaluate(async () => {
-  const { myFaces } = await import('/src/lib/faces.svelte.ts');
+  const { myFaces } = window.__revel;
   const june = await myFaces.create('June', { colour: 'mint' });
   await myFaces.speak('room-a', june.id);
   return {
@@ -112,11 +118,10 @@ ok('and does not leak into another room', chosen.inB === 'Ash', chosen);
 // ---------------------------------------------------------------------------
 console.log('\nthe fixtures still work without an account');
 const demo = await context.newPage();
-await demo.goto(`${APP}/app?demo=1`, { waitUntil: 'load' });
+await demo.goto(`${APP}/app?demo=1&e2e=1`, { waitUntil: 'load' });
 await demo.waitForTimeout(2000);
 const fixtures = await demo.evaluate(async () => {
-  const { myFaces } = await import('/src/lib/faces.svelte.ts');
-  const { core } = await import('/src/lib/fake/core.svelte.ts');
+  const { myFaces, core } = window.__revel;
   return { live: myFaces.live, names: core.myFaces.map((f) => f.name) };
 });
 ok('demo mode is not live', !fixtures.live, fixtures);
