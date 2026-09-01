@@ -184,7 +184,7 @@ class Core {
 
   /** Who is typing here. Omit `thread` for the room itself. */
   typing(roomId = this.currentRoomId, thread?: string): string[] {
-    if (live.running) {
+    if (!this.demo) {
       // Face ids, because that is what the indicator renders. A typing notice
       // carries the face its sender is wearing (`docs/03` §7), so somebody
       // typing as Ash shows as Ash rather than as an account nobody recognises
@@ -283,7 +283,7 @@ class Core {
    * `this.faces` as they always did.
    */
   typingNames(roomId = this.currentRoomId, thread?: string): string[] {
-    if (live.running) {
+    if (!this.demo) {
       return live
         .typingIn(roomId, thread)
         .map((who) => who.face?.name)
@@ -434,7 +434,16 @@ class Core {
     if (this.demo) return this.accountSeed;
     return {
       ...this.accountSeed,
-      recoveryCodeConfirmed: recoveryConfirmed(),
+      // Always true, which silences the notice.
+      //
+      // Wren nagging about the recovery code is the wrong shape for it: the
+      // code is shown once, at sign-up, on a screen whose entire job is to say
+      // save this. Somebody who scrolled past it is not going to be rescued by
+      // a card in a panel days later, and somebody who *did* save it gets told
+      // off for nothing — there is no way for this device to know which.
+      // `docs/13` §5 reserves her interruptions for things that are both true
+      // and actionable, and this is neither.
+      recoveryCodeConfirmed: true,
       // Knowable in principle, not wired: whether a passkey wrap is registered
       // is a question for the IdP. Claiming "no passkey" would nag somebody who
       // has one, and claiming one exists would be worse.
@@ -1318,6 +1327,40 @@ class Core {
   }
 
   /**
+   * Open a group DM with several people.
+   *
+   * Not idempotent, deliberately (`rooms.ts`): two group DMs with the same
+   * people are two different conversations, which is what somebody starting a
+   * second one means by it. A 1:1 DM is the opposite — its id is derived from
+   * the pair — so one name goes to `startDm` rather than making a group of two.
+   */
+  async startGroup(addresses: string[]): Promise<{ room?: string; error?: string }> {
+    if (!live.running) return { error: 'not_signed_in' };
+    const handles = addresses.map((a) => a.trim().replace(/^@/, '')).filter(Boolean);
+    if (handles.length === 0) return { error: 'no_handle' };
+    if (handles.length === 1) return this.startDm(handles[0] as string);
+
+    try {
+      const accounts: string[] = [];
+      for (const handle of handles) {
+        // One at a time so the error names the person who could not be found,
+        // rather than failing the whole group anonymously.
+        const who = await live.stack!.core.identity.resolve(handle).catch(() => null);
+        if (!who) return { error: `no_such_account:${handle}` };
+        accounts.push(who.id);
+      }
+      const room = await live.stack!.core.directory.openGroupRoom(accounts);
+      await live.refreshRooms();
+      this.openHome(room.id);
+      return { room: room.id };
+    } catch (err) {
+      console.error('could not start a group conversation', err);
+      const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
+      return { error: code || 'unreachable' };
+    }
+  }
+
+  /**
    * Set or clear a room's override. `undefined` returns it to inheriting.
    *
    * Keeps the fixture room in step so the reference screens still read right,
@@ -1516,10 +1559,11 @@ class Core {
 
   /** Someone else typing, so the indicator has something to show. */
   simulateTyping(faceId: string, ms = 3200, thread?: string) {
-    // Fixture theatre. In a real conversation the only thing that should make
-    // an indicator appear is somebody actually typing, so this is off the
-    // moment there is a real room behind the screen.
-    if (live.running) return;
+    // Fixture theatre, and keyed on **who you are** rather than on whether the
+    // core happens to be up. `live.running` is false when `live.start()` fails
+    // — an unreachable Host, a bad token — and a signed-in account watching its
+    // connection banner should not also be told that Rae is typing.
+    if (!this.demo) return;
     const key = thread ? `${this.currentRoomId}/${thread}` : this.currentRoomId;
     const here = this.typingIn[key] ?? [];
     if (!here.includes(faceId)) this.typingIn[key] = [...here, faceId];
@@ -1561,20 +1605,5 @@ const EMPTY_SPACE: Space = {
   bans: [],
   purges: [],
 };
-
-/**
- * Whether this device has confirmed saving a recovery code.
- *
- * Local and per device on purpose: the question Wren is asking is "does the
- * person holding *this* browser have a way back in", and an account-level flag
- * would answer for a laptop she is not looking at.
- */
-function recoveryConfirmed(): boolean {
-  try {
-    return globalThis.localStorage?.getItem('revel:recovery-saved') === '1';
-  } catch {
-    return false;
-  }
-}
 
 export const core = new Core();

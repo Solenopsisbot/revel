@@ -16,9 +16,9 @@
  *   muted one gets the quiet dot and still counts unread.
  * - Reading a room clears it, and a message arriving in the room you are
  *   already looking at never badges.
- * - A reload comes back to the room you chose, not the first in the list.
- *   That one matters because looking at a room marks it read, so landing on
- *   an arbitrary DM would clear a badge for a message you never saw.
+ * - A reload lands on **home**, not on a conversation, and remembers the room
+ *   you were in. That one matters because looking at a room marks it read, so
+ *   *any* automatic open clears a badge for a message you never saw.
  *
  *   REVEL_RATE_SCALE=50 pnpm dev:server
  *   pnpm dev
@@ -91,7 +91,7 @@ async function signUp(handle, face) {
 async function openDm(page, handle) {
   await page.getByTitle('Message someone').click();
   await page.fill('input[aria-label="Who do you want to message?"]', handle);
-  await page.getByRole('button', { name: 'Start' }).click();
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
   await wait(4000);
 }
 
@@ -169,9 +169,9 @@ const rowsFor = (k) =>
   );
 
 console.log('\na conversation nobody is looking at');
-// Start from a known zero. Bob's app opens a room on load and reading one
-// marks it read, so without this the count depends on which conversation
-// happened to be in front of him while the first messages landed.
+// Start from a known zero. Bob has a room open from the step above and
+// reading one marks it read, so without this the count depends on which
+// conversation happened to be in front of him while the first messages landed.
 await bob.evaluate(async () => {
   const { live, notifications, core } = window.__revel;
   for (const dm of core.dms) {
@@ -263,26 +263,47 @@ for (let i = 0; i < 60; i++) {
   await wait(1000);
 }
 await wait(5000);
+// Home, not a conversation. Any automatic open marks a room read, which would
+// clear a badge for a message nobody has seen — so `/app` lands on nobody's
+// conversation and the room you were in is one click away.
 ok(
-  'reopens the room bob chose, not the first in the list',
-  await bob.evaluate((k) => window.__revel.core.currentRoomId === k, kitRoom),
+  'lands on home rather than opening a conversation',
+  (await bob.evaluate(() => window.__revel.core.currentRoomId)) === '',
   await bob.evaluate(() => window.__revel.core.currentRoomId),
 );
+ok(
+  'and the room he was in is still remembered',
+  await bob.evaluate(
+    (k) =>
+      (localStorage.getItem(`revel:last-room:${window.__revel.session.current.accountPub}`) ??
+        '') === k,
+    kitRoom,
+  ),
+);
+
+// Opened by hand, the way a person would. `/app` lands on home now, because
+// any automatic open marks a room read and would clear a badge for a message
+// nobody has seen.
+await bob.evaluate((r) => window.__revel.core.openHome(r), aliceRoom);
+await wait(3500);
 
 // The assertions whose absence let a refresh quietly end every conversation.
 //
 // History surviving proves nothing on its own: the timeline is plaintext in
-// the local store, so it renders whether or not the MLS state came back. The
+// the local store, so it comes back whether or not the MLS state did. The
 // question is whether this device can still *talk*, and until `restoreCrypto`
 // had a caller the answer was no — sends threw "no group in this session" and
 // arriving messages failed to decrypt into a catch that drops them.
 ok(
   'history is still there',
-  await bob.evaluate(() => document.body.innerText.includes('from kit')),
+  await bob.evaluate(
+    (r) =>
+      window.__revel.live.stack.rooms
+        .state(r)
+        .messages.some((m) => m.body === 'from alice'),
+    aliceRoom,
+  ),
 );
-
-await bob.evaluate((r) => window.__revel.core.openHome(r), aliceRoom);
-await wait(2500);
 await alice.evaluate(() => void window.__revel.core.send('after the reload'));
 await wait(6000);
 ok(

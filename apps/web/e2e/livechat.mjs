@@ -97,7 +97,7 @@ for (const who of [alice, bob]) {
 // Through the sidebar, the way a person does it: press +, type a name, submit.
 await alice.page.getByTitle('Message someone').click();
 await alice.page.fill('input[aria-label="Who do you want to message?"]', bob.handle);
-await alice.page.getByRole('button', { name: 'Start' }).click();
+await alice.page.getByRole('button', { name: 'Start', exact: true }).click();
 await alice.page.waitForFunction(
   () => window.__revel.core.scope === 'home' && window.__revel.core.currentRoomId.length > 5,
   { timeout: 30000 },

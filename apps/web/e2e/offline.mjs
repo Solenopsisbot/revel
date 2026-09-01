@@ -82,7 +82,7 @@ const bob = await signUp(B, 'Rae');
 
 await alice.page.getByTitle('Message someone').click();
 await alice.page.fill('input[aria-label="Who do you want to message?"]', B);
-await alice.page.getByRole('button', { name: 'Start' }).click();
+await alice.page.getByRole('button', { name: 'Start', exact: true }).click();
 await wait(5000);
 await alice.page.evaluate(() => void window.__revel.core.send('before the outage'));
 await wait(4000);

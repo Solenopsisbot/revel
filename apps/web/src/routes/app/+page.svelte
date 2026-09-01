@@ -8,6 +8,7 @@ import { back } from '$lib/back.js';
 import Composer from '$lib/Composer.svelte';
 import ContextMenu from '$lib/ContextMenu.svelte';
 import CommandBar from '$lib/command/CommandBar.svelte';
+import DmHome from '$lib/DmHome.svelte';
 import { contextMenu } from '$lib/contextmenu.svelte.js';
 import { applyUrl, syncUrl } from '$lib/deeplink.js';
 import { drawers } from '$lib/drawers.svelte.js';
@@ -171,31 +172,17 @@ $effect(() => {
 });
 
 /**
- * Where to land, once the room list has actually arrived.
+ * `/app` lands on **home**, not on a conversation.
  *
- * Separate from the scope effect above because `live.running` turns true
- * before `refreshRooms()` finishes, so anything that reads `core.dms` in the
- * same effect reads an empty list and falls through to a fixture room.
+ * It used to reopen the last room, which was already better than the
+ * first-in-the-list it replaced. But looking at a room marks it read, so *any*
+ * automatic open silently clears a badge for a message nobody has seen. Home
+ * is nobody's conversation, so it cannot do that — and it is the right place
+ * for "start a new one" to live.
  *
- * The room it picks is the one you last had open, not the first one in the
- * list. That distinction matters more than it looks: looking at a room marks
- * it read, so auto-opening an arbitrary DM would clear a badge for a message
- * you never saw. Reopening your own last choice is the behaviour every chat
- * app has, and the one nobody loses a message to.
+ * The room you were in is still remembered below and still in the sidebar.
+ * You just have to say so.
  */
-let opened = false;
-$effect(() => {
-  if (!live.running || opened) return;
-  const dms = core.dms;
-  if (!dms.length) return;
-  if (core.scope === 'home' && dms.some((d) => d.id === core.currentRoomId)) {
-    opened = true;
-    return;
-  }
-  opened = true;
-  const last = lastRoom.read();
-  core.openHome(last && dms.some((d) => d.id === last) ? last : dms[0]!.id);
-});
 
 /**
  * Remember the open room, so the next load comes back to it.
@@ -207,7 +194,7 @@ $effect(() => {
  */
 $effect(() => {
   const roomId = core.currentRoomId;
-  if (!live.running || !opened || !roomId) return;
+  if (!live.running || !roomId) return;
   lastRoom.write(roomId);
 });
 
@@ -919,6 +906,12 @@ function toggleMembers() {
        element — going inert on the first millimetre would kill the gesture
        that is opening the drawer. -->
   <main class="chat" inert={layout.narrow && (drawers.nav === 1 || drawers.members === 1)}>
+    <!--
+      Home is not a room, so the room's chrome does not belong to it. A `Call`
+      button with nobody to call and a member list reading `IN THIS ROOM — 0`
+      are both offers the app cannot keep.
+    -->
+    {#if !(live.running && !core.currentRoomId)}
     <header class="chat-head">
       {#if layout.narrow}
         <!-- The drawer is reachable by swiping from the edge, but a gesture
@@ -992,8 +985,14 @@ function toggleMembers() {
          to lose. -->
     {#if live.running}<BetaNotice />{/if}
 
+    {/if}
+
     {#if voice.viewingCall}
       <CallStage />
+    {:else if live.running && !core.currentRoomId}
+      <!-- No conversation open. Not an empty message list with a composer
+           under it — there is nothing to compose *to*. -->
+      <DmHome />
     {:else}
       {#key core.currentRoomId}
         <div class="fade"><MessageList /></div>
@@ -1029,7 +1028,8 @@ function toggleMembers() {
   <!-- On a phone this is always mounted, because a drawer you can drag has to
        exist before the drag starts; `--mem-open` is what hides it. On a
        desktop it is a real column and `membersOpen` decides. -->
-  {#if core.membersOpen || layout.narrow}
+  <!-- Not on home: there is no room to be in. -->
+  {#if (core.membersOpen || layout.narrow) && !(live.running && !core.currentRoomId)}
     <aside class="members" bind:this={membersEl} aria-label="Members" inert={layout.narrow && !drawers.members}>
       <div class="cat">In this room — {core.roster.length}</div>
       {#each core.roster as face (face.id)}
@@ -1120,7 +1120,7 @@ function toggleMembers() {
     margin-left: auto; display: grid; place-items: center; cursor: pointer;
     position: relative; isolation: isolate;
     width: 24px; height: 24px; min-width: var(--tap); min-height: var(--tap);
-    border: 0; background: transparent; color: var(--text-dim); border-radius: var(--r-sm);
+    border: 0; background: transparent; color: var(--text-2); border-radius: var(--r-sm);
   }
   /*
     The tap target stays 44px — `docs/24` is not negotiable about that — and the
@@ -1128,13 +1128,19 @@ function toggleMembers() {
     nearly three times the width of the glyph behind a 16px plus, which reads as
     misaligned even though it is centred.
   */
+  /*
+    Visible at rest, not only on hover. This is the only way to start a
+    conversation from the sidebar, and at `--text-dim` against this background
+    it read as an absent button rather than a quiet one — somebody looked for
+    it and concluded it had been removed.
+  */
   .sh-add::before {
     content: ''; position: absolute; z-index: -1;
     width: 30px; height: 30px; border-radius: var(--r-sm);
-    background: transparent; transition: background var(--t-fast) var(--ease);
+    background: var(--ground-3); transition: background var(--t-fast) var(--ease);
   }
   .sh-add:hover { color: var(--text); }
-  .sh-add:hover::before { background: var(--ground-3); }
+  .sh-add:hover::before { background: var(--ground-4); }
 
   .new-dm { display: flex; gap: 6px; padding: 6px 10px 8px; flex-wrap: wrap; }
   .new-dm input {

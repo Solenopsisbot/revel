@@ -79,13 +79,22 @@ async function signUp(handle, face) {
   return { page, context };
 }
 
-async function openApp(page) {
+async function openApp(page, openFirstRoom = false) {
   await page.goto(`${APP}/app?e2e=1`, { waitUntil: 'load' });
   for (let i = 0; i < 90; i++) {
     if (await page.evaluate(() => window.__revel?.live?.running ?? false)) break;
     await wait(1000);
   }
   await wait(2000);
+  // `/app` lands on home now, deliberately: any automatic open marks a room
+  // read. A person clicks the conversation; a test has to as well.
+  if (openFirstRoom) {
+    await page.evaluate(() => {
+      const { core } = window.__revel;
+      if (core.dms[0]) core.openHome(core.dms[0].id);
+    });
+    await wait(2500);
+  }
 }
 
 const A = `da${stamp}`;
@@ -95,7 +104,7 @@ const bob = await signUp(B, 'Rae');
 
 await alice.page.getByTitle('Message someone').click();
 await alice.page.fill('input[aria-label="Who do you want to message?"]', B);
-await alice.page.getByRole('button', { name: 'Start' }).click();
+await alice.page.getByRole('button', { name: 'Start', exact: true }).click();
 await wait(5000);
 await alice.page.evaluate(() => void window.__revel.core.send('said before the second device'));
 await wait(4000);
@@ -160,7 +169,7 @@ ok(
 
 // ---------------------------------------------------------------------------
 console.log('\nthe first device adopts it');
-await openApp(alice.page);
+await openApp(alice.page, true);
 await alice.page.evaluate(async () => {
   await window.__revel.live.stack.sync();
 });

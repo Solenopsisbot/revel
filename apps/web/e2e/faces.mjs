@@ -177,7 +177,7 @@ await page.evaluate(() => window.__revel.onboarding?.dismiss?.());
 await page.waitForTimeout(500);
 await page.getByTitle('Message someone').click();
 await page.fill('input[aria-label="Who do you want to message?"]', otherHandle);
-await page.getByRole('button', { name: 'Start' }).click();
+await page.getByRole('button', { name: 'Start', exact: true }).click();
 await page.waitForTimeout(5000);
 
 // Ash speaks first. June exists but has never been here.
