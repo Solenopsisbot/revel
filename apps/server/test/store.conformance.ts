@@ -37,8 +37,18 @@ export interface StoreHarness {
   reset(): Promise<void>;
 }
 
+/**
+ * Unique *across runs*, not only within one.
+ *
+ * A plain counter restarts at 1 every time, so a second run against a
+ * persistent Postgres reuses every id the first one wrote. Most assertions here
+ * survive that because they are idempotent; anything asserting a *fresh* state
+ * — "this space has no audience bound yet" — passes once and then fails
+ * forever, which reads as a real regression and is not one.
+ */
+const run = Math.random().toString(36).slice(2, 8);
 let n = 0;
-const uniq = (prefix: string) => `${prefix}-${++n}`;
+const uniq = (prefix: string) => `${prefix}-${run}-${++n}`;
 
 /**
  * A fresh snowflake-shaped id.
