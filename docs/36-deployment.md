@@ -80,6 +80,12 @@ sudo cp deploy/nginx/revel.chat.conf /etc/nginx/sites-available/revel.chat
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
+astral runs **nginx 1.18**, which predates the standalone `http2 on;`
+directive (1.25.1). It is a `listen` parameter here — `listen 443 ssl http2`.
+Getting that wrong fails `nginx -t`, which is the good outcome: a failed
+reload keeps the running config, so the other seven sites on this box stay up
+while you fix it.
+
 `/.well-known/acme-challenge/` is carved out **ahead of** the API proxy in that
 config, and has to stay that way: `security.txt` is served by the Host, so
 proxying all of `/.well-known` would break every renewal from the first one on.
@@ -128,6 +134,23 @@ The gap, stated rather than hidden: zod strips unknown **fields** on a known
 type. A field added to `m.message` later is dropped by an older client's parse.
 Not data loss — the ciphertext on the server still has it, so a newer client
 recovers it on resync — but an old client will not round-trip it.
+
+## DNS and Cloudflare
+
+Both records are **DNS-only (grey cloud)**, and the apex must stay that way.
+
+Proxying would put Cloudflare in front of the *client JavaScript*, and whoever
+serves the JS in a browser E2EE app can replace it with a build that
+exfiltrates keys. No amount of client-side crypto survives that. It would also
+hand a second party the metadata `docs/03` §7 is careful about — handles, the
+OPAQUE exchange, room ids, who talks to whom — and drop idle WebSockets at
+around 100s against nginx's 3600s.
+
+A Cloudflare redirect rule on `www` does nothing while `www` is grey: those
+rules only run on proxied traffic. nginx does the redirect instead, which is
+why `www` is in the certificate. If `www` is ever proxied, take it *out* of
+certbot — a catch-all redirect rule swallows the ACME challenge and renewal
+fails.
 
 ## Why not vega
 

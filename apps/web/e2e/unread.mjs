@@ -26,7 +26,14 @@
  */
 import { chromium } from 'playwright';
 
-const APP = 'http://localhost:5173';
+// Defaults to the dev server; point it at a deployment to test the real thing.
+//
+//   REVEL_E2E_APP=https://revel.chat pnpm test:offline
+//
+// Against production the rate limits are real (`REVEL_RATE_SCALE` is unset
+// there, as it must be), so a suite that signs up three accounts in a minute
+// will be throttled rather than broken.
+const APP = process.env.REVEL_E2E_APP ?? 'http://localhost:5173';
 const password = 'correct horse battery staple';
 const stamp = Date.now().toString(36);
 
