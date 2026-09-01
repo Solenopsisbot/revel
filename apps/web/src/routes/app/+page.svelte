@@ -3,6 +3,7 @@ import { untrack } from 'svelte';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import Avatar from '$lib/Avatar.svelte';
+import BetaNotice from '$lib/BetaNotice.svelte';
 import { back } from '$lib/back.js';
 import Composer from '$lib/Composer.svelte';
 import ContextMenu from '$lib/ContextMenu.svelte';
@@ -222,12 +223,14 @@ let settingsOpen = $state(!!deepLink);
 let settingsSection = $state(deepLink ?? 'account');
 
 const me = $derived(
-  core.myFaces.find((f) => f.id === core.speakingHere) ?? core.faces[core.speakingAs],
+  core.myFaces.find((f) => f.id === core.speakingHere) ??
+    core.myFaces.find((f) => f.id === core.speakingAs) ??
+    (live.running ? undefined : core.facesSeed[core.speakingAs]),
 );
 /** This account, as a person reads it: the handle when there is one. */
 const myAddress = $derived(
   live.running
-    ? (session.current?.handle ?? live.stack?.account.slice(0, 8) ?? '')
+    ? (session.address || session.current?.handle || live.stack?.account.slice(0, 8) || '')
     : 'viola@revel.chat',
 );
 
@@ -947,6 +950,13 @@ function toggleMembers() {
         title="Members"
       ><Icon name="people" size={20} /></button>
     </header>
+
+    <!-- Under the room header, above the conversation. Somebody putting real
+         messages into a pre-alpha E2EE app is owed one sentence about whether
+         they will survive, and it belongs where they are typing rather than
+         buried in settings. Only for a signed-in account: the demo has nothing
+         to lose. -->
+    {#if live.running}<BetaNotice />{/if}
 
     {#if voice.viewingCall}
       <CallStage />

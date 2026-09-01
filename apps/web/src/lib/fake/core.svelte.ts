@@ -43,6 +43,7 @@ import {
   faces as seedFaces,
   spaces,
   storage,
+  type Space,
 } from './data.js';
 import { facesIn, facesSpokenIn, participantsIn, revealsLink, speakerIn } from './faceShape.js';
 
@@ -65,8 +66,34 @@ class Core {
    * isn't: the mutation lands on the proxy but subscribers never fire. Every
    * other reactive thing in this file is a class field, so this one is too.
    */
-  faces: Record<string, Face> = $state(seedFaces);
-  spaces = $state(spaces);
+  facesSeed: Record<string, Face> = $state(seedFaces);
+  /**
+   * Every face this client can name, by id.
+   *
+   * Live, that is **this account's own book** — not the fixtures. A signed-in
+   * account was reading a stranger's faces out of here, which is how a brand
+   * new account introduced itself as June.
+   *
+   * Other people's faces are not in here and cannot be: they arrive per room
+   * on the roster. `faceCard` is the lookup that knows about both.
+   */
+  get faces(): Record<string, Face> {
+    if (!live.running) return this.facesSeed;
+    return Object.fromEntries(this.myFaces.map((f) => [f.id, f]));
+  }
+  spacesSeed = $state(spaces);
+  /**
+   * Spaces. **Empty for a signed-in account**, because there are none yet.
+   *
+   * `docs/06` puts spaces in phase 3 and the server refuses to make one, so a
+   * real account has exactly zero — and every screen that read this map was
+   * showing it somebody else's. The rail was fixed by hiding them; the command
+   * palette was not, and offered to take you to `#design` in a space you have
+   * never been in.
+   */
+  get spaces() {
+    return live.running ? [] : this.spacesSeed;
+  }
   dmsSeed = $state(structuredClone(dms));
   currentSpaceId = $state('solexsis');
   /**
@@ -83,7 +110,21 @@ class Core {
    */
   scope = $state<'space' | 'home'>('space');
   /** Which face you are speaking as. Only surfaced when you have several. */
-  speakingAs = $state('june');
+  speakingAsSeed = $state('june');
+  /**
+   * The account-wide default face.
+   *
+   * Live, the book's own primary — never the fixture id, which is what made a
+   * new account show somebody else's name in the corner before it had made a
+   * single face of its own.
+   */
+  get speakingAs(): string {
+    if (!live.running) return this.speakingAsSeed;
+    return myFaces.book.primary ?? this.myFaces[0]?.id ?? '';
+  }
+  set speakingAs(id: string) {
+    this.speakingAsSeed = id;
+  }
   messages = $state<Record<string, Message[]>>(structuredClone(messages));
   /**
    * Faces currently typing, **per place**.
@@ -389,8 +430,17 @@ class Core {
     }
   }
 
-  get space() {
-    return this.spaces.find((s) => s.id === this.currentSpaceId) ?? this.spaces[0]!;
+  /**
+   * The space you are in.
+   *
+   * A signed-in account has none — the server will not make one until
+   * `docs/06` phase 3 — and every caller here was written when there was
+   * always at least one fixture. Rather than make forty call sites handle
+   * `undefined`, an account with no spaces gets an empty one: it renders as
+   * nothing, which is the truth, instead of crashing the layout on `.rooms`.
+   */
+  get space(): Space {
+    return this.spaces.find((s) => s.id === this.currentSpaceId) ?? this.spaces[0] ?? EMPTY_SPACE;
   }
   /** The DM you are in, if you are in one. */
   get dm(): Dm | undefined {
@@ -411,15 +461,13 @@ class Core {
     // account sees. Falling through to `this.space.rooms[0]` put a *fixture*
     // room in the header and "Message #design" in the composer of an account
     // that has never seen Solexsis.
-    if (!dm && live.running && this.scope === 'home') {
-      return {
-        id: '',
-        name: '',
-        kind: 'text',
-        category: 'Direct messages',
-        style: 'bubbles',
-        audience: { kind: 'picked', faceIds: [] },
-      };
+    // A signed-in account has no fixture room to fall back to and, until
+    // spaces exist, often no room at all — which is what a brand new account
+    // sees. The scope check used to be `=== 'home'`, and that left a window at
+    // startup where the scope was still a space, the space had no rooms, and
+    // every reader of `room.kind` got `undefined`.
+    if (!dm && live.running && !this.space.rooms.some((r) => r.id === this.currentRoomId)) {
+      return EMPTY_ROOM;
     }
     if (dm) {
       return {
@@ -436,7 +484,7 @@ class Core {
         audience: { kind: 'picked', faceIds: participantsIn(dm) },
       };
     }
-    return this.space.rooms.find((r) => r.id === this.currentRoomId) ?? this.space.rooms[0]!;
+    return this.space.rooms.find((r) => r.id === this.currentRoomId) ?? this.space.rooms[0] ?? EMPTY_ROOM;
   }
 
   /** "Rae", or "Rae and Emeri" for an unnamed group. */
@@ -1252,9 +1300,12 @@ class Core {
   /** A space is a row and a key group, not a machine (`docs/18`), so deleting
       one is an ordinary — if irreversible — operation rather than a teardown. */
   deleteSpace(spaceId: string) {
-    if (this.spaces.length <= 1) return;
-    this.spaces = this.spaces.filter((s) => s.id !== spaceId);
-    const first = this.spaces[0]!;
+    // Fixtures only. A signed-in account has no spaces to delete — the server
+    // will not make one until `docs/06` phase 3 — so this writes to the seed
+    // rather than to the live-aware getter.
+    if (this.spacesSeed.length <= 1) return;
+    this.spacesSeed = this.spacesSeed.filter((s) => s.id !== spaceId);
+    const first = this.spacesSeed[0]!;
     this.openRoom(first.id, first.rooms[0]!.id);
   }
 
@@ -1363,5 +1414,32 @@ function minutes(clock: string): number {
   const [h, m] = clock.split(':').map((n) => Number.parseInt(n, 10));
   return (Number.isFinite(h) ? (h as number) : 0) * 60 + (Number.isFinite(m) ? (m as number) : 0);
 }
+
+/** No room open, in a shape every caller can read without checking. */
+const EMPTY_ROOM: Room = {
+  id: '',
+  name: '',
+  kind: 'text',
+  category: 'Direct messages',
+  style: 'bubbles',
+  audience: { kind: 'picked', faceIds: [] },
+};
+
+/** No spaces yet, in a shape every caller can read without checking. */
+const EMPTY_SPACE: Space = {
+  id: '',
+  name: '',
+  initial: '',
+  from: 'grey' as FaceColour,
+  to: 'grey' as FaceColour,
+  rooms: [],
+  visibility: 'invite',
+  roles: [],
+  members: [],
+  invites: [],
+  reports: [],
+  bans: [],
+  purges: [],
+};
 
 export const core = new Core();

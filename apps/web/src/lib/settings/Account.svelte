@@ -1,13 +1,28 @@
 <script lang="ts">
+/**
+ * Account.
+ *
+ * **A preview, and it says so** — `sections.ts` marks it `wired: false` and
+ * the overlay puts a notice above it. What it used to do was worse than not
+ * working: it stated facts. "viola@revel.chat" was hardcoded, the provider was
+ * hardcoded, and the ways back in reported a recovery code "saved 27 Aug" and
+ * "1 registered" passkey to accounts that had neither. A settings screen that
+ * invents your security posture is not a mockup, it is a lie with a stylesheet.
+ *
+ * So: the address is real, and everything not yet connected reads as unknown
+ * rather than as a number somebody might act on.
+ */
+import { session } from '$lib/session.svelte.js';
+
 let moving = $state(false);
 </script>
 
 <h2>Account</h2>
-<p class="lede">viola@revel.chat</p>
+<p class="lede">{session.address || 'Not signed in'}</p>
 
 <section class="provider">
   <div class="grid">
-    <span class="k">Your provider</span><span class="v">revel.chat</span>
+    <span class="k">Your provider</span><span class="v">{session.provider || '—'}</span>
     <span class="k">What lives there</span>
     <span class="v">your handle, your encrypted account backup, your device list</span>
     <span class="k">What doesn't</span>
@@ -21,55 +36,73 @@ let moving = $state(false);
       of the old one keep working for as long as the old provider serves the
       forwarding record.
     </p>
+    <p class="note unbuilt">
+      Not built yet. It needs the forwarding record and an IdP willing to accept
+      a migration, which is <code>docs/06</code>'s phase 6.
+    </p>
   {/if}
 </section>
 
 <section>
   <h3>Your ways back in</h3>
   <div class="ways">
-    <div class="way"><span class="n">Password</span><span class="s">set</span><button>Change</button></div>
-    <div class="way"><span class="n">Recovery code</span><span class="s">saved 27 Aug</span><button>Show</button><button>Replace</button></div>
-    <div class="way"><span class="n">Passkeys</span><span class="s">1 registered</span><button>Manage</button></div>
+    <div class="way">
+      <span class="n">Password</span><span class="s">set at sign-up</span>
+      <button disabled title="Not connected yet">Change</button>
+    </div>
+    <!--
+      There is no "Show" here, and there never can be.
+
+      The recovery code is shown exactly once, at sign-up, because nothing
+      keeps it: it is stretched with Argon2id into a key that wraps the account
+      key, and the code itself is never stored on the device or at the provider
+      (`docs/03` §3). A button offering to show it again could only work by
+      keeping a copy, which would make it a second password sitting on disk
+      and defeat the reason it exists. Replacing it is a real thing and stays.
+    -->
+    <div class="way">
+      <span class="n">Recovery code</span><span class="s">shown once at sign-up</span>
+      <button disabled title="Not connected yet">Replace</button>
+    </div>
+    <div class="way">
+      <span class="n">Passkeys</span><span class="s">—</span>
+      <button disabled title="Not connected yet">Manage</button>
+    </div>
   </div>
   <p class="note">
     Any one of these gets you back in. Lose all three and the account can't be
-    recovered.
+    recovered — there is no copy of your key anywhere else, which is the point
+    and also the risk.
   </p>
 </section>
 
 <style>
-  h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }
-  .lede { color: var(--text-mute); margin: 0 0 28px; font-size: var(--text-sm); font-family: var(--font-mono); }
-  section { margin-bottom: 32px; }
-  h3 { font-size: var(--text-base); font-weight: 700; margin: 0 0 12px; }
-
+  .lede { color: var(--text-2); margin: 0 0 22px; }
   .provider { background: var(--ground-2); border-radius: var(--r-md); padding: 18px 20px; }
-  .grid { display: grid; grid-template-columns: minmax(120px, auto) 1fr; gap: 8px 18px; font-size: var(--text-sm); }
-  .k { color: var(--text-mute); }
-  .v { color: var(--text-dim); }
+  .grid { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; }
+  .k { color: var(--text-3); font-size: var(--text-sm); }
+  .v { font-size: var(--text-sm); }
   .move {
-    margin-top: 16px; border: 0; cursor: pointer; font: inherit; font-size: var(--text-sm); font-weight: 600;
-    padding: 7px 14px; border-radius: var(--r-pill); background: var(--ground-3); color: var(--text);
-    transition: background var(--t-fast) var(--ease);
+    margin-top: 16px; font: inherit; font-size: var(--text-sm); cursor: pointer;
+    background: none; border: 0; padding: 0; color: var(--brand);
+    text-decoration: underline; text-underline-offset: 2px;
   }
-  .move:hover { background: var(--ground-4); }
-
-  .ways { display: flex; flex-direction: column; gap: 8px; }
+  .note { margin: 14px 0 0; font-size: var(--text-sm); color: var(--text-2); line-height: 1.55; }
+  .note.unbuilt { color: var(--text-3); }
+  h3 { margin: 30px 0 12px; font-size: var(--text-md); }
+  .ways { display: grid; gap: 8px; }
   .way {
-    display: flex; align-items: center; gap: 12px; padding: 11px 14px;
-    border: 1px solid var(--line); border-radius: var(--r-md);
-    /* Three fixed-width children plus a 130px label do not fit a 340px pane,
-       and the row overflowed its own card on a phone. Wrapping is right rather
-       than shrinking: the label and the state belong on one line together. */
-    flex-wrap: wrap;
+    display: grid; grid-template-columns: 1fr max-content max-content;
+    gap: 10px; align-items: center;
+    background: var(--ground-2); border-radius: var(--r-sm); padding: 11px 14px;
   }
-  .way .n { font-weight: 600; min-width: min(130px, 100%); }
-  .way .s { flex: 1; min-width: 0; color: var(--text-mute); font-size: var(--text-sm); }
+  .n { font-size: var(--text-sm); font-weight: 600; }
+  .s { font-size: var(--text-sm); color: var(--text-3); }
   .way button {
-    border: 0; cursor: pointer; font: inherit; font-size: var(--text-sm); font-weight: 600;
-    padding: 6px 13px; border-radius: var(--r-pill); background: var(--ground-3); color: var(--text);
-    transition: background var(--t-fast) var(--ease);
+    font: inherit; font-size: var(--text-sm); cursor: pointer;
+    background: var(--ground-3); border: 0; border-radius: var(--r-sm); padding: 5px 12px;
+    color: var(--text);
   }
-  .way button:hover { background: var(--ground-4); }
-  .note { margin-top: 14px; color: var(--text-mute); font-size: var(--text-sm); max-width: 58ch; }
+  .way button:hover:not(:disabled) { background: var(--ground-4); }
+  .way button:disabled { opacity: .4; cursor: not-allowed; }
 </style>

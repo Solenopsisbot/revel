@@ -65,7 +65,8 @@ $effect(() => {
         >
           <span class="nm">{s.name}</span>
           <span class="bl">{s.blurb}</span>
-          {#if !s.built}<span class="soon-tag">not built</span>{/if}
+          {#if !s.built}<span class="soon-tag">not built</span>
+          {:else if !s.wired}<span class="soon-tag preview">preview</span>{/if}
         </button>
       {/each}
     </nav>
@@ -77,6 +78,22 @@ $effect(() => {
       </button>
       {#key section}
         <div class="pane">
+          {#if !meta.wired}
+            <!--
+              A designed screen that does nothing is worth keeping and worth
+              saying so. What it must not do is state facts about an account
+              that are not facts — which is what "recovery code saved 27 Aug"
+              was doing to somebody who had never seen that date.
+            -->
+            <p class="preview-note">
+              <Icon name="warn" size={15} />
+              <span>
+                <b>This screen is a preview.</b> It shows the design, not your account —
+                nothing on it is connected yet, and the numbers are examples.
+              </span>
+            </p>
+          {/if}
+
           {#if section === 'account'}
             <Account />
           {:else if section === 'faces'}
@@ -148,6 +165,14 @@ $effect(() => {
   .item.soon .nm { color: var(--text-mute); }
   .nm { display: block; font-weight: 600; font-size: var(--text-sm); }
   .bl { display: block; font-size: 11px; color: var(--text-mute); margin-top: 1px; padding-right: 54px; }
+  .preview-note {
+    display: flex; gap: 10px; align-items: flex-start;
+    margin: 0 0 20px; padding: 12px 14px;
+    background: color-mix(in oklab, var(--warn, #f5c451) 12%, transparent);
+    border: 1px solid color-mix(in oklab, var(--warn, #f5c451) 35%, transparent);
+    border-radius: var(--r-md); font-size: var(--text-sm); line-height: 1.5;
+  }
+  .soon-tag.preview { background: var(--ground-4); }
   .soon-tag {
     position: absolute; right: 10px; top: 10px;
     font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;

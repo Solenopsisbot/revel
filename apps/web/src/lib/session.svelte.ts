@@ -20,6 +20,32 @@ class DeviceSession {
   /** Whether the answer is known yet. Distinct from "signed out". */
   ready = $state(false);
 
+  /**
+   * The identity provider this account lives on.
+   *
+   * Taken from where the app is being served, which is true for a normal
+   * deployment and honest about being a guess: `docs/02` splits Host and IdP
+   * into separate roles, and nothing in the client is told which IdP issued
+   * its handle. When that becomes a real setting this is where it reads from.
+   */
+  get provider(): string {
+    return typeof location === 'undefined' ? '' : location.host;
+  }
+
+  /**
+   * How a person reads this account: `viola@revel.chat`.
+   *
+   * The provider half is not decoration. A handle is only unique on the IdP
+   * that issued it (`docs/17`), so a bare name is ambiguous the moment there
+   * is more than one provider — which is the entire point of the design.
+   */
+  get address(): string {
+    const handle = this.current?.handle;
+    if (!handle) return '';
+    const provider = this.provider;
+    return provider ? `${handle}@${provider}` : handle;
+  }
+
   get signedIn(): boolean {
     return this.current !== null;
   }
