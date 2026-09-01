@@ -104,6 +104,11 @@ rsync -az --delete apps/web/build/ astral:/mnt/blockvol/revel/web/
 cd /mnt/blockvol/revel/app && docker compose up -d
 ```
 
+`web/` stays **owned by the deploying user and world-readable**. It is
+tempting to `chown -R www-data` it, and that breaks every later `rsync` with a
+permission denied — nginx needs to *read* those files, not own them. `chmod -R
+a+rX` is the whole requirement.
+
 Migrations run at boot and are checksummed, so a container that starts is a
 container whose schema matched. **Rolling back the image does not roll back the
 schema** — an older Host against a newer database will fail its checksum and
