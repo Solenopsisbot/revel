@@ -7,7 +7,7 @@ import Button from '$lib/moment/Button.svelte';
 const pillars = [
   {
     title: 'No cleartext path',
-    body: `Every room is end to end encrypted. Not as an option, not for "public" rooms, not for bots. There is one pipeline and it carries ciphertext, so there is nothing on the server to hand over, to leak, or to quietly start reading.`,
+    body: `There is one pipeline and it carries ciphertext — no second path for "public" rooms, for search, or for bots. So there is nothing on the server to hand over, to leak, or to quietly start reading.`,
   },
   {
     title: 'No ghost readers',
@@ -15,7 +15,7 @@ const pillars = [
   },
   {
     title: 'Your key is you',
-    body: `Your account is a keypair you own. Your handle lives with a provider you can leave, and moving doesn't cost you your rooms, your history or your contacts.`,
+    body: `Your account is a keypair you hold, not a row in our database. The name people reach you by is issued by a server — ours, or one you run — and moving to a different one costs you nothing: same key, same rooms, same history.`,
   },
 ];
 
@@ -53,7 +53,7 @@ const costs: [string, string][] = [
   <header class="nav">
     <a class="brand" href="/"><Mark size={26} stroke="var(--ground-0)" /><span>Revel</span></a>
     <nav>
-      <a href="/app">Open the app</a>
+      <a class="secondary" href="/app">Open the app</a>
       <a href="/signin">Sign in</a>
       <Button onclick={() => goto('/signup')}>Make an account</Button>
     </nav>
@@ -86,13 +86,16 @@ const costs: [string, string][] = [
   </section>
 
   <section class="band" id="how">
-    <div class="wrap pillars">
-      {#each pillars as p, i (p.title)}
-        <article class="pillar">
-          <h2>{p.title}</h2>
-          <p>{p.body}</p>
-        </article>
-      {/each}
+    <div class="wrap">
+      <h2 class="big">Three promises, and how they're kept.</h2>
+      <div class="pillars">
+        {#each pillars as p (p.title)}
+          <article class="pillar">
+            <h3>{p.title}</h3>
+            <p>{p.body}</p>
+          </article>
+        {/each}
+      </div>
     </div>
   </section>
 
@@ -152,8 +155,8 @@ const costs: [string, string][] = [
       <h2 class="big">Or run the whole thing yourself.</h2>
       <p class="lede">
         One binary, your own box, your own rules about who can sign in. The
-        source is public, so you can check what it does rather than take our
-        word for it. Centralised until you'd rather it wasn't.
+        source is public, so you can read exactly what it does with your
+        messages.
       </p>
       <div class="cta">
         <a class="gh" href="https://github.com/Solenopsisbot/revel" rel="noreferrer">
@@ -187,7 +190,7 @@ const costs: [string, string][] = [
         The cryptography has not been independently audited yet. Encryption
         protects your messages from the server's operators and from a breach of
         its database; it does not protect against a compromised client build.
-        The threat model has the details.
+        <a href="/security">What we'd want to hear about</a>.
       </p>
     </div>
   </footer>
@@ -231,13 +234,16 @@ const costs: [string, string][] = [
   */
   .gh {
     display: inline-flex; align-items: center; gap: 9px;
-    background: #fff; color: #24292f; text-decoration: none;
+    background: #e9eaee; color: #24292f; text-decoration: none;
     font: inherit; font-weight: 600;
     padding: 11px 18px; border-radius: 999px;
     border: 1px solid rgba(0, 0, 0, .08);
     transition: background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
   }
-  .gh:hover { background: #f3f4f6; }
+  .gh:hover { background: #f5f6f8; }
+
+  .foot a { color: var(--text-2); text-underline-offset: 2px; }
+  .foot a:hover { color: var(--text); }
   .gh:active { transform: translateY(1px); }
 
   .cta { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
@@ -261,8 +267,9 @@ const costs: [string, string][] = [
   .big { font-size: clamp(1.9rem, 3.6vw, 2.6rem); margin: 0 0 14px; }
   .lede { color: var(--text-dim); max-width: 56ch; margin: 0 0 34px; }
 
-  .pillars { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 26px; }
-  .pillar h2 { font-size: var(--text-xl); margin: 0 0 8px; }
+  .pillars {
+    margin-top: 26px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 26px; }
+  .pillar h3 { font-size: var(--text-xl); margin: 0 0 8px; }
   .pillar p { color: var(--text-dim); margin: 0; }
 
   .costs { display: grid; gap: 1px; background: var(--line); border-radius: var(--r-md); overflow: hidden; }
@@ -296,6 +303,12 @@ const costs: [string, string][] = [
   @media (max-width: 860px) {
     .art { display: none; }
     .cost { grid-template-columns: 1fr; gap: 6px; }
-    .nav nav a { display: none; }
+    /*
+      "Open the app" goes; **"Sign in" stays.** Hiding both left a returning
+      visitor on a phone with no way back into their account from anywhere on
+      this page — not the nav, not the footer, nowhere. They would have had to
+      know to type `/signin`.
+    */
+    .nav nav a.secondary { display: none; }
   }
 </style>
