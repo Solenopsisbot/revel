@@ -11,10 +11,15 @@ import type { CryptoEngine, Member } from '@revel/crypto';
 import {
   type AccountProfile,
   type BlobRef,
+  type CreateSpaceRoom,
   type DeviceInfo,
   type FaceCard,
   type FaceRef,
+  type RoleInfo,
+  type RoleInput,
   type RoomInfo,
+  type SpaceInfo,
+  type SpaceMemberInfo,
   toAccountId,
   type UpdateProfile,
 } from '@revel/protocol';
@@ -375,6 +380,86 @@ class LiveDirectory implements DirectoryCore {
     // read it.
     if (room.group) await this.#groups.invite(room.group, accounts);
     return room;
+  }
+
+  // -- spaces ----------------------------------------------------------------
+
+  spaces(): Promise<SpaceInfo[]> {
+    return this.#transport.spaces();
+  }
+
+  async createSpace(): Promise<SpaceInfo> {
+    const space = await this.#transport.createSpace();
+    await this.refresh();
+    return space;
+  }
+
+  spaceRooms(spaceId: string): Promise<RoomInfo[]> {
+    return this.#transport.spaceRooms(spaceId);
+  }
+
+  /**
+   * Make a room in a space, and open it.
+   *
+   * `#start` does the rest: if the audience already has a group, the room is
+   * bound to it and nothing is committed — which is why a twelve-room space is
+   * one commit and not twelve (`docs/03` §4). If it does not, this is the
+   * client that creates it, and everybody the audience covers is invited.
+   */
+  async createSpaceRoom(spaceId: string, input: CreateSpaceRoom = {}): Promise<RoomInfo> {
+    const room = await this.#transport.createSpaceRoom(spaceId, input);
+    const started = await this.#start(room, room.members ?? []);
+    await this.refresh();
+    return started;
+  }
+
+  spaceMembers(spaceId: string): Promise<SpaceMemberInfo[]> {
+    return this.#transport.spaceMembers(spaceId);
+  }
+
+  /**
+   * Invite people to a space, and into the groups its rooms already use.
+   *
+   * Two halves, and only the first is the server's. Membership is delivery;
+   * until a member's client commits the newcomer into each room's MLS group
+   * they can see the rooms exist and cannot read a word (`docs/03` §5). Doing
+   * it here rather than leaving it to whoever opens a room next is the
+   * difference between "they joined" and "they joined and it worked".
+   */
+  async inviteToSpace(spaceId: string, accounts: string[]): Promise<void> {
+    await this.#transport.inviteToSpace(spaceId, accounts);
+
+    // One commit per *group*, not per room. Rooms sharing an audience share a
+    // group, so a twelve-room space with one audience is one invite.
+    const groups = new Set<string>();
+    for (const room of await this.#transport.spaceRooms(spaceId)) {
+      if (room.group) groups.add(room.group);
+    }
+    for (const groupId of groups) {
+      await this.#groups.invite(groupId, accounts);
+    }
+    await this.refresh();
+  }
+
+  async leaveSpace(spaceId: string): Promise<void> {
+    await this.#transport.leaveSpace(spaceId, this.#account);
+    await this.refresh();
+  }
+
+  spaceRoles(spaceId: string): Promise<RoleInfo[]> {
+    return this.#transport.spaceRoles(spaceId);
+  }
+  createRole(spaceId: string, input: RoleInput): Promise<RoleInfo> {
+    return this.#transport.createRole(spaceId, input);
+  }
+  updateRole(spaceId: string, roleId: string, input: RoleInput): Promise<RoleInfo> {
+    return this.#transport.updateRole(spaceId, roleId, input);
+  }
+  deleteRole(spaceId: string, roleId: string): Promise<void> {
+    return this.#transport.deleteRole(spaceId, roleId);
+  }
+  setMemberRoles(spaceId: string, account: string, roles: string[]): Promise<void> {
+    return this.#transport.setMemberRoles(spaceId, account, roles);
   }
 
   async removeMember(roomId: string, account: string): Promise<void> {

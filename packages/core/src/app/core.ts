@@ -32,9 +32,14 @@ import type { Member } from '@revel/crypto';
 import type {
   AccountProfile,
   BlobRef,
+  CreateSpaceRoom,
   DeviceInfo,
   FaceRef,
+  RoleInfo,
+  RoleInput,
   RoomInfo,
+  SpaceInfo,
+  SpaceMemberInfo,
   UpdateProfile,
 } from '@revel/protocol';
 import type { Message, RoomState } from '../rooms/state.js';
@@ -160,6 +165,28 @@ export interface DirectoryCore {
    * who cannot be sent to and can still read anything a member forwards them.
    */
   removeMember(roomId: string, account: string): Promise<void>;
+
+  // -- spaces ----------------------------------------------------------------
+  //
+  // `docs/06` phase 3. A space is a room's *container* and an audience's
+  // authority: the server resolves who may see what from its roles, and the
+  // client turns that into MLS groups (`docs/03` §4).
+
+  spaces(): Promise<SpaceInfo[]>;
+  createSpace(): Promise<SpaceInfo>;
+  spaceRooms(spaceId: string): Promise<RoomInfo[]>;
+  /** Makes the room, and its group if this audience does not have one yet. */
+  createSpaceRoom(spaceId: string, input?: CreateSpaceRoom): Promise<RoomInfo>;
+  spaceMembers(spaceId: string): Promise<SpaceMemberInfo[]>;
+  /** Adds them to the space *and* commits them into the groups its rooms use. */
+  inviteToSpace(spaceId: string, accounts: string[]): Promise<void>;
+  leaveSpace(spaceId: string): Promise<void>;
+
+  spaceRoles(spaceId: string): Promise<RoleInfo[]>;
+  createRole(spaceId: string, input: RoleInput): Promise<RoleInfo>;
+  updateRole(spaceId: string, roleId: string, input: RoleInput): Promise<RoleInfo>;
+  deleteRole(spaceId: string, roleId: string): Promise<void>;
+  setMemberRoles(spaceId: string, account: string, roles: string[]): Promise<void>;
   /** Yourself only. Does not take your keys back — a member must commit that. */
   leave(roomId: string): Promise<void>;
 

@@ -14,10 +14,15 @@
 import type {
   AccountProfile,
   BlobInfo,
+  CreateSpaceRoom,
   DeviceInfo,
   Event,
   EventInput,
+  RoleInfo,
+  RoleInput,
   RoomInfo,
+  SpaceInfo,
+  SpaceMemberInfo,
   UpdateProfile,
 } from '@revel/protocol';
 
@@ -81,6 +86,29 @@ export interface Transport {
    * why the rule matches what MLS already permits rather than being stricter.
    */
   removeMember(roomId: string, account: string): Promise<void>;
+
+  // -- spaces ----------------------------------------------------------------
+
+  /** Every space this account is in, with its own effective permissions. */
+  spaces(): Promise<SpaceInfo[]>;
+  createSpace(): Promise<SpaceInfo>;
+  spaceRooms(spaceId: string): Promise<RoomInfo[]>;
+  /**
+   * Make a room in a space.
+   *
+   * `group` comes back null when this audience has no MLS group yet — the
+   * first client to open the room creates it, because the server cannot: it
+   * has no keys and never will (`docs/03` §4).
+   */
+  createSpaceRoom(spaceId: string, input: CreateSpaceRoom): Promise<RoomInfo>;
+  spaceMembers(spaceId: string): Promise<SpaceMemberInfo[]>;
+  inviteToSpace(spaceId: string, accounts: string[]): Promise<void>;
+  leaveSpace(spaceId: string, account: string): Promise<void>;
+  spaceRoles(spaceId: string): Promise<RoleInfo[]>;
+  createRole(spaceId: string, input: RoleInput): Promise<RoleInfo>;
+  updateRole(spaceId: string, roleId: string, input: RoleInput): Promise<RoleInfo>;
+  deleteRole(spaceId: string, roleId: string): Promise<void>;
+  setMemberRoles(spaceId: string, account: string, roles: string[]): Promise<void>;
   /** Yourself only. Does not remove your MLS leaf — a member has to commit that. */
   leaveRoom(roomId: string): Promise<void>;
 
@@ -282,6 +310,71 @@ export class HttpTransport implements Transport {
       method: 'POST',
       body: JSON.stringify({ accounts }),
     });
+  }
+
+  spaces(): Promise<SpaceInfo[]> {
+    return this.#json<{ spaces: SpaceInfo[] }>('/spaces', { method: 'GET' }).then((r) => r.spaces);
+  }
+  createSpace(): Promise<SpaceInfo> {
+    return this.#json('/spaces', { method: 'POST', body: '{}' });
+  }
+  spaceRooms(spaceId: string): Promise<RoomInfo[]> {
+    return this.#json<{ rooms: RoomInfo[] }>(`/spaces/${encodeURIComponent(spaceId)}/rooms`, {
+      method: 'GET',
+    }).then((r) => r.rooms);
+  }
+  createSpaceRoom(spaceId: string, input: CreateSpaceRoom): Promise<RoomInfo> {
+    return this.#json(`/spaces/${encodeURIComponent(spaceId)}/rooms`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+  spaceMembers(spaceId: string): Promise<SpaceMemberInfo[]> {
+    return this.#json<{ members: SpaceMemberInfo[] }>(
+      `/spaces/${encodeURIComponent(spaceId)}/members`,
+      { method: 'GET' },
+    ).then((r) => r.members);
+  }
+  async inviteToSpace(spaceId: string, accounts: string[]): Promise<void> {
+    await this.#request(`/spaces/${encodeURIComponent(spaceId)}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ accounts }),
+    });
+  }
+  async leaveSpace(spaceId: string, account: string): Promise<void> {
+    await this.#request(
+      `/spaces/${encodeURIComponent(spaceId)}/members/${encodeURIComponent(account)}`,
+      { method: 'DELETE' },
+    );
+  }
+  spaceRoles(spaceId: string): Promise<RoleInfo[]> {
+    return this.#json<{ roles: RoleInfo[] }>(`/spaces/${encodeURIComponent(spaceId)}/roles`, {
+      method: 'GET',
+    }).then((r) => r.roles);
+  }
+  createRole(spaceId: string, input: RoleInput): Promise<RoleInfo> {
+    return this.#json(`/spaces/${encodeURIComponent(spaceId)}/roles`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+  updateRole(spaceId: string, roleId: string, input: RoleInput): Promise<RoleInfo> {
+    return this.#json(
+      `/spaces/${encodeURIComponent(spaceId)}/roles/${encodeURIComponent(roleId)}`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+    );
+  }
+  async deleteRole(spaceId: string, roleId: string): Promise<void> {
+    await this.#request(
+      `/spaces/${encodeURIComponent(spaceId)}/roles/${encodeURIComponent(roleId)}`,
+      { method: 'DELETE' },
+    );
+  }
+  async setMemberRoles(spaceId: string, account: string, roles: string[]): Promise<void> {
+    await this.#request(
+      `/spaces/${encodeURIComponent(spaceId)}/members/${encodeURIComponent(account)}/roles`,
+      { method: 'PUT', body: JSON.stringify({ roles }) },
+    );
   }
 
   async removeMember(roomId: string, account: string): Promise<void> {

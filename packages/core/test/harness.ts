@@ -306,6 +306,9 @@ export class World {
   /** How many events have been POSTed, for asserting that a throttle throttles. */
   eventPosts = 0;
 
+  /** How many commits have been posted. See the note in `fetch`. */
+  handshakePosts = 0;
+
   /**
    * In-process fetch. No port, no listener, the real routing — and no
    * credentials, because the client supplies its own bearer token now.
@@ -319,6 +322,10 @@ export class World {
       });
     }
     if (init?.method === 'POST' && String(input).endsWith('/events')) this.eventPosts += 1;
+    // Commits, for asserting that a space is one per *audience* rather than
+    // one per room — which is the number the audience model exists to keep
+    // down (`docs/03` §4).
+    if (init?.method === 'POST' && String(input).endsWith('/handshake')) this.handshakePosts += 1;
     return this.app.fetch(new Request(String(input), init));
   }) as typeof globalThis.fetch;
 

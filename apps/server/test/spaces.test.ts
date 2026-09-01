@@ -234,8 +234,11 @@ describe('rooms in a space', () => {
 
     expect(open.audience).toBe('everyone');
     expect(shut.audience).toBe(`roles:${mod.id}`);
-    // Nobody holds the role yet, so nobody is delivered to it.
-    expect(shut.members).toEqual([]);
+    // Nobody holds the role yet, so the only member is the person who made it
+    // — and that is deliberate. A room's MLS group has to be created by a
+    // client, so a moderator who gates a room on a role they do not hold would
+    // otherwise make a room nobody can ever open, including them.
+    expect(shut.members).toEqual([ALICE]);
   });
 });
 

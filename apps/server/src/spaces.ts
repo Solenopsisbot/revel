@@ -190,12 +190,19 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
     // Everyone in the space is a member of an `everyone` room. A narrower
     // audience is delivered to the accounts it names; role-gated membership is
     // recomputed whenever roles change.
-    const members =
+    const audienceMembers =
       audience.kind === 'list'
         ? audience.accounts
         : (await deps.store.listSpaceMembers(spaceId))
             .filter((m) => audience.kind === 'everyone' || holdsAny(m.roleIds, audience.roles))
             .map((m) => m.accountId);
+
+    // **Plus whoever made it.** A room's MLS group has to be created by a
+    // client, and only a member's client can do it — so a moderator who makes
+    // a room gated on a role they do not hold would create a room nobody can
+    // ever open, including them. Being in a room you made is also the less
+    // surprising of the two behaviours.
+    const members = [...new Set([...audienceMembers, gated.actor.accountId])];
 
     const created = await deps.store.createRoom(room, members);
     return c.json(

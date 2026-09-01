@@ -33,7 +33,14 @@ export async function permissionsFor(store: Store, roomId: string, accountId: st
     return { room, bits: Permission.VIEW | Permission.SEND | Permission.SEND_MEDIA };
 
   const [roles, overrides, owner] = await Promise.all([
-    store.getRoles(room.spaceId, membership.roleIds),
+    // `@everyone` is added here, not read from the membership row. It applies
+    // to every member of the space by definition and shares the space's id
+    // (`docs/04` §4) — relying on it having been *stored* means every write
+    // that touches `role_ids` has to remember not to drop it, and the one that
+    // forgot resolved a legitimate member to zero permissions: no VIEW, so not
+    // entitled to the group, so nobody could commit them into it. A member who
+    // can see a room exists and can never be given its keys.
+    store.getRoles(room.spaceId, [room.spaceId, ...membership.roleIds]),
     store.getOverrides(roomId),
     store.isOwner(room.spaceId, accountId),
   ]);

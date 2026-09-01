@@ -17,5 +17,5 @@ export * from './ids.js';
 export * from './permissions.js';
 export * from './push.js';
 export * from './rooms.js';
-export * from './spaces.js';
 export * from './socket.js';
+export * from './spaces.js';
