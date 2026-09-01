@@ -35,6 +35,15 @@ export const RoomInfo = z.object({
   group: Snowflake.nullable(),
   /** Accounts the server will deliver to. Not the MLS roster; see `docs/03` §5. */
   members: z.array(AccountId),
+  /**
+   * Which audience this room's group serves, or absent for a DM.
+   *
+   * The canonical key from `audienceKey()`. Sent because the client needs it to
+   * find the one room every member of a space is in — that is where a space's
+   * name lives, and a name carried anywhere narrower is one most of the space
+   * cannot read.
+   */
+  audience: z.string().max(2000).optional(),
   /** Whether a `stream` hint may be attached to events here (`docs/03` §7). */
   streamPaging: z.boolean(),
   /** Whether a `notify` hint may be attached. */

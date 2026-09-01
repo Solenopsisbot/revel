@@ -168,6 +168,17 @@ export interface RoomState {
   /** Which event set each name, so a page of old history cannot un-rename one. */
   threadNamesAt: Map<string, string>;
   /**
+   * What the space this room belongs to is called, from `space.name`.
+   *
+   * On the room because that is where events live. A space's name is read from
+   * any room in its `everyone` audience — the one audience every member of the
+   * space is in — so every member has it and the server has none of it.
+   */
+  spaceName?: string;
+  spaceColour?: string;
+  spaceNameAt?: string;
+
+  /**
    * face id → the face, from `room.faces`.
    *
    * A `FaceCard` rather than a `FaceRef`: the roster is where a face's note

@@ -196,6 +196,27 @@ export const EncryptedEvent = z.discriminatedUnion('type', [
   /** This account's faces as present in this room — so the server never learns
    *  a plural system's roster (`docs/11`). */
   evt({ ...base, type: z.literal('room.faces'), faces: z.array(FaceCard).max(64) }),
+  /**
+   * What a space is called, and its colour.
+   *
+   * **Encrypted, like a room's name**, for the same reason: `docs/04` §1 keeps
+   * names off the server, and a community's name is more identifying than any
+   * one room's. So the server knows a space exists and has never been told
+   * what it is.
+   *
+   * Sent into a room whose audience is "everyone in this space", which is the
+   * only audience every member is guaranteed to be in — a name carried by a
+   * moderators-only room would be a name most of the space could not read.
+   * Last writer wins by event id, exactly like `room.name`.
+   */
+  evt({
+    ...base,
+    type: z.literal('space.name'),
+    space: Id,
+    name: z.string().max(200),
+    /** A face colour token from `docs/07`, not a hex value. */
+    colour: z.string().max(32).optional(),
+  }),
 ]);
 export type EncryptedEvent = z.infer<typeof EncryptedEvent>;
 

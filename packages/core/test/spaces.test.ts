@@ -30,7 +30,7 @@ scenarios('a space', () => {
   it('shares one group across every room with the same audience', async () => {
     const { world, alice } = await two();
 
-    const space = await alice.core.directory.createSpace();
+    const space = await alice.core.directory.createSpace('Solexsis');
     const first = await alice.core.directory.createSpaceRoom(space.id);
     const second = await alice.core.directory.createSpaceRoom(space.id);
     await world.settle();
@@ -45,7 +45,7 @@ scenarios('a space', () => {
   it('gives a role-gated room its own group, so it is private by construction', async () => {
     const { world, alice } = await two();
 
-    const space = await alice.core.directory.createSpace();
+    const space = await alice.core.directory.createSpace('Solexsis');
     const open = await alice.core.directory.createSpaceRoom(space.id);
     const role = await alice.core.directory.createRole(space.id, { bits: '2' });
     const shut = await alice.core.directory.createSpaceRoom(space.id, {
@@ -60,13 +60,38 @@ scenarios('a space', () => {
     await world.close();
   });
 
+  it('carries the space name to everybody in it, and never to the server', async () => {
+    // `docs/04` §1 keeps names off the server, and a community's name is more
+    // identifying than any one room's. So the space's name is an encrypted
+    // event in the one audience every member is in.
+    const { world, alice, bob } = await two();
+
+    const space = await alice.core.directory.createSpace('Solexsis', 'violet');
+    await world.settle();
+    await alice.core.directory.inviteToSpace(space.id, [bob.account]);
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+
+    const rooms = await bob.core.directory.spaceRooms(space.id);
+    const general = rooms.find((r) => r.audience === 'everyone');
+    await bob.core.conversation.open(general?.id as string);
+    expect(bob.rooms.state(general?.id as string).spaceName).toBe('Solexsis');
+
+    // And the Host has the event without knowing what it says.
+    const stored = world.store.events.get(general?.id as string) ?? [];
+    expect(stored.length).toBeGreaterThan(0);
+    expect(JSON.stringify(stored)).not.toContain('Solexsis');
+    await world.close();
+  });
+
   it('lets somebody invited to a space actually read its rooms', async () => {
     // The half a membership row cannot do. `docs/03` §5: the server hands out
     // membership and cannot hand out keys, so an invite that stops at the
     // database is somebody who can see a room exists and not a word in it.
     const { world, alice, bob } = await two();
 
-    const space = await alice.core.directory.createSpace();
+    const space = await alice.core.directory.createSpace('Solexsis');
     const room = await alice.core.directory.createSpaceRoom(space.id);
     await world.settle();
 
@@ -89,7 +114,7 @@ scenarios('a space', () => {
     // committed into one group, and every one of the three opens for him.
     const { world, alice, bob } = await two();
 
-    const space = await alice.core.directory.createSpace();
+    const space = await alice.core.directory.createSpace('Solexsis');
     const rooms: string[] = [];
     for (let i = 0; i < 3; i++) {
       rooms.push((await alice.core.directory.createSpaceRoom(space.id)).id);

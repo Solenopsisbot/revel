@@ -173,7 +173,9 @@ export interface DirectoryCore {
   // client turns that into MLS groups (`docs/03` §4).
 
   spaces(): Promise<SpaceInfo[]>;
-  createSpace(): Promise<SpaceInfo>;
+  /** Makes it, gives it a `#general`, and names it — `docs/18`, no wizard. */
+  createSpace(name: string, colour?: string): Promise<SpaceInfo>;
+  nameSpace(spaceId: string, name: string, colour?: string): Promise<void>;
   spaceRooms(spaceId: string): Promise<RoomInfo[]>;
   /** Makes the room, and its group if this audience does not have one yet. */
   createSpaceRoom(spaceId: string, input?: CreateSpaceRoom): Promise<RoomInfo>;

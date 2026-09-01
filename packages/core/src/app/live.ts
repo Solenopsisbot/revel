@@ -388,10 +388,43 @@ class LiveDirectory implements DirectoryCore {
     return this.#transport.spaces();
   }
 
-  async createSpace(): Promise<SpaceInfo> {
+  /**
+   * Make a space, name it, and give it somewhere to talk.
+   *
+   * `docs/18`: "A new space arrives with `#general`, an `@everyone` role, one
+   * audience, and you in it. No wizard." The role and the audience are the
+   * server's; the room and the name are this.
+   *
+   * The name is an encrypted event, not a column — `docs/04` §1 keeps names off
+   * the server, and a community's name is more identifying than any one room's.
+   * It goes into the `everyone` room, the only audience every member is in.
+   */
+  async createSpace(name: string, colour?: string): Promise<SpaceInfo> {
     const space = await this.#transport.createSpace();
+    const general = await this.createSpaceRoom(space.id);
+    await this.#rooms.send(general.id, {
+      type: 'space.name',
+      space: space.id,
+      name,
+      ...(colour ? { colour } : {}),
+    });
     await this.refresh();
     return space;
+  }
+
+  /** Rename a space. Same event, same room, last writer wins. */
+  async nameSpace(spaceId: string, name: string, colour?: string): Promise<void> {
+    const rooms = await this.#transport.spaceRooms(spaceId);
+    // The `everyone` room, because a name carried by a moderators-only room is
+    // a name most of the space cannot read.
+    const target = rooms.find((r) => r.audience === 'everyone') ?? rooms[0];
+    if (!target) throw new Error('a space with no rooms has nowhere to put its name');
+    await this.#rooms.send(target.id, {
+      type: 'space.name',
+      space: spaceId,
+      name,
+      ...(colour ? { colour } : {}),
+    });
   }
 
   spaceRooms(spaceId: string): Promise<RoomInfo[]> {
@@ -438,7 +471,39 @@ class LiveDirectory implements DirectoryCore {
     for (const groupId of groups) {
       await this.#groups.invite(groupId, accounts);
     }
+
+    // Say the space's name again, *after* the commit.
+    //
+    // MLS keys move forward, so somebody who has just joined cannot read a
+    // word sent before their leaf existed — including the `space.name` event
+    // from the day it was made. Without this they arrive in a space with no
+    // name, and no way to ever learn one. `room.faces` has the same shape for
+    // the same reason.
+    //
+    // Read from local state rather than passed in: whoever is inviting already
+    // knows what the space is called, and asking the caller to supply it would
+    // make forgetting it the default.
+    const known = this.#knownSpaceName(spaceId);
+    if (known) {
+      await this.nameSpace(spaceId, known.name, known.colour).catch(() => {});
+    }
+
     await this.refresh();
+  }
+
+  /** What this client currently believes a space is called. */
+  #knownSpaceName(spaceId: string): { name: string; colour?: string } | null {
+    for (const room of this.#known) {
+      if (room.space !== spaceId) continue;
+      const state = this.#rooms.state(room.id);
+      if (state.spaceName) {
+        return {
+          name: state.spaceName,
+          ...(state.spaceColour ? { colour: state.spaceColour } : {}),
+        };
+      }
+    }
+    return null;
   }
 
   async leaveSpace(spaceId: string): Promise<void> {

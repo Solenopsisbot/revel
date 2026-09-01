@@ -142,6 +142,7 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
         kind: r.kind,
         space: r.spaceId,
         group: r.groupId,
+        audience: r.audience ?? undefined,
         streamPaging: r.streamPaging,
         notifyHints: r.notifyHints,
       })),

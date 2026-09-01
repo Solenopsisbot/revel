@@ -224,6 +224,20 @@ function apply(draft: RoomState, event: LocalEvent, options: ReduceOptions): voi
         draft.nameAt = event.id;
       }
       return;
+    case 'space.name':
+      // Same last-writer-wins as `room.name`, and for the same reason: a
+      // backfill delivers old events after new ones, so "newest to arrive"
+      // would rename the space to whatever it was called last month.
+      //
+      // Kept on the room's state because that is where events live. A space's
+      // name is read from any room in its `everyone` audience — every member
+      // is in that one by definition, so every member has it.
+      if (!draft.spaceNameAt || compareIds(event.id, draft.spaceNameAt) > 0) {
+        draft.spaceName = payload.name;
+        draft.spaceColour = payload.colour;
+        draft.spaceNameAt = event.id;
+      }
+      return;
     case 'room.faces':
       // Per face, for the same reason: a face renamed last week must not be
       // un-renamed by a page of history from last month.
