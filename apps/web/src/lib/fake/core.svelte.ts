@@ -680,9 +680,10 @@ class Core {
    */
   memberName(accountId: string): string {
     if (this.demo) return this.faces[accountId]?.name ?? accountId;
-    if (accountId === this.myAccountId) {
-      return session.address || session.current?.handle || live.nameOf(accountId);
-    }
+    // The handle, for everybody including me. Reading my own row out of
+    // `session.address` gave it a full `handle@idp` while everyone else's was
+    // bare — one list, two spellings, and the difference was "is this me",
+    // which the `you` tag beside it already says.
     return live.nameOf(accountId);
   }
 
@@ -1653,6 +1654,8 @@ class Core {
     spaceId: string,
     name: string,
     audience: { kind: 'everyone' } | { kind: 'roles'; roles: string[] } = { kind: 'everyone' },
+    /** Fixtures only. A live room is always text — voice is `docs/06` phase 5. */
+    kind: 'text' | 'voice' = 'text',
   ): Promise<{ room?: string; error?: string }> {
     const trimmed = name.trim();
     if (!trimmed) return { error: 'no_name' };
@@ -1665,7 +1668,7 @@ class Core {
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-|-$/g, '');
       if (!id || space.rooms.some((r) => r.id === id)) return { error: 'no_name' };
-      space.rooms.push({ id, name: id, kind: 'text', category: 'General', audience });
+      space.rooms.push({ id, name: id, kind, category: 'General', audience });
       this.messages[id] ??= [];
       this.openRoom(spaceId, id);
       return { room: id };

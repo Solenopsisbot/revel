@@ -85,7 +85,7 @@ async function create() {
     newAudience.kind === 'roles'
       ? ({ kind: 'roles', roles: newAudience.roles } as const)
       : ({ kind: 'everyone' } as const);
-  const result = await core.createRoom(space.id, name, audience);
+  const result = await core.createRoom(space.id, name, audience, newKind);
   if (result.error) {
     failed = result.error;
     return;
@@ -289,9 +289,14 @@ function toggleRole(a: Audience, role: string): Audience {
   {#if creating}
     <div class="new">
       <div class="new-top">
+        <!-- Voice rooms are `docs/06` phase 5 and the Host has no `kind` to
+             put one in, so a live space makes text rooms and does not offer a
+             button that would quietly make one anyway. -->
         <div class="seg">
           <button class:sel={newKind === 'text'} onclick={() => (newKind = 'text')}>Text</button>
-          <button class:sel={newKind === 'voice'} onclick={() => (newKind = 'voice')}>Voice</button>
+          {#if core.demo}
+            <button class:sel={newKind === 'voice'} onclick={() => (newKind = 'voice')}>Voice</button>
+          {/if}
         </div>
         <input
           type="text"

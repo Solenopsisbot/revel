@@ -47,19 +47,23 @@ const shown = $derived(
 
 /** Why an action on this member is unavailable, or null if it is fine. */
 function refuse(m: Member, need: 'KICK' | 'BAN'): string | null {
+  // A ban is a `bans` row the Host does not have yet, and a ban that is really
+  // a kick is the worst kind of wrong: it survives nothing, and whoever pressed
+  // it believes it did.
+  if (need === 'BAN' && !core.demo) return 'Banning isn’t built yet — removing them works.';
   if (m.owner) return 'The owner can’t be removed. Transfer the space first.';
   if (m.accountId === mine?.accountId) return 'That’s you.';
   if (!me.owner && !me.perms.has(need)) {
     return `You can’t ${need === 'KICK' ? 'remove people' : 'ban people'} here.`;
   }
   if (!me.owner && rankOf(space, m.roles) >= me.rank) {
-    return `${core.faces[m.faceId]?.name} is at or above your own rank.`;
+    return `${core.memberName(m.accountId)} is at or above your own rank.`;
   }
   return null;
 }
 
 function kick(m: Member) {
-  const name = core.faces[m.faceId]?.name ?? 'They';
+  const name = core.faces[m.faceId]?.name ?? core.memberName(m.accountId);
   wren.confirm({
     title: `Remove ${name} from ${space.name}?`,
     body: `They lose access to everything sent from here on. What they already read, they already have — no app can take that back. A new invite lets them return.`,
@@ -69,7 +73,7 @@ function kick(m: Member) {
 }
 
 function ban(m: Member) {
-  const name = core.faces[m.faceId]?.name ?? 'They';
+  const name = core.faces[m.faceId]?.name ?? core.memberName(m.accountId);
   wren.confirm({
     title: `Ban ${name} from ${space.name}?`,
     body: `Same as removing them, and the ban survives a new invite. You can lift it later from Moderation.`,
