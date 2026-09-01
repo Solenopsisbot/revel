@@ -80,6 +80,23 @@ sudo cp deploy/nginx/revel.chat.conf /etc/nginx/sites-available/revel.chat
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
+## The proxy's route list
+
+`revel.chat.conf` names the paths the Host serves, and nginx sends everything
+else to the SPA. **A route added to the server has to be added here too**, or it
+answers with `index.html` and the failure looks like a bug in the feature: the
+invite preview 404'd for a day and rendered as "this link doesn't work". The
+same list exists in `apps/web/vite.config.ts` for development, and they have to
+agree.
+
+```
+grep -rhoE "app\.(get|post|put|delete)\('/[a-z.-]+" apps/server/src | sort -u
+```
+
+Watch out for `/i/<code>` and `/invites/<code>`: the first is a *page* and the
+second is the API behind it. Only the second belongs in the proxy, which is why
+the location is anchored and followed by `(/|$)`.
+
 astral runs **nginx 1.18**, which predates the standalone `http2 on;`
 directive (1.25.1). It is a `listen` parameter here — `listen 443 ssl http2`.
 Getting that wrong fails `nginx -t`, which is the good outcome: a failed

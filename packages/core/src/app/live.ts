@@ -457,6 +457,31 @@ class LiveDirectory implements DirectoryCore {
    * invite whose commit failed after the row was written left somebody able to
    * see a room's name and not a word in it, with nothing that would ever try
    * again.
+   *
+   * ## What this hands the Host, said plainly
+   *
+   * Every client now commits whoever the **server** lists as a member. So a
+   * malicious Host can write a row for an account it controls and honest
+   * clients will add that leaf — which is as close as this design comes to the
+   * server handing out keys, and it should not be discovered later by somebody
+   * reading this function.
+   *
+   * It is the deliberate position, for two reasons.
+   *
+   * The first is that the alternative does not exist. Somebody has to commit a
+   * newcomer, only members can, and with an invite link no member is present.
+   * Requiring a human to approve each join would make a link a request rather
+   * than an invitation, which is a different product.
+   *
+   * The second is that it is **visible**, which is the whole of `docs/18`'s
+   * "no ghost readers": anything that can read a room is in that room's member
+   * list. An account the Host inserted shows up in People, in the roster, and
+   * in the MLS tree every member can check. The guarantee was never "the server
+   * cannot get somebody in" — it is "the server cannot get somebody in
+   * *quietly*", and that one still holds exactly.
+   *
+   * What would break it is a client that hid membership changes, so nothing
+   * here may ever filter this list down to "people we expected".
    */
   async reconcileGroups(): Promise<void> {
     // Ask first. This compares the Host's membership against the group's, and
