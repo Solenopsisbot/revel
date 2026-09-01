@@ -1118,10 +1118,23 @@ function toggleMembers() {
      accident while scrolling. */
   .sh-add {
     margin-left: auto; display: grid; place-items: center; cursor: pointer;
+    position: relative; isolation: isolate;
     width: 24px; height: 24px; min-width: var(--tap); min-height: var(--tap);
     border: 0; background: transparent; color: var(--text-dim); border-radius: var(--r-sm);
   }
-  .sh-add:hover { color: var(--text); background: var(--ground-3); }
+  /*
+    The tap target stays 44px — `docs/24` is not negotiable about that — and the
+    *shading* does not. Painting the hover across the whole target put a box
+    nearly three times the width of the glyph behind a 16px plus, which reads as
+    misaligned even though it is centred.
+  */
+  .sh-add::before {
+    content: ''; position: absolute; z-index: -1;
+    width: 30px; height: 30px; border-radius: var(--r-sm);
+    background: transparent; transition: background var(--t-fast) var(--ease);
+  }
+  .sh-add:hover { color: var(--text); }
+  .sh-add:hover::before { background: var(--ground-3); }
 
   .new-dm { display: flex; gap: 6px; padding: 6px 10px 8px; flex-wrap: wrap; }
   .new-dm input {

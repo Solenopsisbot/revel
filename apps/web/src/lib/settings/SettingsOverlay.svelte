@@ -183,9 +183,13 @@ $effect(() => {
   .close {
     position: absolute; right: 20px; top: 18px; display: flex; align-items: center; gap: 7px;
     background: transparent; border: 0; cursor: pointer; color: var(--text-mute);
-    padding: 6px 8px; border-radius: var(--r-sm); rotate: 45deg;
+    padding: 7px; border-radius: var(--r-sm);
     transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
   }
+  /* The glyph turns; the button does not. Rotating the button rotates its
+     background with it, which is why the hover shade sat as a diamond behind
+     a square icon. */
+  .close :global(svg) { rotate: 45deg; }
   .close:hover { color: var(--text); background: var(--ground-2); }
   .close .esc { display: none; }
 

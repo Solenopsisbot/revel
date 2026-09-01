@@ -216,8 +216,12 @@ function del() {
   .close {
     position: absolute; right: 20px; top: 18px; display: flex; align-items: center;
     background: transparent; border: 0; cursor: pointer; color: var(--text-mute);
-    padding: 6px; border-radius: var(--r-sm); rotate: 45deg;
+    padding: 6px; border-radius: var(--r-sm);
   }
+  /* The glyph turns; the button does not. Rotating the button rotates its
+     background with it, which is why the hover shade sat as a diamond behind
+     a square icon. */
+  .close :global(svg) { rotate: 45deg; }
   .close:hover { color: var(--text); background: var(--ground-2); }
 
   .pane { max-width: 720px; animation: fade var(--t-fast) var(--ease); }

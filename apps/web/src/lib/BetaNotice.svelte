@@ -65,7 +65,11 @@ function dismiss() {
   .beta button {
     margin-left: auto; flex: none; display: grid; place-items: center;
     background: none; border: 0; cursor: pointer; color: var(--text-2);
-    padding: 2px; border-radius: var(--r-sm); rotate: 45deg;
+    padding: 5px; border-radius: var(--r-sm);
   }
+  /* The glyph turns; the button does not. Rotating the button rotates its
+     background with it, which is why the hover shade sat as a diamond behind
+     a square icon. */
+  .beta button :global(svg) { rotate: 45deg; }
   .beta button:hover { background: var(--ground-3); color: var(--text); }
 </style>
