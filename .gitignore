@@ -25,3 +25,15 @@ packages/crypto-wasm/*
 *.log
 /tmp/
 revel-host.json
+
+# Secrets, and the near-misses.
+#
+# `.env.example` is checked in and is the documentation; `.env` is the one with
+# the database password in it. The host key is worse: `docs/36` explains that
+# neither key inside it can be regenerated, so a copy in a public repository is
+# not a rotation, it is every account on that Host.
+.env
+.env.*
+!.env.example
+*host-key*.json
+*.pem
