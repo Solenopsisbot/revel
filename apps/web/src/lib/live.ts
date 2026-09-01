@@ -46,6 +46,7 @@ import { type CryptoEngine, spawnCryptoEngine } from '@revel/crypto';
 import cryptoWasmUrl from '@revel/crypto-wasm/revel_crypto_bg.wasm?url';
 import { has, parse, Permission } from '@revel/protocol';
 import { myFaces } from './faces.svelte.js';
+import { session } from './session.svelte.js';
 // A cycle on paper and not in practice: `live.svelte.ts` reaches this module
 // through a dynamic `import()` inside `start`, so it is always evaluated first
 // and its export exists by the time anything here reads it. Worth it — the
@@ -57,11 +58,26 @@ import { notifications } from './notify.svelte.js';
 /** Where the Host lives. Same origin in dev, behind the vite proxy. */
 const HOST = import.meta.env.VITE_HOST_URL ?? '';
 
+/**
+ * This account's address, as a person reads it.
+ *
+ * Read at announce time rather than captured at start-up: a handle can be
+ * claimed after the stack is running, and a face card that carried an empty
+ * address forever would be the linking toggle silently doing nothing.
+ */
+function addressOf(): string | undefined {
+  const handle = session.current?.handle;
+  if (!handle) return undefined;
+  return typeof location === 'undefined' ? handle : `${handle}@${location.host}`;
+}
+
 export interface LiveStack {
   core: LiveCore;
   crypto: CryptoEngine;
   rooms: RoomSync;
   groups: GroupSync;
+  /** The local database. Exposed so Storage can count what is on this device. */
+  store: IndexedDbStore;
   stream: WebSocketStream;
   session: HostSession;
   /**
@@ -372,7 +388,11 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
     // because the book belongs to the session, not to the sync engines.
     faceFor: (roomId) => {
       const face = myFaces.speaking(roomId);
-      return face ? cardOf(face) : undefined;
+      if (!face) return undefined;
+      // The address only when this account has asked to be linkable
+      // (`docs/11`). Off is the default and off means the field is simply
+      // absent — see `FaceCard.address`.
+      return cardOf(face, myFaces.linked ? addressOf() : undefined);
     },
   });
 
@@ -386,6 +406,7 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
     crypto,
     rooms,
     groups,
+    store,
     stream,
     session,
     sync: syncGroups,

@@ -53,6 +53,28 @@ export type FaceRef = z.infer<typeof FaceRef>;
 export const FaceCard = FaceRef.extend({
   /** `docs/11`'s one-line note — "the bit that does the actual work". */
   note: z.string().max(280).optional(),
+  /**
+   * How to reach the account behind this face — `viola@revel.chat`.
+   *
+   * **Present only when "link my faces publicly" is on**, and that is the whole
+   * mechanism: `docs/11` makes the control off by default, and the honest way
+   * to implement an off-by-default disclosure is for the disclosed thing to be
+   * absent rather than for a flag to say "please don't look". There is no
+   * boolean anywhere on the wire, so there is no state where the flag and the
+   * data disagree.
+   *
+   * On `FaceCard` rather than `FaceRef`, which is the same call `note` made and
+   * for the same reason: this rides the room's roster, one event per face per
+   * room, instead of on every message anyone ever sends. `docs/29` §1 —
+   * encrypted history cannot be re-encrypted, so a field added to `FaceRef` is
+   * a field on every message forever.
+   *
+   * Not a security boundary and `docs/11` says so plainly: per-account
+   * attribution already links two faces for anyone in a room where both have
+   * spoken. What withholding this buys is the cases outside that — faces in
+   * different rooms, and a face that has never spoken.
+   */
+  address: z.string().max(200).optional(),
 });
 export type FaceCard = z.infer<typeof FaceCard>;
 

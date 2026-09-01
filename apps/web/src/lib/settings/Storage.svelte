@@ -20,8 +20,25 @@ import Icon from '$lib/Icon.svelte';
 import { layout } from '$lib/layout.svelte.js';
 import { wren } from '$lib/wren/wren.svelte.js';
 
+import { live } from '$lib/live.svelte.js';
+
 const s = $derived(core.storage);
 const mb = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)} GB` : `${n} MB`);
+
+/** Real bytes, from `navigator.storage.estimate()`. */
+const bytes = (n: number) => {
+  if (n < 1024) return `${n} B`;
+  const mbs = n / (1024 * 1024);
+  return mbs >= 1024 ? `${(mbs / 1024).toFixed(1)} GB` : `${Math.round(mbs)} MB`;
+};
+
+const quotaPct = $derived(
+  live.storage?.quota ? Math.min(100, Math.round((live.storage.usage / live.storage.quota) * 100)) : 0,
+);
+
+$effect(() => {
+  if (!core.demo) void live.refreshStorage();
+});
 
 /**
  * `docs/24`: the media cache is "capped by default on metered/small devices,
@@ -78,6 +95,52 @@ function clearLeft() {
   Everything below is on this device. The server holds ciphertext it can't read,
   so this is the only copy that is legible anywhere.
 </p>
+
+{#if !core.demo}
+  <!--
+    The measured version. A browser reports one number for the whole origin and
+    will not break it down by object store — so the breakdown, the per-space
+    split and the cap are the design (`docs/19`) and not something this can
+    show yet. Numbers that were divided into plausible quarters would be worse
+    than a number and a sentence.
+  -->
+  <section>
+    <div class="total">
+      <span class="label">On this device</span>
+      <span class="value">{live.storage ? bytes(live.storage.usage) : '…'}</span>
+    </div>
+    {#if live.storage?.quota}
+      <div class="bar" role="img" aria-label="{quotaPct}% of what this browser allows">
+        <span class="seg" style="width: {quotaPct}%; background: var(--face-aqua)"></span>
+      </div>
+      <p class="cap">
+        {quotaPct}% of the {bytes(live.storage.quota)} this browser is willing to give the app.
+      </p>
+    {/if}
+
+    <div class="row plain">
+      <span class="nm">Conversations held here</span>
+      <span class="mb">{live.storage?.rooms ?? 0}</span>
+    </div>
+
+    <p class="note">
+      That total is everything this site has stored in this browser, which is
+      the honest answer to “how much disk is this using”. It is not per-account
+      — a browser will not separate them — and it cannot be split into messages
+      versus media, because nothing reports that either.
+    </p>
+  </section>
+
+  <section>
+    <h3>Clearing it</h3>
+    <p class="note">
+      Signing out is the way to remove this account's data from this device, and
+      it is under <b>Account</b>. Per-category clearing is designed
+      (<code>docs/19</code>) and not built — a button that cleared “media” would
+      have to be able to find it first.
+    </p>
+  </section>
+{:else}
 
 <section>
   <div class="total">
@@ -184,6 +247,8 @@ function clearLeft() {
   </p>
   <button class="act danger" onclick={clearEverything}>Clear local data</button>
 </section>
+
+{/if}
 
 <style>
   h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }

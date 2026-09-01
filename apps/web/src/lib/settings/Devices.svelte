@@ -5,9 +5,70 @@
  * three months. Revoking one from her panel has to make it disappear from
  * here, and vice versa — two copies would drift within a week.
  */
+import { goto } from '$app/navigation';
 import { core } from '$lib/fake/core.svelte.js';
+import { fingerprint } from '$lib/fingerprint.js';
+import { live } from '$lib/live.svelte.js';
+import { session } from '$lib/session.svelte.js';
+import { fromBase64, toBase64 } from '@revel/protocol';
+import { wren } from '$lib/wren/wren.svelte.js';
 
 let fingerprints = $state(false);
+
+/** This device's own key, so its row can say so and refuse to sign itself out. */
+const thisDevice = $derived(
+  session.current?.device ? toBase64(session.current.device.devicePub) : '',
+);
+
+$effect(() => {
+  if (!core.demo) void live.refreshDevices();
+});
+
+/**
+ * The Host's list, in the shape this screen renders.
+ *
+ * Three fixture fields have no live equivalent and are **left out rather than
+ * invented**: `platform` and `seen` are not things the Host records, and the
+ * `stale` treatment is derived from a last-seen it therefore does not have. A
+ * device list that guessed at "last seen 3 months ago" would be the one screen
+ * in the product where a plausible number is actively dangerous.
+ */
+const rows = $derived.by(() => {
+  // Live only. The demo renders `core.devices` directly, because the fixture
+  // shape carries fields the Host has never heard of and squeezing both
+  // through one type would mean inventing the missing half.
+  void live.version;
+  return live.devices
+    .filter((d) => !d.revokedAt)
+    .map((d) => ({
+      id: d.pub,
+      name: d.label || 'Unnamed device',
+      current: d.pub === thisDevice,
+      added: d.registeredAt,
+    }));
+});
+
+/** pub → fingerprint, computed once each and only when asked for. */
+let prints = $state<Record<string, string>>({});
+$effect(() => {
+  if (!fingerprints || core.demo) return;
+  for (const d of rows) {
+    if (prints[d.id]) continue;
+    void fingerprint(fromBase64(d.id)).then((fp) => (prints = { ...prints, [d.id]: fp }));
+  }
+});
+
+function signOut(id: string, name: string) {
+  wren.confirm({
+    title: `Sign out ${name}?`,
+    body: `It stops being able to read anything sent from then on, and its sessions end immediately. What it already downloaded stays on it — that part can't be taken back.`,
+    confirm: 'Sign it out',
+    onConfirm: () => void live.revokeDevice(id),
+  });
+}
+
+const when = (ms: number) =>
+  new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 </script>
 
 <h2>Devices</h2>
@@ -16,6 +77,7 @@ let fingerprints = $state(false);
   sent from then on.
 </p>
 
+{#if core.demo}
 {#each core.devices as d (d.id)}
   <div class="device" class:stale={d.seenDays >= 90}>
     <div class="meta">
@@ -35,13 +97,52 @@ let fingerprints = $state(false);
     {/if}
   </div>
 {/each}
+{:else}
+  {#each rows as d (d.id)}
+    <div class="device">
+      <div class="meta">
+        <div class="nm">
+          {d.name}
+          {#if d.current}<span class="tag">this device</span>{/if}
+        </div>
+        <div class="sub">added {when(d.added)}</div>
+        {#if fingerprints}
+          <div class="fp">{prints[d.id] ?? '…'}</div>
+        {/if}
+      </div>
+      <!-- The current device cannot revoke itself. That is "sign out", which
+           lives under Account and means something different. -->
+      {#if !d.current}
+        <button class="out" onclick={() => signOut(d.id, d.name)}>Sign out</button>
+      {/if}
+    </div>
+  {:else}
+    <p class="note">No devices yet, which cannot be true — try again in a moment.</p>
+  {/each}
+{/if}
 
 <div class="foot">
-  <button class="add">Add a device</button>
+  <button class="add" onclick={() => goto('/add-device')}>Add a device</button>
   <button class="link" onclick={() => (fingerprints = !fingerprints)}>
     {fingerprints ? 'Hide' : 'Show'} fingerprints
   </button>
 </div>
+
+{#if fingerprints && !core.demo}
+  <p class="note">
+    These are the same six numbers the other screen shows when you pair a
+    device. They are for you to compare — nothing here checks them, because a
+    device that is signed in has already proved it holds the key.
+  </p>
+{/if}
+
+{#if !core.demo}
+  <p class="note">
+    The Host records when a device was added and nothing else about it — no
+    platform, no location, no last-seen. There is nothing here to show you
+    because there is nothing there to know.
+  </p>
+{/if}
 
 <p class="note">
   Signing out a device stops it reading anything from now on. It keeps whatever

@@ -37,7 +37,25 @@ function unblock(handle: string) {
   people in the room, not about us.
 </p>
 
-<section>
+{#if !core.demo}
+  <!--
+    The four controls below are real settings with no enforcement behind them
+    yet: who may DM you and who may add you to a space are Host policy, and
+    read receipts, typing and presence are events this client sends. Both
+    halves are specified (`docs/19`) and neither is wired, so the switches are
+    shown as the design they are rather than as choices that took effect.
+  -->
+  <p class="soon">
+    <Icon name="lock" size={15} />
+    <span>
+      None of the switches below do anything yet. They are shown because they
+      are what this screen will hold, and hiding them would make the gap harder
+      to notice rather than smaller.
+    </span>
+  </p>
+{/if}
+
+<section class:soon-off={!core.demo}>
   <h3>Who can start a conversation with you</h3>
   <div class="seg">
     {#each REACH as r (r.id)}
@@ -48,7 +66,7 @@ function unblock(handle: string) {
   </div>
 </section>
 
-<section>
+<section class:soon-off={!core.demo}>
   <h3>Who can add you to a space</h3>
   <p class="sub">
     Anyone excluded here can still send you an invite you have to accept. This
@@ -65,7 +83,7 @@ function unblock(handle: string) {
   </div>
 </section>
 
-<section>
+<section class:soon-off={!core.demo}>
   <h3>What you tell other people</h3>
   <p class="sub">
     These are on by default because a conversation where nobody knows if
@@ -106,6 +124,19 @@ function unblock(handle: string) {
 
 <section>
   <h3>Blocked</h3>
+  {#if !core.demo}
+    <!-- Blocking is a `blocks` table the Host does not have, and it has to be
+         the Host's: the point is that their messages stop reaching you, which
+         means delivery has to know. A local-only list would be a filter that
+         still downloaded everything and still let them see you. -->
+    <p class="empty">Blocking isn't built yet.</p>
+    <p class="note">
+      When it is, it will stop their messages reaching you and yours reaching
+      them. In a room you both belong to they will still see what you post
+      there — leaving is the only thing that changes that, and we'd rather say
+      so than let you find out later.
+    </p>
+  {:else}
   {#each p.blocked as b (b.handle)}
     <div class="row">
       <div class="meta">
@@ -123,6 +154,7 @@ function unblock(handle: string) {
     leaving the room is the only thing that changes that, and we'd rather say
     so than let you find out later.
   </p>
+  {/if}
 </section>
 
 <section class="danger-zone">
@@ -142,6 +174,15 @@ function unblock(handle: string) {
   h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }
   .lede { color: var(--text-mute); margin: 0 0 28px; font-size: var(--text-sm); max-width: 62ch; line-height: 1.55; }
   section { margin-bottom: 34px; }
+  /* Visibly inert rather than hidden — see the note above. */
+  .soon-off { opacity: .55; }
+  .soon-off :global(input) { pointer-events: none; }
+  .soon {
+    display: flex; gap: 10px; align-items: flex-start; max-width: 62ch;
+    margin: 0 0 28px; padding: 12px 14px; border-radius: var(--r-md);
+    border: 1px solid var(--line); background: var(--ground-2);
+    font-size: var(--text-sm); color: var(--text-dim); line-height: 1.55;
+  }
   h3 { font-size: var(--text-base); font-weight: 700; margin: 0 0 4px; }
   .sub { color: var(--text-mute); font-size: var(--text-sm); margin: 0 0 12px; display: block; line-height: 1.5; max-width: 60ch; }
 

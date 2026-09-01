@@ -63,6 +63,16 @@ export interface FaceBook {
   primary: string;
   /** roomId → face id. See the note above on why this is not one value. */
   byRoom: Record<string, string>;
+  /**
+   * `docs/11`'s "link my faces publicly". **Off unless present.**
+   *
+   * Lives in the sealed book rather than on the account, because it is a fact
+   * about how this person wants to be *seen* and the Host has no business
+   * holding it — the same argument that puts faces inside the ciphertext at
+   * all. Turning it on makes `cardOf` include the account's address, which is
+   * the only thing that changes.
+   */
+  linked?: boolean;
 }
 
 /**
@@ -120,10 +130,23 @@ export function speakerIn(book: FaceBook, roomId: string): Face | null {
  * thing it renders, and this is what goes in `room.faces`, once per face per
  * room. See `FaceCard` in `@revel/protocol` for why that split is permanent.
  */
-export function cardOf(face: Face): FaceCard {
+/**
+ * A face as the room's roster sees it.
+ *
+ * `address` is the opt-in half of `docs/11`'s linking control, and it is passed
+ * in rather than read from anywhere: this module knows about faces and not
+ * about accounts, and a function that could reach for the address would be one
+ * disclosure away from making it unconditional by accident.
+ *
+ * Omitting it is the *off* state, and off is the default — so a caller that
+ * forgets to pass it discloses nothing, which is the direction a mistake here
+ * should fail in.
+ */
+export function cardOf(face: Face, address?: string): FaceCard {
   return {
     ...refOf(face),
     ...(face.note ? { note: face.note } : {}),
+    ...(address ? { address } : {}),
   };
 }
 

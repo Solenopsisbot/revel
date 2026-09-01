@@ -1,4 +1,5 @@
 <script lang="ts">
+import { faceColour } from '$lib/colour.js';
 import { core } from '$lib/fake/core.svelte.js';
 import { layout } from '$lib/layout.svelte.js';
 
@@ -43,11 +44,11 @@ const count = $derived(core.everythingInRoom.length);
   <h3>Who else holds keys here</h3>
   <ul class="who">
     {#each humans as f (f.id)}
-      <li><span class="dot" style="background: var(--face-{f.colour})"></span>{f.name}</li>
+      <li><span class="dot" style="background: var(--face-{faceColour(f)})"></span>{f.name}</li>
     {/each}
     {#each agents as f (f.id)}
       <li>
-        <span class="dot" style="background: var(--face-{f.colour})"></span>{f.name}
+        <span class="dot" style="background: var(--face-{faceColour(f)})"></span>{f.name}
         <span class="tag">{f.agent?.label}</span>
       </li>
     {/each}

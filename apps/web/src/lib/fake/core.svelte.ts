@@ -655,8 +655,17 @@ class Core {
    * stored like any other, so "what the server can see" must not quietly leave
    * it out. That screen is only persuasive while it is exactly true.
    */
+  /**
+   * Every event in the open room, threads included.
+   *
+   * Used by the "what the server can see" panel, which counts them — so it has
+   * to be *everything*, not the timeline, which hides thread replies. Reading
+   * the fixture map live meant that panel said "0 messages have been sent"
+   * about a room somebody was reading.
+   */
   get everythingInRoom() {
-    return this.messages[this.currentRoomId] ?? [];
+    if (this.demo) return this.messages[this.currentRoomId] ?? [];
+    return live.room(this.currentRoomId)?.messages ?? [];
   }
   // ── membership, roles and moderation ──────────────────────────────────────
 
@@ -711,6 +720,19 @@ class Core {
     return handle.includes('@') ? handle : `${handle}@${session.provider}`;
   }
 
+  /** `docs/11`'s linking control. The fixture bool in the demo, the book live. */
+  get facesLinked(): boolean {
+    return this.demo ? this.account.facesLinkedPublicly : myFaces.linked;
+  }
+
+  setFacesLinked(on: boolean): void {
+    if (this.demo) {
+      this.account.facesLinkedPublicly = on;
+      return;
+    }
+    void myFaces.setLinked(on);
+  }
+
   /**
    * The address to show on a face's profile card, or empty.
    *
@@ -740,6 +762,12 @@ class Core {
 
     const mine = this.myFaces.some((f) => f.id === faceId);
     if (mine) return this.addressOf(this.myAccountId);
+
+    // Announced by them, because they turned linking on. The one case where
+    // somebody else's address is theirs to have given rather than ours to
+    // infer — so it needs no other condition.
+    const card = live.running ? live.room(this.currentRoomId)?.faces.get(faceId) : undefined;
+    if (card?.address) return card.address;
 
     // The other account in a 1:1 DM. `kind === 'dm'` is the derived-id room —
     // exactly two accounts — and a group DM is `kind === 'group'`, which this

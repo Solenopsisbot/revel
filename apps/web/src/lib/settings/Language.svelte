@@ -48,7 +48,27 @@ function drop(lang: string) {
   fallback.
 </p>
 
-<section>
+{#if !core.demo}
+  <!--
+    Nothing on this screen is wired, and the reason is the whole feature:
+    `docs/10` puts translation *on the device* — a model that runs locally, so
+    a message is never sent anywhere to be read. That is the phase-5 work and
+    none of it exists, so the models list below has nothing to list and the
+    preferences have nothing to feed.
+  -->
+  <p class="soon">
+    <Icon name="lock" size={15} />
+    <span>
+      On-device translation isn't built yet, so nothing here takes effect. It
+      is shown because it is the shape of the thing — the point of
+      <code>docs/10</code> is that a message is translated on your machine and
+      never sent anywhere to be read, which is why there are models to manage
+      at all.
+    </span>
+  </p>
+{/if}
+
+<section class:soon-off={!core.demo}>
   <h3>Interface</h3>
   <div class="langs">
     {#each INTERFACE_LANGUAGES as opt (opt.id)}
@@ -64,7 +84,7 @@ function drop(lang: string) {
   </div>
 </section>
 
-<section>
+<section class:soon-off={!core.demo}>
   <h3>Languages you read</h3>
   <p class="sub">
     Anything in one of these is left alone. Anything else is what the rule below
@@ -98,7 +118,7 @@ function drop(lang: string) {
   </div>
 </section>
 
-<section>
+<section class:soon-off={!core.demo}>
   <h3>When something isn't in one of them</h3>
   <label class="check">
     <input type="checkbox" bind:checked={l.auto} />
@@ -132,7 +152,7 @@ function drop(lang: string) {
   {/if}
 </section>
 
-<section>
+<section class:soon-off={!core.demo}>
   <h3>Voice</h3>
   <label class="check">
     <input type="checkbox" bind:checked={l.transcribeVoice} />
@@ -176,6 +196,19 @@ function drop(lang: string) {
 </p>
 
 <style>
+  /* Visibly inert rather than hidden. */
+  .soon-off { opacity: .55; }
+  .soon-off :global(input), .soon-off :global(button) { pointer-events: none; }
+  .soon {
+    display: flex; gap: 10px; align-items: flex-start; max-width: 62ch;
+    margin: 0 0 28px; padding: 12px 14px; border-radius: var(--r-md);
+    border: 1px solid var(--line); background: var(--ground-2);
+    font-size: var(--text-sm); color: var(--text-dim); line-height: 1.55;
+  }
+  .soon code {
+    font-family: var(--font-mono); font-size: .9em;
+    background: var(--ground-0); padding: 1px 5px; border-radius: var(--r-xs);
+  }
   h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }
   .lede { color: var(--text-mute); margin: 0 0 28px; font-size: var(--text-sm); max-width: 62ch; line-height: 1.55; }
   section { margin-bottom: 34px; }

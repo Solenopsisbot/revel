@@ -171,8 +171,8 @@ function add() {
   <label class="row">
     <input
       type="checkbox"
-      checked={core.account.facesLinkedPublicly}
-      onchange={(e) => (core.account.facesLinkedPublicly = e.currentTarget.checked)}
+      checked={core.facesLinked}
+      onchange={(e) => core.setFacesLinked(e.currentTarget.checked)}
     />
     <span>
       <b>Link my faces publicly</b>
@@ -182,6 +182,26 @@ function add() {
         never learns the connection either. Some systems are out; some very
         much aren't.
       </span>
+      {#if !core.demo}
+        <!--
+          Both limits, next to the switch rather than in a doc somebody has to
+          go and find. The first is what turning it off cannot do; the second
+          is what leaving it off was never protecting against. `docs/11` states
+          both, and a control that overstates itself is worse than one that is
+          honest about being partial.
+        -->
+        <span class="sub">
+          Turning it on adds your address to your faces from then on. Turning it
+          back off stops adding it — it can't take back what rooms already have,
+          because those messages can't be rewritten.
+        </span>
+        <span class="sub">
+          It also can't hide two of your faces from someone who has seen both
+          post in one room: who sent a message is attributed to the account, not
+          the face. What it protects is faces used in different rooms, and faces
+          that have never spoken.
+        </span>
+      {/if}
     </span>
   </label>
 </section>

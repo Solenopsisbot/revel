@@ -17,7 +17,13 @@
  */
 
 import type { RoomState, Session } from '@revel/core';
-import type { RoleInfo, RoomInfo, SpaceInfo, SpaceMemberInfo } from '@revel/protocol';
+import type {
+  DeviceInfo,
+  RoleInfo,
+  RoomInfo,
+  SpaceInfo,
+  SpaceMemberInfo,
+} from '@revel/protocol';
 import type { LiveStack } from './live.js';
 
 /**
@@ -82,6 +88,7 @@ class Live {
     this.#typing.clear();
     this.#rooms.clear();
     this.spaces = [];
+    this.devices = [];
     await this.stack?.close().catch(() => {});
     this.stack = null;
     this.version++;
@@ -146,6 +153,63 @@ class Live {
   /** Everything up to now in this room has been seen. */
   async markRead(roomId: string): Promise<void> {
     await this.stack?.core.conversation.markRead(roomId).catch(() => {});
+  }
+
+  /**
+   * The devices that can read this account's messages.
+   *
+   * **The most safety-critical list in the product**, which is why it is
+   * fetched rather than cached anywhere: every entry is a key holder, and a
+   * stale answer here is somebody looking at a list that no longer says who
+   * can read their conversations.
+   */
+  devices = $state<DeviceInfo[]>([]);
+
+  async refreshDevices(): Promise<void> {
+    const stack = this.stack;
+    if (!stack) return;
+    this.devices = await stack.core.identity.devices().catch((err) => {
+      console.error('revel: could not list your devices', err);
+      return [];
+    });
+    this.version++;
+  }
+
+  /** Sign one out. Its sessions and push channel die immediately (`docs/03` §3). */
+  async revokeDevice(devicePub: string): Promise<void> {
+    await this.stack?.core.identity.revokeDevice(devicePub);
+    await this.refreshDevices();
+  }
+
+  /**
+   * What this device is actually holding.
+   *
+   * `navigator.storage.estimate()` and a room count, which is all that can be
+   * *measured* — the fixture screen breaks usage down by messages, media,
+   * index and models, and IndexedDB does not report per-store sizes. So the
+   * screen shows the two true numbers and says the breakdown is not something
+   * the browser will tell it, rather than dividing the total into plausible
+   * quarters.
+   *
+   * `usage` counts everything this origin has stored, which on a device that
+   * has been signed in as two accounts includes both. That is the honest
+   * number for "how much of your disk is this app using" and the wrong one for
+   * "how much is this account" — said on the screen rather than corrected here,
+   * because the browser genuinely will not separate them.
+   */
+  storage = $state<{ usage: number; quota: number; rooms: number } | null>(null);
+
+  async refreshStorage(): Promise<void> {
+    const stack = this.stack;
+    if (!stack) return;
+    const estimate = await navigator.storage?.estimate?.().catch(() => null);
+    const rooms = await stack.store.listRoomIds().catch(() => []);
+    this.storage = {
+      usage: estimate?.usage ?? 0,
+      quota: estimate?.quota ?? 0,
+      rooms: rooms.length,
+    };
+    this.version++;
   }
 
   /** Rooms the Host says this account is in. Refreshed, never guessed. */

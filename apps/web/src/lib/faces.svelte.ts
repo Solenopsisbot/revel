@@ -98,6 +98,31 @@ class MyFaces {
     await this.#commit(removeFace(this.book, id));
   }
 
+  /**
+   * `docs/11`'s "link my faces publicly". Off unless it has been turned on.
+   *
+   * Reading it is what decides whether `cardOf` carries an address, and that
+   * is the entire mechanism — there is no flag on the wire, only the presence
+   * or absence of the thing it would have guarded.
+   */
+  get linked(): boolean {
+    return this.book.linked === true;
+  }
+
+  /**
+   * Turn linking on or off.
+   *
+   * **Turning it off does not un-say anything.** Every roster event already
+   * sent carries the address, and encrypted history cannot be rewritten
+   * (`docs/29` §1) — so this changes what is announced from here on and
+   * nothing about what a room already holds. The setting's own copy has to say
+   * that, because a switch that looks like it retracts something is worse than
+   * no switch.
+   */
+  async setLinked(linked: boolean): Promise<void> {
+    await this.#commit({ ...this.book, linked });
+  }
+
   /** Choose a face for one room. Per room — see `identity/faces.ts` for why. */
   async speak(roomId: string, faceId: string): Promise<void> {
     await this.#commit(speakAs(this.book, roomId, faceId));

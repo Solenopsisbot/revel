@@ -200,3 +200,38 @@ describe('storage', () => {
     expect((await loadFaces('acct-b')).faces).toHaveLength(1);
   });
 });
+
+describe('linking faces publicly', () => {
+  // `docs/11` §"Linking faces — an explicit, off-by-default privacy control".
+  // The mechanism is that the disclosed thing is *absent* when the control is
+  // off, rather than a flag on the wire asking readers not to look — so these
+  // are assertions about what a card does and does not carry.
+  const june: Face = { id: '1', name: 'June', colour: 'mint' };
+
+  it('carries no address by default, because off is the default', () => {
+    expect(cardOf(june)).toEqual({ id: '1', name: 'June', colour: 'mint' });
+    expect('address' in cardOf(june)).toBe(false);
+  });
+
+  it('carries one when it is given one', () => {
+    expect(cardOf(june, 'viola@revel.chat')).toMatchObject({ address: 'viola@revel.chat' });
+  });
+
+  it('fails towards silence when a caller forgets', () => {
+    // A caller that omits the argument discloses nothing. The opposite default
+    // — read it from somewhere and omit on request — makes forgetting a leak.
+    expect(cardOf(june, undefined)).not.toHaveProperty('address');
+    expect(cardOf(june, '')).not.toHaveProperty('address');
+  });
+
+  it('keeps it off `refOf`, which is what every message carries', () => {
+    // `docs/29` §1: a field on `FaceRef` is a field on every message anyone
+    // ever sends, forever. This one changes about as often as a handle does.
+    expect(refOf(june)).not.toHaveProperty('address');
+    expect(refOf({ ...june, note: 'a note' })).not.toHaveProperty('note');
+  });
+
+  it('is off for a book that has never been asked', () => {
+    expect(book().linked).toBeUndefined();
+  });
+});
