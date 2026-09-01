@@ -130,7 +130,7 @@ const hostIdentity = await (async () => {
     console.error('propose into a group it opened before the last restart, and');
     console.error('then fail silently and permanently. Run:');
     console.error('');
-    console.error('    pnpm init');
+    console.error('    pnpm host-key');
     console.error('');
     console.error('or set REVEL_HOST_KEY. To run without one, unset DATABASE_URL.');
     process.exit(1);

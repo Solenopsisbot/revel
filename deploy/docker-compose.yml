@@ -1,0 +1,74 @@
+# Revel on astral.
+#
+# **Every path that stores anything is a bind mount to `/mnt/blockvol`.**
+# astral's root filesystem is 45GB and sits around 95% full, and Docker's
+# data-root is on it — so a named volume, which is the obvious thing to reach
+# for, lands on the disk with two gigabytes left. Postgres would fill it and
+# take the other six containers on this box down with it.
+#
+#   cd /mnt/blockvol/revel/app/deploy && docker compose up -d
+#
+# `docs/36` is the runbook. `.env` lives beside this file and is not in git.
+
+name: revel
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: revel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: revel
+      # Off by default in the alpine image and worth having: it is the
+      # difference between "the database is corrupt" and "the database says
+      # which page is corrupt".
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes:
+      - /mnt/blockvol/revel/postgres:/var/lib/postgresql/data
+    # Not published. Nothing outside this compose project has any business
+    # reaching it, and astral already runs a system Postgres on 5432.
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U revel -d revel']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  host:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://revel:${POSTGRES_PASSWORD}@postgres:5432/revel
+      REVEL_BLOB_DIR: /data/blobs
+      REVEL_HOST_KEY_FILE: /data/secrets/host-key.json
+      PORT: 8080
+    volumes:
+      - /mnt/blockvol/revel/blobs:/data/blobs
+      # Read-only: the Host needs to read its signing key and has no reason to
+      # be able to replace it.
+      - /mnt/blockvol/revel/secrets:/data/secrets:ro
+    # Localhost only. nginx is the only thing that should be able to reach it,
+    # and binding 0.0.0.0 on a box with a public IP publishes it to the world
+    # regardless of what the firewall is supposed to say.
+    ports:
+      - '127.0.0.1:8090:8080'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8080/health >/dev/null 2>&1 || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      # The root disk is nearly full. An unbounded json log on it is a slow
+      # outage with a confusing cause.
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'

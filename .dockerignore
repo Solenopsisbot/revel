@@ -1,0 +1,11 @@
+# The build context is the repo, so this is what keeps it from being a gigabyte.
+node_modules
+**/node_modules
+.git
+target
+apps/web/build
+apps/web/.svelte-kit
+packages/crypto-wasm
+bench
+docs
+*.log
