@@ -745,7 +745,25 @@ class Core {
    * own right. A DM is the opposite: it is a list of faces, and being in it is
    * a fact the other people can see.
    */
+  /**
+   * Which of *my* faces are in this conversation, or `null` where the question
+   * does not apply.
+   *
+   * A DM has per-face membership and a space room does not (`docs/03` §4), so
+   * `null` means "every face may speak here" rather than "none can".
+   *
+   * Live, a face is here once it has *said* something here — that is the moment
+   * the other person learns it exists — plus whichever one is currently
+   * selected, so choosing a face and then looking at the chip does not show it
+   * missing from the room it is about to speak in.
+   */
   get facesHere(): string[] | null {
+    if (live.running) {
+      if (!this.dm && this.scope !== 'home') return null;
+      const spoken = this.facesSpokenHere;
+      const speaking = this.speakingHere;
+      return speaking && !spoken.includes(speaking) ? [...spoken, speaking] : spoken;
+    }
     return facesIn(this.dm);
   }
 
@@ -798,6 +816,16 @@ class Core {
   /** My faces that have already spoken in the current room or DM. */
   get facesSpokenHere(): string[] {
     const mine = myFaces.live ? myFaces.book.faces.map((f) => f.id) : myFacesSeed;
+    if (live.running) {
+      // The real timeline. `this.messages` is fixture data, so a signed-in
+      // account asking "which of my faces have shown up here" was always
+      // answered `[]` — and every disclosure warning built on it was silent.
+      const timeline = live.room(this.currentRoomId)?.messages ?? [];
+      return facesSpokenIn(
+        timeline.map((m) => ({ faceId: m.face?.id ?? '' })),
+        mine,
+      );
+    }
     return facesSpokenIn(this.messages[this.currentRoomId], mine);
   }
 
@@ -813,7 +841,20 @@ class Core {
     return revealsLink(this.facesSpokenHere, faceId);
   }
 
+  /**
+   * Bring one of my faces into this conversation.
+   *
+   * Live, there is nothing to add it *to*: a face joins a room by speaking in
+   * it, and the roster the other person sees is built from what has arrived
+   * (`room.faces`). So this selects the face, and the disclosure happens on the
+   * next message — which is also the last moment it can still be cancelled.
+   */
   addFaceHere(faceId: string) {
+    if (live.running) {
+      if (!this.myFaces.some((f) => f.id === faceId)) return;
+      void myFaces.speak(this.currentRoomId, faceId);
+      return;
+    }
     const dm = this.dm;
     if (!dm || dm.mineIds.includes(faceId) || !myFacesSeed.includes(faceId)) return;
     dm.mineIds = [...dm.mineIds, faceId];

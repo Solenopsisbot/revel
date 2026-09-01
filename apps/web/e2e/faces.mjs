@@ -116,6 +116,101 @@ ok('the room choice applies where it was made', chosen.inA === 'June', chosen);
 ok('and does not leak into another room', chosen.inB === 'Ash', chosen);
 
 // ---------------------------------------------------------------------------
+console.log('\ntwo faces, one conversation, and what the other side learns');
+
+// `docs/11`'s actual feature, end to end: a plural account speaks as one face,
+// then another, and the person on the other end sees two people — while the
+// account is warned, before it happens, that this is what links them.
+//
+// Every one of these read fixture data until now. `facesHere` was `dm.mineIds`
+// (empty for a real room), `facesSpokenHere` read the fixture message map, and
+// `addFaceHere` checked a fixture list and returned. So the disclosure warning
+// a plural person relies on was silent for exactly the accounts that have one.
+
+/** A second account, in its own context so it has its own sealed store. */
+async function signUpAnother(who) {
+  const ctx = await browser.newContext();
+  const p = await ctx.newPage();
+  await p.goto(`${APP}/signup`, { waitUntil: 'networkidle' });
+  await p.fill('input[type=text]', who);
+  await p.fill('input[type=password]', password);
+  await p.waitForFunction(
+    () =>
+      ![...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Continue')
+        ?.disabled,
+  );
+  await p.getByRole('button', { name: 'Continue' }).click();
+  await p.waitForSelector('text=YOUR RECOVERY CODE', { timeout: 60000 });
+  await p.goto(`${APP}/app?e2e=1`, { waitUntil: 'load' });
+  for (let i = 0; i < 90; i++) {
+    if (await p.evaluate(() => window.__revel?.live?.running ?? false)) break;
+    await p.waitForTimeout(1000);
+  }
+  await p.waitForTimeout(1500);
+  await p.evaluate(() => window.__revel.onboarding?.dismiss?.());
+  return p;
+}
+
+const otherHandle = `fd${Date.now().toString(36)}`;
+const other = await signUpAnother(otherHandle);
+
+// The welcome overlay sits over the rail, and this is the first part of this
+// test that clicks anything rather than driving the app through `__revel`.
+await page.evaluate(() => window.__revel.onboarding?.dismiss?.());
+await page.waitForTimeout(500);
+await page.getByTitle('Message someone').click();
+await page.fill('input[aria-label="Who do you want to message?"]', otherHandle);
+await page.getByRole('button', { name: 'Start' }).click();
+await page.waitForTimeout(5000);
+
+// Ash speaks first. June exists but has never been here.
+const ashId = await page.evaluate(
+  () => window.__revel.core.myFaces.find((f) => f.name === 'Ash').id,
+);
+await page.evaluate((id) => window.__revel.core.addFaceHere(id), ashId);
+await page.evaluate(() => void window.__revel.core.send('ash speaking'));
+await page.waitForTimeout(4000);
+
+const facesNamed = () =>
+  page.evaluate(() =>
+    (window.__revel.core.facesHere ?? []).map((id) => window.__revel.core.faceCard(id).name),
+  );
+ok('a face is here once it has spoken', (await facesNamed()).includes('Ash'), await facesNamed());
+
+const juneId = await page.evaluate(
+  () => window.__revel.core.myFaces.find((f) => f.name === 'June').id,
+);
+ok(
+  'and bringing another one in would reveal the link',
+  await page.evaluate((id) => window.__revel.core.revealsLinkHere(id), juneId),
+);
+
+await page.evaluate((id) => window.__revel.core.addFaceHere(id), juneId);
+await page.waitForTimeout(1500);
+ok('joining puts it here', (await facesNamed()).includes('June'), await facesNamed());
+
+await page.evaluate(() => void window.__revel.core.send('june speaking'));
+await page.waitForTimeout(4000);
+await other.evaluate(async () => {
+  const { live, core } = window.__revel;
+  await live.stack.sync();
+  await live.refreshRooms();
+  if (core.dms[0]) core.openHome(core.dms[0].id);
+});
+await other.waitForTimeout(5000);
+
+const seen = await other.evaluate(() => {
+  const state = window.__revel.live.room(window.__revel.core.currentRoomId);
+  return {
+    roster: [...state.faces.values()].map((f) => f.name).sort(),
+    ash: state.messages.find((m) => m.body === 'ash speaking')?.face?.name,
+    june: state.messages.find((m) => m.body === 'june speaking')?.face?.name,
+  };
+});
+ok('the other side sees both faces on the roster', seen.roster.join(',') === 'Ash,June', seen);
+ok('and each message wears the one that sent it', seen.ash === 'Ash' && seen.june === 'June', seen);
+
+// ---------------------------------------------------------------------------
 console.log('\nthe fixtures still work without an account');
 const demo = await context.newPage();
 await demo.goto(`${APP}/app?demo=1&e2e=1`, { waitUntil: 'load' });
