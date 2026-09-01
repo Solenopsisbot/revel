@@ -139,11 +139,14 @@ ok(
 );
 ok(
   'and it is still his own face on it, not Unknown',
+  // One of *his* faces, whichever he is speaking as — every account starts
+  // with a profile made from its handle, so the created face is not
+  // automatically the one that speaks.
   await bob.page.evaluate(() => {
-    const stuck = window.__revel.live.stack.rooms
-      .state(window.__revel.core.currentRoomId)
-      .messages.find((m) => m.failed);
-    return stuck?.face?.name === 'Rae';
+    const { core, live } = window.__revel;
+    const stuck = live.stack.rooms.state(core.currentRoomId).messages.find((m) => m.failed);
+    const mine = core.myFaces.map((f) => f.name);
+    return !!stuck?.face?.name && mine.includes(stuck.face.name);
   }),
   await bob.page.evaluate(
     () =>

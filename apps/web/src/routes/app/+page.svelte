@@ -871,11 +871,12 @@ function toggleMembers() {
       <button class="me-id" onclick={() => (core.profileFor = core.speakingAs)} title="You">
         <Avatar face={me} size={30} dot />
         <span class="me-meta">
-          <!-- The face speaking here, and the account underneath it. A signed-in
-               account with no faces yet shows its handle alone rather than a
-               fixture's name — which is what it did, and it was somebody else's. -->
+          <!-- The face speaking here, and the address underneath it. Every
+               account has at least one face now — made from the handle at
+               sign-in — so the name is always its own rather than a fixture's,
+               which is what it used to fall through to. -->
           <span class="me-nm">{me?.name ?? myAddress}</span>
-          <span class="me-sub">{me ? myAddress : 'no face yet'}</span>
+          <span class="me-sub">{myAddress}</span>
         </span>
       </button>
       <button

@@ -62,11 +62,16 @@ const fresh = await page.evaluate(async () => {
   return {
     live: myFaces.live,
     count: myFaces.book.faces.length,
+    names: myFaces.book.faces.map((f) => f.name),
     account: myFaces.account.slice(0, 10),
   };
 });
 ok('a signed-in account uses the real book', fresh.live, fresh);
-ok('and starts with no faces, rather than fixtures', fresh.count === 0, fresh);
+// Everybody has a profile; faces are the extra. An account used to start with
+// nothing, which rendered as `no face yet` and sent every screen that wanted a
+// name falling through to a fixture called June.
+ok('and starts with one face, made from the handle', fresh.count === 1, fresh);
+ok('named after the handle', fresh.names?.[0] === handle, fresh);
 
 // ---------------------------------------------------------------------------
 console.log('\ncreating a face');
@@ -75,8 +80,11 @@ const made = await page.evaluate(async () => {
   const face = await myFaces.create('Ash', { colour: 'aqua', pronouns: 'they/them' });
   return { face, count: myFaces.book.faces.length, primary: myFaces.book.primary };
 });
-ok('it is in the book', made.count === 1, made);
-ok('and it is the primary, because something has to be', made.primary === made.face.id);
+ok('it is in the book alongside the profile', made.count === 2, made);
+// The profile keeps being primary. Adding a second face is not a statement
+// that it has taken over — a plural account adding Ash has not stopped being
+// reachable as the name everybody already knows.
+ok('and the profile is still the primary', made.primary !== made.face.id, made);
 // The whole point of minting rather than slugging: `FaceRef.id` is a snowflake,
 // and a face called "Ash" with the id `ash` fails the payload schema on the way
 // out and arrives as an unknown event.
@@ -96,13 +104,12 @@ const after = await page.evaluate(async () => {
     faces: myFaces.book.faces.map((f) => ({ id: f.id, name: f.name, pronouns: f.pronouns })),
   };
 });
-ok('the book comes back sealed from this device', after.live && after.faces.length === 1, after);
-ok(
-  'with the face intact',
-  after.faces[0]?.name === 'Ash' && after.faces[0]?.pronouns === 'they/them',
-  after.faces,
-);
-ok('and the same id', after.faces[0]?.id === made.face.id);
+ok('the book comes back sealed from this device', after.live && after.faces.length === 2, after);
+// Found by name, not by index: the profile was made first, at sign-in, so Ash
+// is no longer the only thing in the book.
+const ash = after.faces.find((f) => f.name === 'Ash');
+ok('with the face intact', ash?.pronouns === 'they/them', after.faces);
+ok('and the same id', ash?.id === made.face.id, { ash, made: made.face.id });
 
 // ---------------------------------------------------------------------------
 console.log('\nchoosing per room');
@@ -117,10 +124,13 @@ const chosen = await page.evaluate(async () => {
   };
 });
 ok('the room choice applies where it was made', chosen.inA === 'June', chosen);
-// Per room, not per account: the "would this reveal a link" check asks about the
-// room you are in, so one global selection would let you switch where it is
-// harmless and arrive where it is not.
-ok('and does not leak into another room', chosen.inB === 'Ash', chosen);
+// Per room, not per account: the "would this reveal a link" check asks about
+// the room you are in, so one global selection would let you switch where it
+// is harmless and arrive where it is not.
+//
+// The other room falls back to the **profile** — the face made from the handle
+// at sign-in — rather than to whichever face was picked last somewhere else.
+ok('and does not leak into another room', chosen.inB === handle, chosen);
 
 // ---------------------------------------------------------------------------
 console.log('\ntwo faces, one conversation, and what the other side learns');

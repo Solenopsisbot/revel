@@ -153,7 +153,19 @@ const rendered = await bob.page.evaluate(() => {
   return { rows: rows.length, text: document.body.innerText.slice(0, 300) };
 });
 ok('bob rendered a message row for it', rendered.rows > 0, rendered);
-ok('with the face alice was speaking as', rendered.text.includes('Me'), rendered);
+// Compared against whichever face alice is actually speaking as, not a name
+// this test picked. Every account now starts with a profile made from its
+// handle, and creating a second face does not silently take over from it —
+// so hardcoding the created name asserted the wrong thing the moment that
+// stopped being the only face in the book.
+const speaking = await alice.page.evaluate(() => {
+  const { core } = window.__revel;
+  return core.myFaces.find((f) => f.id === core.speakingHere)?.name ?? '';
+});
+ok('with the face alice was speaking as', !!speaking && rendered.text.includes(speaking), {
+  speaking,
+  ...rendered,
+});
 
 await browser.close();
 console.log(failures ? `\n${failures} FAILED` : '\nall passed');

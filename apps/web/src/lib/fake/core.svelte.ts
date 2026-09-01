@@ -11,9 +11,9 @@ import { newFaceId, resolveSetting } from '@revel/core';
 import { untoned } from '../emoji.js';
 import { myFaces } from '../faces.svelte.js';
 import { live } from '../live.svelte.js';
-import { session } from '../session.svelte.js';
 import { notifications as notificationSink } from '../notify.svelte.js';
 import { loadPrefs, savePrefs } from '../notifyPrefs.js';
+import { session } from '../session.svelte.js';
 // A cycle — `conversation.svelte.ts` imports this module back. Safe because
 // both sides only *use* the other inside functions, never at module top level,
 // so whichever is evaluated first has the binding it needs by the time anything
@@ -41,10 +41,10 @@ import {
   privacy,
   type Room,
   rosters,
+  type Space,
   faces as seedFaces,
   spaces,
   storage,
-  type Space,
 } from './data.js';
 import { facesIn, facesSpokenIn, participantsIn, revealsLink, speakerIn } from './faceShape.js';
 
@@ -436,7 +436,9 @@ class Core {
       // fixture data — so muting a *live* DM wrote a setting the rules engine
       // never read, and the room carried on notifying.
       rooms: {
-        ...Object.fromEntries(this.dmsSeed.flatMap((dm) => (dm.notify ? [[dm.id, dm.notify]] : []))),
+        ...Object.fromEntries(
+          this.dmsSeed.flatMap((dm) => (dm.notify ? [[dm.id, dm.notify]] : [])),
+        ),
         ...this.notifications.rooms,
       },
       previews: this.notifications.previews,
@@ -526,7 +528,9 @@ class Core {
         audience: { kind: 'picked', faceIds: participantsIn(dm) },
       };
     }
-    return this.space.rooms.find((r) => r.id === this.currentRoomId) ?? this.space.rooms[0] ?? EMPTY_ROOM;
+    return (
+      this.space.rooms.find((r) => r.id === this.currentRoomId) ?? this.space.rooms[0] ?? EMPTY_ROOM
+    );
   }
 
   /** "Rae", or "Rae and Emeri" for an unnamed group. */

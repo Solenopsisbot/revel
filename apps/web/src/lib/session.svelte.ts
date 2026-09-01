@@ -59,7 +59,9 @@ class DeviceSession {
         // rather than lazily, because the composer needs to know who it is
         // speaking as before anybody can type.
         const { myFaces } = await import('./faces.svelte.js');
-        await myFaces.load(this.current.accountPub);
+        // The handle is the name to start from: it is what the other person
+        // typed to reach you, so it is the one they already associate with you.
+        await myFaces.load(this.current.accountPub, this.current.handle ?? undefined);
 
         // Which room to reopen is per account, not per browser: two people
         // sharing a machine must not inherit each other's last conversation.

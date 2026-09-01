@@ -45,10 +45,28 @@ class MyFaces {
     return this.account !== '';
   }
 
-  /** Load an account's faces. Called once the session has restored. */
-  async load(accountPub: string): Promise<void> {
+  /**
+   * Load an account's faces, making one if there are none.
+   *
+   * **Everybody has a profile; faces are the extra.** `docs/11` is right that
+   * plurality should be invisible until you use it, and the way that was built
+   * — start with nothing and make a face when you need one — meant a new
+   * account had no name at all. It rendered as `no face yet`, and every screen
+   * that wanted a name fell through to a fixture called June.
+   *
+   * So the first one is made here, from the handle, and it is not special: it
+   * is an ordinary face, in the ordinary book, on the ordinary wire type. A
+   * separate "profile" concept would be a second identity in `FaceRef`, and
+   * `docs/29` §1 means anything added there is permanent. One kind of thing,
+   * created by default, is the version of this that does not cost a field
+   * forever.
+   */
+  async load(accountPub: string, defaultName?: string): Promise<void> {
     this.account = accountPub;
     this.book = await loadFaces(accountPub);
+    if (this.book.faces.length === 0 && defaultName) {
+      await this.create(defaultName);
+    }
   }
 
   /** Back to fixtures — on sign-out, so the next person sees no trace. */
