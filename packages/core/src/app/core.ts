@@ -39,6 +39,7 @@ import type {
   RoleInput,
   RoomInfo,
   SpaceInfo,
+  BanInfo,
   InviteInfo,
   InvitePreview,
   SpaceMemberInfo,
@@ -241,6 +242,12 @@ export interface DirectoryCore {
   previewInvite(code: string): Promise<InvitePreview>;
   /** Prove the fragment and take the membership. Keys come later, from a member. */
   redeemInvite(code: string, secret: string): Promise<{ space: string; joined: boolean }>;
+
+  /** A ban: the standing refusal, **and** the Remove that takes the keys. */
+  ban(spaceId: string, account: string, reason?: string): Promise<void>;
+  listBans(spaceId: string): Promise<BanInfo[]>;
+  /** Lifts the refusal. Does not put them back — somebody must invite them. */
+  unban(spaceId: string, account: string): Promise<void>;
 
   spaceRoles(spaceId: string): Promise<RoleInfo[]>;
   /**

@@ -347,6 +347,60 @@ export function describeStore(name: string, harness: StoreHarness): void {
         expect(await store.getInvite(code)).not.toBeNull();
       });
 
+      it('records a ban, lists it, and lifts it', async () => {
+        const id = uniq('space');
+        await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });
+        const ban = {
+          spaceId: id,
+          accountId: 'acct-b',
+          byAccount: 'acct-a',
+          reason: 'spam',
+          at: 100,
+        };
+
+        await store.putBan(ban);
+        expect(await store.getBan(id, 'acct-b')).toEqual(ban);
+        expect(await store.listBans(id)).toEqual([ban]);
+
+        await store.deleteBan(id, 'acct-b');
+        expect(await store.getBan(id, 'acct-b')).toBeNull();
+      });
+
+      it('re-banning updates rather than failing', async () => {
+        // A moderator pressing it twice means "yes, and here is a better
+        // reason" — not an error, and not two rows.
+        const id = uniq('space');
+        await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });
+        const base = { spaceId: id, accountId: 'acct-b', byAccount: 'acct-a', at: 1 };
+
+        await store.putBan({ ...base, reason: null });
+        await store.putBan({ ...base, byAccount: 'acct-c', reason: 'and again', at: 2 });
+
+        expect(await store.listBans(id)).toEqual([
+          { ...base, byAccount: 'acct-c', reason: 'and again', at: 2 },
+        ]);
+      });
+
+      it('keeps one space\'s bans out of another\'s', async () => {
+        const mine = uniq('space');
+        const theirs = uniq('space');
+        await store.createSpace({ id: mine, owner: 'acct-a', everyoneBits: '3' });
+        await store.createSpace({ id: theirs, owner: 'acct-b', everyoneBits: '3' });
+        await store.putBan({
+          spaceId: theirs,
+          accountId: 'acct-c',
+          byAccount: 'acct-b',
+          reason: null,
+          at: 1,
+        });
+
+        expect(await store.getBan(mine, 'acct-c')).toBeNull();
+        expect(await store.listBans(mine)).toEqual([]);
+        // And one space cannot lift another's.
+        await store.deleteBan(mine, 'acct-c');
+        expect(await store.getBan(theirs, 'acct-c')).not.toBeNull();
+      });
+
       it('refuses to delete `@everyone`', async () => {
         const id = uniq('space');
         await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });

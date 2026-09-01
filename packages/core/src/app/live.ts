@@ -13,6 +13,7 @@ import {
   type BlobRef,
   type CreateSpaceRoom,
   type DeviceInfo,
+  type BanInfo,
   type FaceCard,
   type FaceRef,
   fromBase64,
@@ -699,6 +700,36 @@ class LiveDirectory implements DirectoryCore {
     return null;
   }
 
+  /**
+   * Ban somebody: the row, and the keys.
+   *
+   * Two halves again, and the second is the one that bites. The row is a
+   * standing refusal every join path checks (`docs/03` §9 — "bans persist
+   * across rejoin"); the MLS Remove is what stops them reading, and only a
+   * member's client can commit it. A ban that did the first alone would be
+   * somebody who cannot come back and can still read everything sent while
+   * they were gone.
+   */
+  async ban(spaceId: string, account: string, reason?: string): Promise<void> {
+    await this.#transport.ban(spaceId, account, reason);
+    await this.#removeLeaves(spaceId, account);
+    await this.refresh();
+  }
+
+  listBans(spaceId: string): Promise<BanInfo[]> {
+    return this.#transport.listBans(spaceId);
+  }
+
+  /**
+   * Lift a ban. Does **not** put them back — somebody still has to invite them.
+   *
+   * No commit here, and there could not be one: they hold no leaf to add, and
+   * adding one would be re-joining somebody who has not been asked back.
+   */
+  async unban(spaceId: string, account: string): Promise<void> {
+    await this.#transport.unban(spaceId, account);
+  }
+
   async leaveSpace(spaceId: string): Promise<void> {
     await this.removeFromSpace(spaceId, this.#account);
   }
@@ -716,12 +747,37 @@ class LiveDirectory implements DirectoryCore {
    * nothing.
    */
   async removeFromSpace(spaceId: string, account: string): Promise<void> {
-    const rooms = await this.#transport.spaceRooms(spaceId);
     await this.#transport.leaveSpace(spaceId, account);
+    await this.#removeLeaves(spaceId, account);
+    await this.refresh();
+  }
 
+  /**
+   * Take an account's leaves out of every group a space uses.
+   *
+   * The access half of a kick, a ban, or your own exit — shared by all three,
+   * because the row that precedes them is different every time and this part
+   * never is. Every leaf that account holds, not one: a person is as many
+   * leaves as they have devices (`docs/03` §5), and removing three of four
+   * removes nothing.
+   *
+   * Read the rooms **before** the row is dropped where it matters — a caller
+   * that has already removed itself can no longer list them. `removeFromSpace`
+   * gets away with the order it uses because the Host still answers a member's
+   * own removal; this takes the list fresh for the same reason.
+   */
+  async #removeLeaves(spaceId: string, account: string): Promise<void> {
     const mine = account === this.#account;
     const groups = new Set<string>();
-    for (const room of rooms) if (room.group) groups.add(room.group);
+    for (const room of this.#known) {
+      if (room.space === spaceId && room.group) groups.add(room.group);
+    }
+    // Fall back to asking, for a caller whose local list is cold.
+    if (groups.size === 0) {
+      for (const room of await this.#transport.spaceRooms(spaceId).catch(() => [])) {
+        if (room.group) groups.add(room.group);
+      }
+    }
 
     for (const groupId of groups) {
       if (mine) {
@@ -737,7 +793,6 @@ class LiveDirectory implements DirectoryCore {
         .map((m) => m.leaf);
       if (leaves.length) await this.#groups.remove(groupId, leaves);
     }
-    await this.refresh();
   }
 
   // -- invite links ----------------------------------------------------------

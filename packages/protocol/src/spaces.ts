@@ -182,6 +182,29 @@ export const RedeemInvite = z.object({
 });
 export type RedeemInvite = z.infer<typeof RedeemInvite>;
 
+// ---------------------------------------------------------------------------
+// Bans (`docs/03` §9 — "bans persist across rejoin")
+// ---------------------------------------------------------------------------
+
+export const BanInput = z.object({
+  account: AccountId,
+  /**
+   * Free text, and **for the other moderators**. Nothing sends it to the
+   * person banned — a reason delivered to them is a conversation, and a
+   * moderation log is a note to the people who share the decision.
+   */
+  reason: z.string().max(500).optional(),
+});
+export type BanInput = z.infer<typeof BanInput>;
+
+export const BanInfo = z.object({
+  account: AccountId,
+  by: AccountId,
+  at: z.number().int(),
+  reason: z.string().max(500).optional(),
+});
+export type BanInfo = z.infer<typeof BanInfo>;
+
 /**
  * The canonical name for an audience.
  *

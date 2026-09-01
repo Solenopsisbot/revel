@@ -20,6 +20,7 @@ import {
   audienceKey,
   CreateSpace,
   CreateSpaceRoom,
+  BanInput,
   canGrant,
   CreateInvite,
   DEFAULT_EVERYONE,
@@ -39,7 +40,7 @@ import {
 } from '@revel/protocol';
 import type { Hono } from 'hono';
 import { type Actor, canRead, spacePermissionsFor } from './policy.js';
-import type { Invite, Store } from './store/types.js';
+import type { Ban, Invite, Store } from './store/types.js';
 
 export interface SpaceDeps {
   store: Store;
@@ -261,6 +262,58 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
     return c.body(null, 204);
   });
 
+  // -- bans (`docs/03` §9) ----------------------------------------------------
+
+  app.post('/spaces/:id/bans', async (c) => {
+    const spaceId = c.req.param('id');
+    const gated = await gate(c.req.raw, spaceId, Permission.BAN);
+    if ('error' in gated) return c.json({ error: gated.error }, gated.status);
+
+    const parsed = BanInput.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
+
+    // The owner is not bannable, for the same reason they are not kickable: it
+    // is the one account that cannot be locked out of its own space.
+    if (await deps.store.isOwner(spaceId, parsed.data.account)) {
+      return c.json({ error: 'cannot_ban_the_owner' }, 403);
+    }
+    if (parsed.data.account === gated.actor.accountId) {
+      return c.json({ error: 'cannot_ban_yourself' }, 400);
+    }
+
+    await deps.store.putBan({
+      spaceId,
+      accountId: parsed.data.account,
+      byAccount: gated.actor.accountId,
+      reason: parsed.data.reason ?? null,
+      at: Date.now(),
+    });
+    // A ban is a kick that sticks, so it does the kick too. The *keys* are a
+    // separate act by a member's client (`docs/03` §5) — this row stops them
+    // coming back, and the Remove commit stops them reading.
+    await deps.store.removeSpaceMember(spaceId, parsed.data.account);
+    for (const room of await deps.store.listSpaceRooms(spaceId)) {
+      await deps.store.removeMember(room.id, parsed.data.account);
+    }
+    return c.json({ banned: parsed.data.account }, 201);
+  });
+
+  app.get('/spaces/:id/bans', async (c) => {
+    const gated = await gate(c.req.raw, c.req.param('id'), Permission.BAN);
+    if ('error' in gated) return c.json({ error: gated.error }, gated.status);
+    return c.json({ bans: (await deps.store.listBans(c.req.param('id'))).map(wireBan) });
+  });
+
+  app.delete('/spaces/:id/bans/:account', async (c) => {
+    const gated = await gate(c.req.raw, c.req.param('id'), Permission.BAN);
+    if ('error' in gated) return c.json({ error: gated.error }, gated.status);
+    // Lifting a ban does not put them back. It stops the refusal, and somebody
+    // still has to invite them — which is the difference between "you may
+    // return" and "you are here again".
+    await deps.store.deleteBan(c.req.param('id'), c.req.param('account'));
+    return c.body(null, 204);
+  });
+
   // -- invite links (`docs/03` §4 — the Wormhole trick) -----------------------
   //
   // What the Host holds is deliberately not enough to use: the private half of
@@ -390,6 +443,12 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
     ).catch(() => false);
     if (!ok) return c.json({ error: 'bad_signature' }, 403);
 
+    // The second door a ban has to hold, and the one that matters: a link is
+    // the way back in for somebody who was told to leave.
+    if (await deps.store.getBan(peek.spaceId, actor.accountId)) {
+      return c.json({ error: 'banned' }, 403);
+    }
+
     // Already in. Idempotent rather than an error, and *without* spending a
     // use: a link opened twice in two tabs is not two joins.
     if (await deps.store.getSpaceMember(peek.spaceId, actor.accountId)) {
@@ -424,6 +483,12 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
     for (const account of parsed.data.accounts) {
       if (!(await deps.store.accountExists(account))) {
         return c.json({ error: 'no_such_account', account }, 404);
+      }
+      // `docs/03` §9: bans persist across rejoin, and this is one of the three
+      // doors. Refused rather than silently ignored — somebody adding a banned
+      // account should learn that is what they are doing.
+      if (await deps.store.getBan(spaceId, account)) {
+        return c.json({ error: 'banned', account }, 403);
       }
     }
 
@@ -606,6 +671,16 @@ function inviteCode(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(12));
   const chars = [...bytes].map((b) => alphabet[b % alphabet.length]);
   return `${chars.slice(0, 4).join('')}-${chars.slice(4, 8).join('')}-${chars.slice(8).join('')}`;
+}
+
+/** The wire shape of a ban. */
+function wireBan(b: Ban) {
+  return {
+    account: b.accountId,
+    by: b.byAccount,
+    at: b.at,
+    ...(b.reason ? { reason: b.reason } : {}),
+  };
 }
 
 /** The wire shape of an invite. Null becomes absent, per the schema. */

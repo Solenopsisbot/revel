@@ -13,6 +13,7 @@ import type {
   GroupMember,
   GroupMemberInput,
   HandshakeAppend,
+  Ban,
   HandshakeResult,
   Invite,
   LoginSession,
@@ -201,6 +202,25 @@ export class MemoryStore implements Store {
   async putRole(role: Role) {
     this.roles.set(role.id, role);
   }
+  bans = new Map<string, Ban>();
+
+  async putBan(ban: Ban) {
+    this.bans.set(`${ban.spaceId}:${ban.accountId}`, { ...ban });
+  }
+  async getBan(spaceId: string, accountId: string) {
+    const found = this.bans.get(`${spaceId}:${accountId}`);
+    return found ? { ...found } : null;
+  }
+  async listBans(spaceId: string) {
+    return [...this.bans.values()]
+      .filter((b) => b.spaceId === spaceId)
+      .map((b) => ({ ...b }))
+      .sort((a, b) => b.at - a.at);
+  }
+  async deleteBan(spaceId: string, accountId: string) {
+    this.bans.delete(`${spaceId}:${accountId}`);
+  }
+
   invites = new Map<string, Invite>();
 
   async putInvite(invite: Invite) {

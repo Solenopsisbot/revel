@@ -13,6 +13,7 @@
  */
 import type {
   AccountProfile,
+  BanInfo,
   BlobInfo,
   CreateInvite,
   CreateSpaceRoom,
@@ -117,6 +118,12 @@ export interface Transport {
   /** Unauthenticated: a link is something you follow before you have an account. */
   previewInvite(code: string): Promise<InvitePreview>;
   redeemInvite(code: string, signature: string): Promise<{ space: string; joined: boolean }>;
+
+  // -- bans ------------------------------------------------------------------
+
+  ban(spaceId: string, account: string, reason?: string): Promise<void>;
+  listBans(spaceId: string): Promise<BanInfo[]>;
+  unban(spaceId: string, account: string): Promise<void>;
 
   spaceRoles(spaceId: string): Promise<RoleInfo[]>;
   createRole(spaceId: string, input: RoleInput): Promise<RoleInfo>;
@@ -393,6 +400,24 @@ export class HttpTransport implements Transport {
       method: 'POST',
       body: JSON.stringify({ signature }),
     });
+  }
+
+  async ban(spaceId: string, account: string, reason?: string): Promise<void> {
+    await this.#request(`/spaces/${encodeURIComponent(spaceId)}/bans`, {
+      method: 'POST',
+      body: JSON.stringify({ account, ...(reason ? { reason } : {}) }),
+    });
+  }
+  listBans(spaceId: string): Promise<BanInfo[]> {
+    return this.#json<{ bans: BanInfo[] }>(`/spaces/${encodeURIComponent(spaceId)}/bans`, {
+      method: 'GET',
+    }).then((r) => r.bans);
+  }
+  async unban(spaceId: string, account: string): Promise<void> {
+    await this.#request(
+      `/spaces/${encodeURIComponent(spaceId)}/bans/${encodeURIComponent(account)}`,
+      { method: 'DELETE' },
+    );
   }
 
   spaceRoles(spaceId: string): Promise<RoleInfo[]> {

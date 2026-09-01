@@ -52,6 +52,7 @@ import type {
   GroupMember,
   GroupMemberInput,
   HandshakeAppend,
+  Ban,
   HandshakeResult,
   Invite,
   LoginSession,
@@ -222,6 +223,33 @@ export class PostgresStore implements Store {
   async removeMember(roomId: string, accountId: string): Promise<void> {
     await this.sql`
       DELETE FROM memberships WHERE room_id = ${roomId} AND account_id = ${accountId}`;
+  }
+
+  // -- bans ------------------------------------------------------------------
+
+  async putBan(ban: Ban): Promise<void> {
+    // Upsert: re-banning somebody already banned updates who and why rather
+    // than failing, which is what a moderator pressing it twice means.
+    await this.sql`
+      INSERT INTO bans (space_id, account_id, by_account, reason, at)
+      VALUES (${ban.spaceId}, ${ban.accountId}, ${ban.byAccount}, ${ban.reason}, ${ban.at})
+      ON CONFLICT (space_id, account_id)
+      DO UPDATE SET by_account = EXCLUDED.by_account, reason = EXCLUDED.reason, at = EXCLUDED.at`;
+  }
+
+  async getBan(spaceId: string, accountId: string): Promise<Ban | null> {
+    const [row] = await this.sql`
+      SELECT * FROM bans WHERE space_id = ${spaceId} AND account_id = ${accountId}`;
+    return row ? banOf(row) : null;
+  }
+
+  async listBans(spaceId: string): Promise<Ban[]> {
+    const rows = await this.sql`SELECT * FROM bans WHERE space_id = ${spaceId} ORDER BY at DESC`;
+    return rows.map(banOf);
+  }
+
+  async deleteBan(spaceId: string, accountId: string): Promise<void> {
+    await this.sql`DELETE FROM bans WHERE space_id = ${spaceId} AND account_id = ${accountId}`;
   }
 
   // -- invites ---------------------------------------------------------------
@@ -1433,5 +1461,16 @@ function inviteOf(row: Record<string, unknown>): Invite {
     maxUses: row.max_uses === null ? null : Number(row.max_uses),
     expiresAt: row.expires_at === null ? null : Number(row.expires_at),
     createdAt: Number(row.created_at),
+  };
+}
+
+/** A row from `bans`, as the store's shape. */
+function banOf(row: Record<string, unknown>): Ban {
+  return {
+    spaceId: row.space_id as string,
+    accountId: row.account_id as string,
+    byAccount: row.by_account as string,
+    reason: (row.reason as string | null) ?? null,
+    at: Number(row.at),
   };
 }

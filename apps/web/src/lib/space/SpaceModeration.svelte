@@ -32,6 +32,10 @@ const perms = $derived(resolve(space, mine?.roles ?? []));
 const owner = $derived(!!mine?.owner);
 
 const mayRemove = $derived(owner || perms.has('MANAGE_EVENTS'));
+
+$effect(() => {
+  if (!core.demo) void core.refreshBans();
+});
 const mayBan = $derived(owner || perms.has('BAN'));
 
 function roomName(id: string) {
@@ -55,18 +59,42 @@ function remove(r: Report) {
 </p>
 
 {#if !core.demo}
-  <!-- Reports, bans and purges are three separate Host features (`docs/03` §9
-       — message franking, and a purge route) and none of them exist yet. The
-       queues below would render empty and read as "nothing has been reported",
-       which is a claim this screen cannot currently make. -->
-  <p class="soon">
-    <Icon name="lock" size={15} />
-    <span>
-      Reporting, bans and purges aren’t built yet. Removing somebody from the
-      space works today — it’s under <b>People</b>, and it takes their keys
-      away as well as their membership.
-    </span>
-  </p>
+  <section>
+    <h3>Banned</h3>
+    {#each core.bansSeen as b (b.account)}
+      <div class="banned">
+        <div class="meta">
+          <div class="nm">{core.memberName(b.account)}</div>
+          <div class="bl">
+            by {core.memberName(b.by)} · {ago(b.at)}{#if b.reason} · {b.reason}{/if}
+          </div>
+        </div>
+        <button class="act" onclick={() => core.unban(b.account)}>Lift</button>
+      </div>
+    {:else}
+      <p class="none">Nobody.</p>
+    {/each}
+    <p class="sub">
+      A ban is a removal that sticks: every way back in checks it, including an
+      invite link. Lifting one lets them return — it doesn’t bring them back,
+      because somebody still has to invite them.
+    </p>
+  </section>
+
+  <section>
+    <h3>Reports</h3>
+    <!-- Franking is the piece this waits on (`docs/03` §9): a report has to
+         carry proof that the quoted message is genuine, or a queue is a place
+         to paste anything you like about somebody. -->
+    <p class="soon">
+      <Icon name="lock" size={15} />
+      <span>
+        Reporting isn’t built yet. When it is, a report will carry cryptographic
+        proof of the message it quotes — so you can trust what you are reading
+        without gaining access to anything else in the room.
+      </span>
+    </p>
+  </section>
 {:else}
 
 <section>
@@ -166,6 +194,14 @@ function remove(r: Report) {
 {/if}
 
 <style>
+  .banned {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 0; border-top: 1px solid var(--line);
+  }
+  .banned .meta { flex: 1; min-width: 0; }
+  .banned .nm { font-weight: 600; font-size: var(--text-sm); }
+  .banned .bl { font-size: var(--text-xs); color: var(--text-mute); }
+  .none { color: var(--text-mute); font-size: var(--text-sm); margin: 0 0 10px; }
   .soon {
     display: flex; gap: 10px; align-items: flex-start; max-width: 62ch;
     margin: 0; padding: 12px 14px; border-radius: var(--r-md);

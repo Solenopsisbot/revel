@@ -47,10 +47,6 @@ const shown = $derived(
 
 /** Why an action on this member is unavailable, or null if it is fine. */
 function refuse(m: Member, need: 'KICK' | 'BAN'): string | null {
-  // A ban is a `bans` row the Host does not have yet, and a ban that is really
-  // a kick is the worst kind of wrong: it survives nothing, and whoever pressed
-  // it believes it did.
-  if (need === 'BAN' && !core.demo) return 'Banning isn’t built yet — removing them works.';
   if (m.owner) return 'The owner can’t be removed. Transfer the space first.';
   if (m.accountId === mine?.accountId) return 'That’s you.';
   if (!me.owner && !me.perms.has(need)) {

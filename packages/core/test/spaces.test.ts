@@ -338,6 +338,73 @@ scenarios('a space', () => {
     await world.close();
   });
 
+  it('takes the keys when it bans, and holds the door afterwards', async () => {
+    // Both halves in one test, because a ban that does either alone is the
+    // failure: the row without the commit is somebody who cannot come back and
+    // can still read; the commit without the row is a kick.
+    const { world, alice, bob } = await two();
+
+    const space = await alice.core.directory.createSpace('Solexsis');
+    const room = (await alice.core.directory.spaceRooms(space.id))[0]!;
+    await world.settle();
+    await alice.core.directory.inviteToSpace(space.id, [bob.account]);
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+
+    await alice.core.conversation.send(room.id, 'before');
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+    expect(bob.texts(room.id)).toEqual(['before']);
+
+    await alice.core.directory.ban(space.id, bob.account, 'kept posting the bee movie');
+    await world.settle();
+    await alice.core.conversation.send(room.id, 'after');
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+
+    // The keys moved past him.
+    expect(bob.texts(room.id)).toEqual(['before']);
+    // And the door is shut: an invite link is the thing a kick does not
+    // survive, so it is the one that proves this is not a kick.
+    const { invite, secret } = await alice.core.directory.createInvite(space.id);
+    await expect(bob.core.directory.redeemInvite(invite.code, secret)).rejects.toThrow();
+
+    expect(await alice.core.directory.listBans(space.id)).toEqual([
+      {
+        account: bob.account,
+        by: alice.account,
+        at: expect.any(Number),
+        reason: 'kept posting the bee movie',
+      },
+    ]);
+    await world.close();
+  });
+
+  it('lifting a ban lets them back in, and does not do it for them', async () => {
+    const { world, alice, bob } = await two();
+    const space = await alice.core.directory.createSpace('Solexsis');
+    await world.settle();
+    await alice.core.directory.ban(space.id, bob.account);
+    await world.settle();
+
+    await alice.core.directory.unban(space.id, bob.account);
+    expect(await alice.core.directory.listBans(space.id)).toEqual([]);
+    // Still not a member — "you may return" is not "you are here again".
+    expect(await alice.core.directory.spaceMembers(space.id)).toEqual([
+      { account: alice.account, roles: [] },
+    ]);
+
+    // And now an invite works again.
+    const { invite, secret } = await alice.core.directory.createInvite(space.id);
+    expect(await bob.core.directory.redeemInvite(invite.code, secret)).toMatchObject({
+      joined: true,
+    });
+    await world.close();
+  });
+
   it('invites once per audience, not once per room', async () => {
     // The number this design exists for. Three rooms, one audience: bob is
     // committed into one group, and every one of the three opens for him.

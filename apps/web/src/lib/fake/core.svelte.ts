@@ -938,7 +938,22 @@ class Core {
    * Kept as one call rather than kick-then-record, because the two halves
    * going out of step is how someone ends up banned and still in the room.
    */
+  /**
+   * Ban somebody. The standing refusal *and* the Remove that takes the keys.
+   *
+   * A ban that only wrote the row would be somebody who cannot come back and
+   * can still read everything sent while they are gone — which is the failure
+   * mode this is arranged to make impossible, since `directory.ban` does both
+   * or neither.
+   */
   ban(accountId: string, reason?: string) {
+    if (!this.demo) {
+      void live
+        .stack!.core.directory.ban(this.currentSpaceId, accountId, reason)
+        .then(() => Promise.all([live.refreshSpaces(), this.refreshBans()]))
+        .catch((err) => console.error('could not ban them', err));
+      return;
+    }
     const m = this.space.members.find((x) => x.accountId === accountId);
     if (!m) return;
     this.space.bans = [
@@ -949,7 +964,27 @@ class Core {
   }
 
   unban(accountId: string) {
+    if (!this.demo) {
+      void live
+        .stack!.core.directory.unban(this.currentSpaceId, accountId)
+        .then(() => this.refreshBans())
+        .catch((err) => console.error('could not lift the ban', err));
+      return;
+    }
     this.space.bans = this.space.bans.filter((b) => b.accountId !== accountId);
+  }
+
+  /** Who is banned from the open space. Only somebody with BAN may ask. */
+  bansSeen = $state<{ account: string; by: string; at: number; reason?: string }[]>([]);
+
+  async refreshBans(): Promise<void> {
+    if (this.demo || !live.running || !this.currentSpaceId) {
+      this.bansSeen = [];
+      return;
+    }
+    this.bansSeen = await live
+      .stack!.core.directory.listBans(this.currentSpaceId)
+      .catch(() => []);
   }
 
   /**

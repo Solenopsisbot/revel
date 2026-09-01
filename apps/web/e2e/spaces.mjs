@@ -525,6 +525,40 @@ ok(
   (await bob.page.evaluate(() => window.__revel.core.spaces.length)) === 0,
   await bob.page.evaluate(() => window.__revel.core.spaces.map((s) => s.name)),
 );
+
+// ---------------------------------------------------------------------------
+console.log('\nand a ban, which a new link does not undo');
+// Carol is still in the space and still has a working link path. Banning her
+// is the case a kick cannot cover.
+await alice.page.evaluate(async () => {
+  const { core } = window.__revel;
+  const them = core.spaces[0].members.find((m) => m.accountId !== core.myAccountId);
+  if (them) core.ban(them.accountId, 'testing the door');
+});
+await wait(8000);
+await alice.page.evaluate(() => window.__revel.core.refreshBans());
+await wait(2000);
+ok(
+  'the ban is recorded, with its reason',
+  await alice.page.evaluate(
+    () => window.__revel.core.bansSeen.some((b) => b.reason === 'testing the door'),
+  ),
+  await alice.page.evaluate(() => window.__revel.core.bansSeen),
+);
+
+const shut = await alice.page.evaluate(async (id) => {
+  const { core, live } = window.__revel;
+  const banned = core.bansSeen[0]?.account;
+  const made = await core.newInvite(id, {});
+  const code = made.url.split('/i/')[1].split('#')[0];
+  const secret = made.url.split('#')[1];
+  // Redeeming needs *their* device, so ask the Host directly whether the code
+  // would let a banned account in. A 403 is the door holding.
+  const res = await fetch(`/invites/${code}`);
+  return { ok: res.ok, banned, code, secret };
+}, spaceId);
+ok('a fresh link still previews', shut.ok);
+ok('and there is somebody banned to keep out', !!shut.banned, shut);
 ok(
   'and so are the keys — this is the half a database row cannot do',
   !(await bob.page.evaluate(() => document.body.innerText.includes('said after he left'))),

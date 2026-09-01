@@ -157,6 +157,20 @@ export interface Session {
   expiresAt: number;
 }
 
+/**
+ * A standing refusal to let somebody back into a space.
+ *
+ * The difference between this and a kick: a kick is a membership row going
+ * away, which the next invite undoes. This is checked by every join path.
+ */
+export interface Ban {
+  spaceId: string;
+  accountId: string;
+  byAccount: string;
+  reason: string | null;
+  at: number;
+}
+
 /** An invite link's server-side half. See `putInvite`. */
 export interface Invite {
   code: string;
@@ -285,6 +299,13 @@ export interface Store {
    * exactly what a link posted in a group chat does.
    */
   redeemInvite(code: string, now: number): Promise<Invite | null>;
+
+  // -- bans (`docs/03` §9 — "bans persist across rejoin") --------------------
+
+  putBan(ban: Ban): Promise<void>;
+  getBan(spaceId: string, accountId: string): Promise<Ban | null>;
+  listBans(spaceId: string): Promise<Ban[]>;
+  deleteBan(spaceId: string, accountId: string): Promise<void>;
 
   /** Every role in a space, for the editor. `getRoles` fetches a named few. */
   listRoles(spaceId: string): Promise<Role[]>;

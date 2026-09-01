@@ -598,6 +598,120 @@ describe('invite links', () => {
   });
 });
 
+describe('bans', () => {
+  async function key() {
+    const { mintInviteKey, signInviteRedemption, toBase64 } = await import('@revel/protocol');
+    const { pub, secret } = await mintInviteKey();
+    return {
+      pub: toBase64(pub),
+      sign: async (code: string, account: string) =>
+        toBase64(await signInviteRedemption(secret, code, account)),
+    };
+  }
+
+  it('needs BAN, and takes them out of the space', async () => {
+    const h = people();
+    const space = await h.space();
+    expect((await h.post('dev-b', `/spaces/${space.id}/bans`, { account: CAROL })).status).toBe(403);
+
+    const res = await h.post('dev-a', `/spaces/${space.id}/bans`, {
+      account: BOB,
+      reason: 'kept posting the bee movie',
+    });
+    expect(res.status).toBe(201);
+
+    const { members } = (await (await h.get('dev-a', `/spaces/${space.id}/members`)).json()) as {
+      members: { account: string }[];
+    };
+    expect(members.map((m) => m.account)).toEqual([ALICE]);
+  });
+
+  it('will not ban the owner, or yourself', async () => {
+    // The owner is the one account that cannot be locked out of its own space,
+    // and that check is the stronger one — it answers first even when the
+    // owner is also the person asking.
+    const h = people();
+    const space = await h.space();
+    const owner = await h.post('dev-a', `/spaces/${space.id}/bans`, { account: ALICE });
+    expect(owner.status).toBe(403);
+    expect(await owner.json()).toMatchObject({ error: 'cannot_ban_the_owner' });
+
+    // A moderator who is not the owner cannot reach them either, and cannot
+    // reach themselves.
+    const mod = (await (
+      await h.post('dev-a', `/spaces/${space.id}/roles`, { bits: serialize(Permission.BAN) })
+    ).json()) as { id: string };
+    await h.put('dev-a', `/spaces/${space.id}/members/${BOB}/roles`, { roles: [mod.id] });
+    expect((await h.post('dev-b', `/spaces/${space.id}/bans`, { account: ALICE })).status).toBe(403);
+    const self = await h.post('dev-b', `/spaces/${space.id}/bans`, { account: BOB });
+    expect(self.status).toBe(400);
+    expect(await self.json()).toMatchObject({ error: 'cannot_ban_yourself' });
+  });
+
+  it('holds the door a new invite would open — which is the whole point', async () => {
+    // `docs/03` §9: bans persist across rejoin. A kick is undone by the next
+    // link; this is the difference.
+    const h = people();
+    const space = await h.space();
+    await h.post('dev-a', `/spaces/${space.id}/bans`, { account: BOB });
+
+    const k = await key();
+    const { code } = (await (
+      await h.post('dev-a', `/spaces/${space.id}/invites`, { pub: k.pub })
+    ).json()) as { code: string };
+
+    const res = await h.post('dev-b', `/invites/${code}/redeem`, {
+      signature: await k.sign(code, BOB),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'banned' });
+  });
+
+  it('holds the door somebody adding them by hand would open', async () => {
+    const h = people();
+    const space = await h.space(false);
+    await h.post('dev-a', `/spaces/${space.id}/bans`, { account: BOB });
+    const res = await h.post('dev-a', `/spaces/${space.id}/members`, { accounts: [BOB] });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'banned', account: BOB });
+  });
+
+  it('lifting one lets them back in, and does not put them back', async () => {
+    // "You may return" is not "you are here again" — somebody still has to
+    // invite them, which is the difference between lifting a ban and undoing
+    // a decision nobody made.
+    const h = people();
+    const space = await h.space(false);
+    await h.post('dev-a', `/spaces/${space.id}/bans`, { account: BOB });
+    expect((await h.del('dev-a', `/spaces/${space.id}/bans/${BOB}`)).status).toBe(204);
+
+    const { members } = (await (await h.get('dev-a', `/spaces/${space.id}/members`)).json()) as {
+      members: { account: string }[];
+    };
+    expect(members.map((m) => m.account)).toEqual([ALICE]);
+    expect((await h.post('dev-a', `/spaces/${space.id}/members`, { accounts: [BOB] })).status).toBe(
+      201,
+    );
+  });
+
+  it('lists who is banned, to somebody who may ban', async () => {
+    const h = people();
+    const space = await h.space();
+    // Carol, who was never in it — so bob stays a member and can be the one
+    // who asks without BAN. A banned account is a 404 to the whole space, and
+    // that would be testing the wrong refusal.
+    await h.post('dev-a', `/spaces/${space.id}/bans`, { account: CAROL, reason: 'spam' });
+
+    expect((await h.get('dev-b', `/spaces/${space.id}/bans`)).status).toBe(403);
+    const { bans } = (await (await h.get('dev-a', `/spaces/${space.id}/bans`)).json()) as {
+      bans: { account: string; by: string; reason?: string }[];
+    };
+    expect(bans).toEqual([
+      { account: CAROL, by: ALICE, at: expect.any(Number), reason: 'spam' },
+    ]);
+  });
+});
+
 describe('leaving and removing', () => {
   it('lets anybody leave, and takes them out of the rooms too', async () => {
     const h = people();
