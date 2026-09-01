@@ -181,6 +181,10 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
       groupId,
       streamPaging: parsed.data.streamPaging ?? false,
       notifyHints: parsed.data.notifyHints ?? false,
+      // Recorded, not recomputed later. When a client creates the group for
+      // this room, the server has to know which audience that group serves
+      // before a sibling room can reuse it.
+      audience: key,
     };
 
     // Everyone in the space is a member of an `everyone` room. A narrower

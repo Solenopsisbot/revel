@@ -125,6 +125,19 @@ export function mountGroups(app: Hono, deps: GroupDeps): void {
       devicePub: actor.devicePub,
       accountId: actor.accountId,
     });
+
+    // A space room's group serves an *audience*, not just this room. Recording
+    // that is what lets the next room with the same rule reuse it, which is why
+    // joining a twelve-room space is one commit and not twelve (`docs/03` §4).
+    //
+    // First binding wins, in the store. If two clients raced to make the group
+    // for the same audience, one of them made a group that now serves nothing —
+    // wasteful and harmless, and far better than re-pointing an audience at a
+    // second group and orphaning the history in the first.
+    if (room?.spaceId && room.audience) {
+      await deps.store.bindAudience(room.spaceId, room.audience, group.id);
+    }
+
     return c.json(await describe(deps, group.id, actor), 201);
   });
 

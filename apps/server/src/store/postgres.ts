@@ -157,6 +157,7 @@ export class PostgresStore implements Store {
       groupId: (row.group_id as string | null) ?? null,
       streamPaging: row.stream_paging as boolean,
       notifyHints: row.notify_hints as boolean,
+      audience: (row.audience as string | null) ?? null,
     };
   }
 
@@ -172,9 +173,9 @@ export class PostgresStore implements Store {
     // the winner's room rather than an error.
     return await this.sql.begin(async (sql) => {
       const inserted = await sql`
-        INSERT INTO rooms (id, kind, space_id, group_id, stream_paging, notify_hints)
+        INSERT INTO rooms (id, kind, space_id, group_id, stream_paging, notify_hints, audience)
         VALUES (${room.id}, ${room.kind}, ${room.spaceId}, ${room.groupId},
-                ${room.streamPaging}, ${room.notifyHints})
+                ${room.streamPaging}, ${room.notifyHints}, ${room.audience ?? null})
         ON CONFLICT (id) DO NOTHING
         RETURNING *`;
 

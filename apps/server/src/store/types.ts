@@ -37,6 +37,14 @@ export interface Room {
   streamPaging: boolean;
   /** Whether a `notify` hint may be attached. */
   notifyHints: boolean;
+  /**
+   * The canonical audience key (`audienceKey()`), or null for a DM.
+   *
+   * Stored rather than recomputed because it is what `group_audiences` joins
+   * on. Two spellings of the same rule would be two audiences, and the second
+   * one written would get its own group for a room that should have shared one.
+   */
+  audience?: string | null;
 }
 
 export interface Membership {

@@ -239,6 +239,57 @@ describe('rooms in a space', () => {
   });
 });
 
+describe('audiences and groups', () => {
+  it('gives two `everyone` rooms the same group, via the first one to make it', async () => {
+    // The whole reason a twelve-room space is one commit. The second room does
+    // not create a second group; it is handed the one the audience already has.
+    const h = people();
+    const space = await h.space();
+
+    const first = (await (await h.post('dev-a', `/spaces/${space.id}/rooms`, {})).json()) as {
+      id: string;
+      group: string | null;
+    };
+    // Nobody has made the group yet, so there is nothing to share.
+    expect(first.group).toBeNull();
+
+    // Alice's client makes it, the way a real client does on first open.
+    const made = (await (await h.post('dev-a', '/groups', { roomId: first.id })).json()) as {
+      id: string;
+    };
+
+    const second = (await (await h.post('dev-a', `/spaces/${space.id}/rooms`, {})).json()) as {
+      group: string | null;
+    };
+    expect(second.group).toBe(made.id);
+  });
+
+  it('does not hand an `everyone` group to a restricted room', async () => {
+    // The half that matters for confidentiality: a narrower audience is a
+    // different rule, so it gets its own group and is private by construction.
+    const h = people();
+    const space = await h.space();
+    const mod = (await (
+      await h.post('dev-a', `/spaces/${space.id}/roles`, { bits: serialize(Permission.SEND) })
+    ).json()) as { id: string };
+
+    const open = (await (await h.post('dev-a', `/spaces/${space.id}/rooms`, {})).json()) as {
+      id: string;
+    };
+    const made = (await (await h.post('dev-a', '/groups', { roomId: open.id })).json()) as {
+      id: string;
+    };
+
+    const shut = (await (
+      await h.post('dev-a', `/spaces/${space.id}/rooms`, {
+        audience: { kind: 'roles', roles: [mod.id] },
+      })
+    ).json()) as { group: string | null };
+    expect(shut.group).not.toBe(made.id);
+    expect(shut.group).toBeNull();
+  });
+});
+
 describe('leaving and removing', () => {
   it('lets anybody leave, and takes them out of the rooms too', async () => {
     const h = people();
