@@ -3,7 +3,6 @@ import { goto } from '$app/navigation';
 import BetaNotice from '$lib/BetaNotice.svelte';
 import Mark from '$lib/Mark.svelte';
 import Button from '$lib/moment/Button.svelte';
-import Reveal from '$lib/Reveal.svelte';
 
 const pillars = [
   {
@@ -89,34 +88,28 @@ const costs: [string, string][] = [
   <section class="band" id="how">
     <div class="wrap pillars">
       {#each pillars as p, i (p.title)}
-        <Reveal delay={i * 90}>
-          <article class="pillar">
-            <h2>{p.title}</h2>
-            <p>{p.body}</p>
-          </article>
-        </Reveal>
+        <article class="pillar">
+          <h2>{p.title}</h2>
+          <p>{p.body}</p>
+        </article>
       {/each}
     </div>
   </section>
 
   <section class="band alt" id="costs">
     <div class="wrap">
-      <Reveal>
-        <h2 class="big">Here's what it costs.</h2>
-        <p class="lede">
-          A server that can't read your messages can't do things for you either.
-          Most of it comes back — done on your device, or by someone visibly in
-          the room. Some of it doesn't.
-        </p>
-      </Reveal>
+      <h2 class="big">Here's what it costs.</h2>
+      <p class="lede">
+        A server that can't read your messages can't do things for you either.
+        Most of it comes back — done on your device, or by someone visibly in
+        the room. Some of it doesn't.
+      </p>
       <div class="costs">
         {#each costs as [title, back], i (title)}
-          <Reveal delay={i * 60}>
-            <div class="cost">
-              <div class="lost">{title}</div>
-              <div class="back">{back}</div>
-            </div>
-          </Reveal>
+          <div class="cost">
+            <div class="lost">{title}</div>
+            <div class="back">{back}</div>
+          </div>
         {/each}
       </div>
     </div>
@@ -124,54 +117,66 @@ const costs: [string, string][] = [
 
   <section class="band" id="faces">
     <div class="wrap two">
-      <Reveal>
-        <div class="feature">
-          <h2>One account, many faces.</h2>
-          <p>
-            If you're a plural system, you shouldn't need five accounts and a bot
-            to be yourself. One login, many names, avatars and pronouns —
-            switched from the composer, per message. And if that isn't you, you
-            will never see any of it: the machinery only appears once you have a
-            second face.
-          </p>
-          <p class="micro">
-            Whether your faces are publicly linked is off by default. Some
-            systems are out; some very much aren't.
-          </p>
-        </div>
-      </Reveal>
-      <Reveal delay={90}>
-        <div class="feature">
-          <h2>Computer friends are members.</h2>
-          <p>
-            The people in your rooms who happen to be AI aren't integrations
-            bolted on from the side. Same presence, same permissions, same
-            roster, and a badge saying what they are.
-          </p>
-          <p class="micro">
-            They hold keys like anyone else, which is why they appear in the
-            member list. It's also why we don't offer to host one for you: we'd
-            be holding its keys, and then we could read your rooms.
-          </p>
-        </div>
-      </Reveal>
+      <div class="feature">
+        <h2>One account, many faces.</h2>
+        <p>
+          If you're a plural system, you shouldn't need five accounts and a bot
+          to be yourself. One login, many names, avatars and pronouns —
+          switched from the composer, per message. And if that isn't you, you
+          will never see any of it: the machinery only appears once you have a
+          second face.
+        </p>
+        <p class="micro">
+          Whether your faces are publicly linked is off by default. Some
+          systems are out; some very much aren't.
+        </p>
+      </div>
+      <div class="feature">
+        <h2>Computer friends are members.</h2>
+        <p>
+          The people in your rooms who happen to be AI aren't integrations
+          bolted on from the side. Same presence, same permissions, same
+          roster, and a badge saying what they are.
+        </p>
+        <p class="micro">
+          They hold keys like anyone else, which is why they appear in the
+          member list. It's also why we don't offer to host one for you: we'd
+          be holding its keys, and then we could read your rooms.
+        </p>
+      </div>
     </div>
   </section>
 
   <section class="band alt">
     <div class="wrap">
-      <Reveal>
-        <h2 class="big">Or run the whole thing yourself.</h2>
-        <p class="lede">
-          One binary, your own box, your own rules about who can sign in. The
-          source is public, so you can check what it does rather than take our
-          word for it. Centralised until you'd rather it wasn't.
-        </p>
-        <div class="cta">
-          <Button variant="secondary" onclick={() => goto('/app')}>See how it works</Button>
-          <a class="link" href="https://github.com/Solenopsisbot/revel">Read the source</a>
-        </div>
-      </Reveal>
+      <h2 class="big">Or run the whole thing yourself.</h2>
+      <p class="lede">
+        One binary, your own box, your own rules about who can sign in. The
+        source is public, so you can check what it does rather than take our
+        word for it. Centralised until you'd rather it wasn't.
+      </p>
+      <div class="cta">
+        <a class="gh" href="https://github.com/Solenopsisbot/revel" rel="noreferrer">
+          <!-- GitHub's own mark. Inlined rather than added to `Icon`, which is
+               a set of generic glyphs — a wordmark is somebody else's asset and
+               does not belong in a palette of nouns. -->
+          <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
+                 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13
+                 -.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66
+                 .07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15
+                 -.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0
+                 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82
+                 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01
+                 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+            />
+          </svg>
+          <span>View on GitHub</span>
+        </a>
+        <a class="link" href="/app">See how it works</a>
+      </div>
     </div>
   </section>
 
@@ -219,6 +224,22 @@ const costs: [string, string][] = [
     line-height: .97; letter-spacing: -.035em; font-weight: 600; margin: 0 0 22px;
   }
   .sub { font-size: 1.0625rem; line-height: 1.55; margin: 0 0 30px; color: color-mix(in oklab, var(--text) 88%, transparent); }
+  /*
+    GitHub's own colours, because a link to a repository that looks like every
+    other button on the page is a link people do not recognise as one. White
+    with the mark is what that button looks like everywhere it appears.
+  */
+  .gh {
+    display: inline-flex; align-items: center; gap: 9px;
+    background: #fff; color: #24292f; text-decoration: none;
+    font: inherit; font-weight: 600;
+    padding: 11px 18px; border-radius: 999px;
+    border: 1px solid rgba(0, 0, 0, .08);
+    transition: background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+  }
+  .gh:hover { background: #f3f4f6; }
+  .gh:active { transform: translateY(1px); }
+
   .cta { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
   .fine { margin-top: 30px; font-size: var(--text-sm); line-height: 1.75; color: color-mix(in oklab, var(--text) 60%, transparent); }
 
