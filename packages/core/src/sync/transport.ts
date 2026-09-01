@@ -76,6 +76,11 @@ export interface Transport {
   createGroupRoom(accounts: string[]): Promise<RoomInfo>;
 
   addMembers(roomId: string, accounts: string[]): Promise<RoomInfo>;
+  /**
+   * Take somebody else out of a group DM. Any member may — see `rooms.ts` for
+   * why the rule matches what MLS already permits rather than being stricter.
+   */
+  removeMember(roomId: string, account: string): Promise<void>;
   /** Yourself only. Does not remove your MLS leaf — a member has to commit that. */
   leaveRoom(roomId: string): Promise<void>;
 
@@ -277,6 +282,13 @@ export class HttpTransport implements Transport {
       method: 'POST',
       body: JSON.stringify({ accounts }),
     });
+  }
+
+  async removeMember(roomId: string, account: string): Promise<void> {
+    await this.#request(
+      `/rooms/${encodeURIComponent(roomId)}/members/${encodeURIComponent(account)}`,
+      { method: 'DELETE' },
+    );
   }
 
   async leaveRoom(roomId: string): Promise<void> {

@@ -143,6 +143,14 @@ export interface DirectoryCore {
   openDm(who: { account?: string; address?: string }): Promise<RoomInfo>;
   openGroupRoom(accounts: string[]): Promise<RoomInfo>;
   addMembers(roomId: string, accounts: string[]): Promise<RoomInfo>;
+  /**
+   * Take somebody else out of a group DM, and out of the group.
+   *
+   * Both halves matter and they are different things: the membership row is
+   * delivery, the MLS Remove is access. Doing only the first leaves somebody
+   * who cannot be sent to and can still read anything a member forwards them.
+   */
+  removeMember(roomId: string, account: string): Promise<void>;
   /** Yourself only. Does not take your keys back — a member must commit that. */
   leave(roomId: string): Promise<void>;
 

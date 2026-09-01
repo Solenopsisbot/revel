@@ -191,16 +191,10 @@ export function mountRooms(app: Hono, deps: RoomDeps): void {
   /**
    * Leave a room. Yourself only.
    *
-   * Removing *somebody else* from a group DM needs a notion of who owns it, and
-   * `docs/04` §1's `rooms` table does not have one — the only owner in the
-   * schema belongs to a space. So it is absent on purpose rather than invented
-   * here, and a group DM that has gone wrong is currently left rather than
-   * cleaned up. Worth deciding before group DMs are a thing people use.
-   *
-   * Leaving does not remove your MLS leaf either. A member has to commit that
-   * away, and until one does you can still decrypt what arrives — which is why
-   * the client calls `GroupSync.leave` alongside this, and why a kick that has
-   * to be immediate is a Remove first and a membership row second.
+   * Leaving does not remove your MLS leaf. A member has to commit that away,
+   * and until one does you can still decrypt what arrives — which is why the
+   * client calls `GroupSync.leave` alongside this, and why a kick that has to
+   * be immediate is a Remove first and a membership row second.
    */
   app.delete('/rooms/:id/members/me', async (c) => {
     const actor = await deps.authenticate(c.req.raw);
@@ -215,6 +209,64 @@ export function mountRooms(app: Hono, deps: RoomDeps): void {
     if (room.kind === 'dm') return c.json({ error: 'cannot_leave_a_dm' }, 400);
 
     await deps.store.removeMember(roomId, actor.accountId);
+    return c.body(null, 204);
+  });
+
+  /**
+   * Remove somebody else from a group DM. Any member may.
+   *
+   * **Decided, and the reasoning is the crypto rather than the product.** MLS
+   * lets any member commit a Remove; the server cannot prevent that and has no
+   * way to know it happened. So a rule like "only the creator may" is one the
+   * server can enforce on *its* membership table and nowhere else — and when
+   * the two disagree the person is still listed in the room while no longer
+   * able to decrypt a word in it. A dead room with no explanation is a worse
+   * outcome than the thing the rule was trying to prevent.
+   *
+   * Matching what the crypto already permits is the only arrangement where
+   * "who is in this room" has one answer. It does mean any member can eject
+   * any other, which is a real griefing surface — but it is one that exists
+   * with or without this route. The choice is only whether it happens as a
+   * supported action or as a mysterious loss of access.
+   *
+   * Group DMs only. A 1:1 DM has exactly two members by construction and its
+   * id says which two; removing one would leave a room whose id describes a
+   * pair that is not in it.
+   *
+   * **Still open: attribution.** Nothing marks *who* removed somebody, because
+   * the server cannot write into the ciphertext and `docs/04` deliberately has
+   * no timeline row for a membership change ("there is no row for 'the
+   * membership changed' in a timeline the server cannot see"). Making a
+   * removal visible needs an encrypted event the removing client sends, which
+   * is a protocol addition rather than a route.
+   *
+   * Registered *after* `members/me` on purpose: Hono matches in registration
+   * order, and a parameterised segment declared first swallows the literal one
+   * — `me` arrives as an account id that is not a member, and leaving a room
+   * answers 404.
+   */
+  app.delete('/rooms/:id/members/:account', async (c) => {
+    const actor = await deps.authenticate(c.req.raw);
+    if (!actor) return c.json({ error: 'unauthenticated' }, 401);
+
+    const roomId = c.req.param('id');
+    const denial = await canRead(deps.store, roomId, actor);
+    if (denial) return c.json({ error: denial }, denial === 'no_such_room' ? 404 : 403);
+
+    const room = await deps.store.getRoom(roomId);
+    if (room?.kind !== 'group') return c.json({ error: 'not_a_group_room' }, 400);
+
+    // Removing yourself is `members/me`, which has its own rules — it does not
+    // require the room to still have anyone else in it, and this does.
+    const target = c.req.param('account');
+    if (target === actor.accountId) return c.json({ error: 'use_leave' }, 400);
+
+    const members = await deps.store.listRoomMembers(roomId);
+    if (!members.some((m) => m.accountId === target)) {
+      return c.json({ error: 'not_a_member' }, 404);
+    }
+
+    await deps.store.removeMember(roomId, target);
     return c.body(null, 204);
   });
 }

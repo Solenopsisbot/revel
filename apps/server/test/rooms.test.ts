@@ -205,6 +205,46 @@ describe('group DMs', () => {
     expect(after.members.sort()).toEqual([ALICE, BOB].sort());
   });
 
+  it('let any member remove any other', async () => {
+    // Decided in `rooms.ts`: MLS lets any member commit a Remove, so a rule
+    // the server enforces on its own table and nowhere else is a rule that
+    // produces two answers to "who is in this room".
+    const h = people();
+    const room = (await (await h.groupRoom('dev-a', [BOB, CAROL])).json()) as any;
+
+    // Bob, who did not create it, removes carol.
+    expect((await h.del('dev-b', `/rooms/${room.id}/members/${CAROL}`)).status).toBe(204);
+    const after = (await (await h.get('dev-a', `/rooms/${room.id}`)).json()) as any;
+    expect(after.members.sort()).toEqual([ALICE, BOB].sort());
+
+    // And carol can no longer read it.
+    expect((await h.get('dev-c', `/rooms/${room.id}`)).status).toBe(403);
+  });
+
+  it('will not remove somebody who is not in the room', async () => {
+    const h = people();
+    const room = (await (await h.groupRoom('dev-a', [BOB])).json()) as any;
+    const res = await h.del('dev-a', `/rooms/${room.id}/members/${CAROL}`);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'not_a_member' });
+  });
+
+  it('send you to `leave` for yourself', async () => {
+    // Removing yourself and leaving are different acts with different rules,
+    // and one endpoint doing both would have to guess which one you meant.
+    const h = people();
+    const room = (await (await h.groupRoom('dev-a', [BOB])).json()) as any;
+    const res = await h.del('dev-a', `/rooms/${room.id}/members/${ALICE}`);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'use_leave' });
+  });
+
+  it('refuse a non-member trying to remove somebody', async () => {
+    const h = people();
+    const room = (await (await h.groupRoom('dev-a', [BOB])).json()) as any;
+    expect((await h.del('dev-c', `/rooms/${room.id}/members/${BOB}`)).status).toBe(403);
+  });
+
   it('leaving does not take the keys back', async () => {
     // The honest gap, and the architecture in one assertion: the server can
     // take away delivery and cannot take away what a device already holds. A

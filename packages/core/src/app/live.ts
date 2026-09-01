@@ -8,13 +8,14 @@
  * four interfaces instead of one object with ninety-four members.
  */
 import type { CryptoEngine, Member } from '@revel/crypto';
-import type {
-  AccountProfile,
-  BlobRef,
-  DeviceInfo,
-  FaceRef,
-  RoomInfo,
-  UpdateProfile,
+import {
+  type AccountProfile,
+  type BlobRef,
+  type DeviceInfo,
+  type FaceRef,
+  type RoomInfo,
+  toAccountId,
+  type UpdateProfile,
 } from '@revel/protocol';
 import { Attachments } from '../blobs/attachments.js';
 import type { Message, RoomState } from '../rooms/state.js';
@@ -360,6 +361,24 @@ class LiveDirectory implements DirectoryCore {
     // read it.
     if (room.group) await this.#groups.invite(room.group, accounts);
     return room;
+  }
+
+  async removeMember(roomId: string, account: string): Promise<void> {
+    const group = this.#known.find((r) => r.id === roomId)?.group;
+    await this.#transport.removeMember(roomId, account);
+    // The membership row is delivery; the Remove commit is access. Only the
+    // second one takes the keys away, and until some member sends it the
+    // person removed can still read everything that arrives.
+    // Every leaf that account holds, not one — a person is as many leaves as
+    // they have devices (`docs/03` §5), and taking away three of four is
+    // taking away nothing.
+    if (group) {
+      const leaves = (await this.#crypto.members(group).catch(() => []))
+        .filter((m) => toAccountId(m.account) === account)
+        .map((m) => m.leaf);
+      if (leaves.length) await this.#groups.remove(group, leaves).catch(() => {});
+    }
+    await this.refresh();
   }
 
   async leave(roomId: string): Promise<void> {
