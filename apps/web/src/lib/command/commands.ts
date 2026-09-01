@@ -13,7 +13,7 @@
  * actually see here?" is a question nobody answers well and we can answer it
  * from the room's real configuration.
  */
-import { core, MY_ACCOUNT } from '../fake/core.svelte.js';
+import { core } from '../fake/core.svelte.js';
 import { directory } from '../fake/directory.svelte.js';
 
 /** Named by the faces in it, never collapsed by account (`docs/11`). */
@@ -167,7 +167,7 @@ export function buildCommands(ctx: Ctx): Command[] {
   }
   for (const id of dmTargets) {
     const face = core.faces[id];
-    if (!face || face.agent || face.accountId === MY_ACCOUNT) continue;
+    if (!face || face.agent || face.accountId === core.myAccountId) continue;
     out.push({
       id: `message:${id}`,
       label: `Message ${face.name}`,

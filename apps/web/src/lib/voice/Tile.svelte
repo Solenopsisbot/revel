@@ -1,4 +1,5 @@
 <script lang="ts">
+import { faceColour } from '$lib/colour.js';
 /**
  * One participant.
  *
@@ -24,7 +25,7 @@ const face = $derived(core.faces[p.faceId]!);
   class:speaking={p.speaking && !p.diverged}
   class:diverged={p.diverged}
   class:ringing={p.ringing}
-  style="--ring: var(--face-{face.colour})"
+  style="--ring: var(--face-{faceColour(face)})"
 >
   <Avatar {face} size={56} />
   <div class="name">

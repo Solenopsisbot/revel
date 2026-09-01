@@ -291,7 +291,7 @@ class Core {
       return {
         id: card.id,
         name: card.name,
-        colour: (card.colour ?? 'grey') as FaceColour,
+        ...(card.colour ? { colour: card.colour as FaceColour } : {}),
         ...(card.pronouns ? { pronouns: card.pronouns } : {}),
         ...(card.note ? { note: card.note } : {}),
         ...(card.avatar ? { avatar: card.avatar } : {}),
@@ -301,7 +301,7 @@ class Core {
     // Named rather than blank. A face we cannot resolve is a real state — a
     // message from before this device joined, or one whose `room.faces` never
     // arrived — and saying so beats an empty card.
-    return { id, name: 'Unknown', colour: 'grey' as FaceColour };
+    return { id, name: 'Unknown' };
   }
 
   /**
@@ -687,6 +687,67 @@ class Core {
     // bare — one list, two spellings, and the difference was "is this me",
     // which the `you` tag beside it already says.
     return live.nameOf(accountId);
+  }
+
+  /**
+   * How to reach an account — `viola@revel.chat`.
+   *
+   * The *account's* address, not the face's: a face is presentation and there
+   * can be many, while an address is one per account and is the thing somebody
+   * types to find you (`docs/17`).
+   *
+   * Empty when it is not known — the demo, or an account the IdP has never
+   * heard of. Empty rather than the key, because a 43-character base64 string
+   * is not an address and putting one where an address goes invites somebody
+   * to paste it into a box that will not take it.
+   */
+  addressOf(accountId: string): string {
+    if (this.demo || !accountId) return '';
+    if (accountId === this.myAccountId) return session.address || '';
+    const handle = live.nameOf(accountId);
+    // `nameOf` falls back to a slice of the key while the lookup is in flight
+    // or when the IdP does not know them. Neither is an address.
+    if (!handle || handle === accountId.slice(0, 8)) return '';
+    return handle.includes('@') ? handle : `${handle}@${session.provider}`;
+  }
+
+  /**
+   * The address to show on a face's profile card, or empty.
+   *
+   * **Conditional, because an address on a face card is a linkage.**
+   * `docs/11` §"Linking faces" makes that off by default in as many words: with
+   * it off, "each face appears as an independent person… no shared profile".
+   * Two faces of one system both showing `rae@revel.chat` is precisely the
+   * connection that control exists to withhold.
+   *
+   * So it appears in the two places where it discloses nothing new:
+   *
+   *   * **Your own faces.** It is your address and you are the one person
+   *     entitled to it without qualification.
+   *   * **A 1:1 DM.** The room is two accounts by construction and you are one
+   *     of them, so the other is already known — you typed the handle, or they
+   *     typed yours. Showing it back is not a new fact.
+   *
+   * Anywhere with more than two accounts in it — a group DM, a space — it stays
+   * hidden, and stays hidden until "link my faces publicly" exists to turn it
+   * on. `docs/11` is honest that this protects nothing against a determined
+   * member of a room you have used two faces in, because per-account
+   * attribution is already in every message they hold. It is still the stated
+   * default, and a default is not less real for having a known limit.
+   */
+  addressFor(faceId: string): string {
+    if (this.demo || !live.running) return '';
+
+    const mine = this.myFaces.some((f) => f.id === faceId);
+    if (mine) return this.addressOf(this.myAccountId);
+
+    // The other account in a 1:1 DM. `kind === 'dm'` is the derived-id room —
+    // exactly two accounts — and a group DM is `kind === 'group'`, which this
+    // deliberately does not match.
+    const room = live.rooms.find((r) => r.id === this.currentRoomId);
+    if (room?.kind !== 'dm') return '';
+    const them = room.members.find((a) => a !== this.myAccountId);
+    return them ? this.addressOf(them) : '';
   }
 
   /** Your membership of the open space, if you have one. */

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { faceColour } from '$lib/colour.js';
 /**
  * The search surface (`docs/19` §Search).
  *
@@ -227,7 +228,7 @@ function runs(text: string, marks: [number, number][]) {
           <div class="line">
             {#if face}<Avatar {face} size={20} />{/if}
             <div class="body">
-              <span class="who" style="color: var(--face-{snap?.colour ?? 'violet'})">{snap?.name ?? 'Someone'}</span>
+              <span class="who" style="color: var(--face-{faceColour(snap)})">{snap?.name ?? 'Someone'}</span>
               <span class="excerpt">
                 {#each runs(hit.excerpt, hit.marks) as r, j (j)}{#if r.hit}<mark>{r.t}</mark>{:else}{r.t}{/if}{/each}
               </span>

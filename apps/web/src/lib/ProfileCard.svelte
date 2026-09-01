@@ -20,7 +20,8 @@
  *   can appear instantly and why it works offline.
  */
 import Avatar from './Avatar.svelte';
-import { core, MY_ACCOUNT } from './fake/core.svelte.js';
+import { faceColour } from './colour.js';
+import { core } from './fake/core.svelte.js';
 import Icon from './Icon.svelte';
 import Popover from './Popover.svelte';
 
@@ -40,7 +41,24 @@ let {
 // Resolved rather than looked up: for a real conversation the other person's
 // face arrives on the room roster and is in no fixture map. See `core.faceCard`.
 const face = $derived(core.faceCard(faceId));
-const mine = $derived(face?.accountId === MY_ACCOUNT);
+const mine = $derived(face?.accountId === core.myAccountId);
+
+/**
+ * How to reach this person — `viola@revel.chat`.
+ *
+ * An address names an *account*, not a face (`docs/17`: "the bare handle is
+ * never a key"), which is why it is conditional: putting one under every face
+ * would link a plural system's faces to each other, and `docs/11` makes that
+ * off by default. `core.addressFor` holds the rule and the reasoning.
+ */
+const address = $derived(core.addressFor(faceId));
+
+let copied = $state(false);
+async function copyAddress() {
+  await navigator.clipboard?.writeText(address).catch(() => {});
+  copied = true;
+  setTimeout(() => (copied = false), 1400);
+}
 const isMe = $derived(face?.id === core.speakingAs);
 
 const STATUS: Record<string, string> = {
@@ -53,16 +71,28 @@ const STATUS: Record<string, string> = {
 
 {#snippet card()}
   <div class="card" role="dialog" aria-label="{face.name}'s profile">
-    <div class="banner" style="--fc: var(--face-{face.colour})"></div>
+    <div class="banner" style="--fc: var(--face-{faceColour(face)})"></div>
 
     <div class="head">
       <Avatar {face} size={64} dot />
       <div class="who">
-        <div class="nm" style="color: var(--face-{face.colour})">{face.name}</div>
+        <div class="nm" style="color: var(--face-{faceColour(face)})">{face.name}</div>
         <div class="meta">
           {#if face.pronouns}<span>{face.pronouns}</span>{/if}
           {#if face.status}<span>{STATUS[face.status]}</span>{/if}
         </div>
+        {#if address}
+          <!--
+            The address, under the name — the thing to copy when you want to
+            add somebody somewhere. Shown only where it is not a disclosure;
+            see `core.addressFor`.
+          -->
+          <button
+            class="addr"
+            title="Copy address"
+            onclick={() => copyAddress()}
+          >{copied ? 'Copied' : address}</button>
+        {/if}
       </div>
     </div>
 
@@ -149,6 +179,15 @@ const STATUS: Record<string, string> = {
   .head :global(.av) { box-shadow: 0 0 0 3px var(--ground-0); }
   .who { padding-bottom: 3px; min-width: 0; }
   .nm { font-weight: 700; font-size: var(--text-base); overflow: hidden; text-overflow: ellipsis; }
+  .addr {
+    display: block; margin-top: 5px; padding: 0; border: 0; background: transparent;
+    font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-mute);
+    cursor: pointer; text-align: left; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    transition: color var(--t-fast) var(--ease);
+  }
+  .addr:hover { color: var(--text-dim); }
+
   .meta { display: flex; gap: 8px; font-size: 11px; color: var(--text-mute); }
   .meta span:not(:first-child)::before { content: '·'; margin-right: 8px; }
 

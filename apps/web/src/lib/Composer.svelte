@@ -1,4 +1,5 @@
 <script lang="ts">
+import { faceColour } from './colour.js';
 import Avatar from './Avatar.svelte';
 import { conversation } from './fake/conversation.svelte.js';
 import { core } from './fake/core.svelte.js';
@@ -256,7 +257,7 @@ function grow(el: HTMLTextAreaElement) {
     {#if target}
       <div class="reply-banner">
         <Icon name="reply" size={14} />
-        <span>Replying to <b style="color: var(--face-{target.face?.colour ?? 'grey'})">{target.face?.name ?? 'Unknown'}</b></span>
+        <span>Replying to <b style="color: var(--face-{faceColour(target.face)})">{target.face?.name ?? 'Unknown'}</b></span>
         <span class="snip">{target.body}</span>
         <button class="x" onclick={() => (core.replyTo = null)} aria-label="Cancel reply">×</button>
       </div>
@@ -267,7 +268,7 @@ function grow(el: HTMLTextAreaElement) {
     class="box"
     class:dragging
     class:replying={!!core.replyTo && !thread}
-    style="--fc: var(--face-{face?.colour ?? 'lilac'})"
+    style="--fc: var(--face-{faceColour(face)})"
     ondragover={(e) => { e.preventDefault(); dragging = true; }}
     ondragleave={() => (dragging = false)}
     ondrop={(e) => { e.preventDefault(); dragging = false; }}

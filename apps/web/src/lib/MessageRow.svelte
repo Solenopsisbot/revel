@@ -18,7 +18,8 @@ import EmojiPicker from './EmojiPicker.svelte';
 // component does not change again when the source does.
 import { connection } from './fake/connection.svelte.js';
 import { conversation, type UiMessage as Message } from './fake/conversation.svelte.js';
-import { core, MY_ACCOUNT } from './fake/core.svelte.js';
+import { faceColour } from './colour.js';
+import { core } from './fake/core.svelte.js';
 import type { Face } from './fake/data.js';
 import { ago, clock, names } from './format.js';
 import Icon from './Icon.svelte';
@@ -78,11 +79,18 @@ const face = $derived(snapshot ?? { id: '', name: 'Unknown', colour: 'grey' });
  * about the person now, not about the message — and falls back to the
  * snapshot for somebody who has since left and is no longer in the roster.
  */
-const avatarFace = $derived(
-  current ??
-    ({ ...face, colour: (face.colour ?? 'grey') as Face['colour'], accountId: m.account } as Face),
-);
-const mine = $derived(m.account === MY_ACCOUNT);
+const avatarFace = $derived(current ?? ({ ...face, accountId: m.account } as Face));
+
+/**
+ * Whether this is mine.
+ *
+ * `core.myAccountId`, not the fixture constant this used to compare against —
+ * which for a signed-in account is never equal to anything, so **none of your
+ * own messages were ever `mine`**. No right-hand alignment, no brand tint, no
+ * "same system" badge: in a live DM your half of the conversation rendered
+ * exactly like theirs.
+ */
+const mine = $derived(m.account === core.myAccountId);
 const editing = $derived(core.editing === m.id);
 const confirming = $derived(core.confirmingDelete === m.id);
 
@@ -318,7 +326,7 @@ function who(by: string[], key: string) {
   class:flash={core.jumpTo === m.id}
   class:swiping
   class:tapped={tapActions.id === m.id}
-  style="--fc: var(--face-{face.colour}); --dx: {dx}px; --sw: {Math.min(1, dx / REPLY_AT)}"
+  style="--fc: var(--face-{faceColour(face)}); --dx: {dx}px; --sw: {Math.min(1, dx / REPLY_AT)}"
   oncontextmenu={onContext}
   onpointerdown={swipeDown}
   onpointermove={swipeMove}
@@ -347,7 +355,7 @@ function who(by: string[], key: string) {
     {#if target}
       <button
         class="replyto"
-        style="--rc: var(--face-{target.face?.colour ?? 'grey'})"
+        style="--rc: var(--face-{faceColour(target.face)})"
         onclick={() => (core.jumpTo = target.id)}
       >
         <Icon name="reply" size={13} />
@@ -362,7 +370,7 @@ function who(by: string[], key: string) {
         {#if current?.agent}
           <span class="badge agent" title="Software, run by {current.agent.by}">{current.agent.label}</span>
         {/if}
-        {#if m.account === MY_ACCOUNT && face.id !== 'viola'}
+        {#if mine && face.id !== core.speakingAs}
           <span class="badge same">same system</span>
         {/if}
         <time class="at">{clock(m.at)}</time>

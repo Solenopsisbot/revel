@@ -2,12 +2,21 @@
  * Message body → tokens.
  *
  * Deliberately small. Chat is not a document format, and every construct added
- * here is one more thing that renders differently on three platforms. What is
- * supported: code spans and fences, links, @mentions, #rooms, and one level
- * each of bold / italic / strike.
+ * here is one more thing that renders differently on three platforms.
+ *
+ * **Inline:** code spans, links (bare and `[labelled](…)`), @mentions, #rooms,
+ * and one level each of bold / italic / strike.
+ *
+ * **Block:** fenced code, `#` headings, `>` quotes, and `-`/`1.` lists.
+ *
+ * What is deliberately *absent*: tables, images, footnotes, HTML, and nested
+ * lists. Each is a format decision people would then have to get right in a
+ * text box, and none of them is a thing anybody has ever wanted mid-sentence.
  *
  * Nothing here ever produces HTML — the caller renders tokens as elements, so
- * a message body cannot inject markup no matter what it contains.
+ * a message body cannot inject markup no matter what it contains. That is the
+ * property the whole file exists to keep, and it is why a labelled link is a
+ * token with a separate `v` and `href` rather than anything resembling markup.
  */
 export type Token =
   | { t: 'text'; v: string }
@@ -20,11 +29,17 @@ export type Token =
   | { t: 'strike'; v: string };
 
 export interface Block {
-  kind: 'text' | 'code';
+  kind: 'text' | 'code' | 'heading' | 'quote' | 'list';
   /** For a fenced block, the language tag if one was given. */
   lang?: string;
   tokens?: Token[];
   raw?: string;
+  /** `heading`: 1, 2 or 3. Deeper is a document, not a message. */
+  level?: number;
+  /** `list`: the items, each already tokenised. */
+  items?: Token[][];
+  /** `list`: whether it was written `1.` rather than `-`. */
+  ordered?: boolean;
 }
 
 /** Shared with `TOKEN_RE` below, so there is one definition of "a URL". */
@@ -50,6 +65,10 @@ const URL_SOURCE = 'https?:\\/\\/[^\\s<>()]+[^\\s<>().,!?:;\'"]';
 const TOKEN_RE = new RegExp(
   [
     '(`[^`\\n]+`)', // code — first, so nothing inside it is interpreted
+    // A labelled link, **before** the bare-URL rule. Otherwise the URL inside
+    // the parens matches first and the whole thing renders as `[label](` plus
+    // a link plus `)`.
+    `(\\[[^\\]\\n]{1,200}\\]\\((?:${URL_SOURCE})\\))`,
     `(${URL_SOURCE})`, // links — before anything that could match inside a URL
     '(\\*\\*[^*\\n]+\\*\\*)',
     '(\\*[^*\\n]+\\*)',
@@ -66,8 +85,21 @@ function inline(s: string): Token[] {
   for (const m of s.matchAll(TOKEN_RE)) {
     const i = m.index!;
     if (i > last) out.push({ t: 'text', v: s.slice(last, i) });
-    const [, code, link, bold, italic, strike, mention, room] = m;
+    const [, code, labelled, link, bold, italic, strike, mention, room] = m;
     if (code) out.push({ t: 'code', v: code.slice(1, -1) });
+    // `[label](href)`. The label is shown and the href is where it goes, so
+    // this is the one construct where those can differ — which is exactly the
+    // thing a phishing link wants. `RichText` renders the href in the title
+    // attribute for that reason; a link must not be able to say one thing and
+    // go somewhere else without that being inspectable.
+    else if (labelled) {
+      const cut = labelled.lastIndexOf('](');
+      out.push({
+        t: 'link',
+        v: labelled.slice(1, cut),
+        href: labelled.slice(cut + 2, -1),
+      });
+    }
     // Only `https://` is hidden, and only because it is the default everybody
     // assumes. `http://` stays visible: it is the one part of a scheme that
     // means something different, and hiding it would render an insecure link
@@ -105,10 +137,83 @@ export function parse(body: string): Block[] {
         raw: (isLang ? part.slice(nl + 1) : part).replace(/\n$/, ''),
       });
     } else if (part) {
-      blocks.push({ kind: 'text', tokens: inline(part) });
+      blocks.push(...lines(part));
     }
   });
   return blocks;
+}
+
+/**
+ * The block grammar, outside code fences.
+ *
+ * Line-based and single-pass, because everything it supports is decided by the
+ * first few characters of a line. Anything that is not a heading, a quote or a
+ * list item is prose, and consecutive prose lines stay in **one** block — the
+ * renderer sets `white-space: pre-wrap`, so a hard newline inside a paragraph
+ * is already a line break and splitting per line would double it.
+ *
+ * `# ` needs the space. `#general` is a room mention and always was; requiring
+ * the space is both what CommonMark says and the only thing keeping the two
+ * apart, since a heading and a room reference start with the same character.
+ */
+function lines(part: string): Block[] {
+  const out: Block[] = [];
+  /** Prose accumulating until something that is not prose ends it. */
+  let prose: string[] = [];
+  const flush = () => {
+    if (!prose.length) return;
+    // Trailing blank lines are the separator that ended the paragraph, not
+    // content — keeping them puts an empty line at the bottom of every block.
+    const text = prose.join('\n').replace(/\n+$/, '');
+    if (text) out.push({ kind: 'text', tokens: inline(text) });
+    prose = [];
+  };
+
+  for (const line of part.split('\n')) {
+    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    if (heading) {
+      flush();
+      out.push({
+        kind: 'heading',
+        level: heading[1]!.length,
+        tokens: inline(heading[2]!),
+      });
+      continue;
+    }
+
+    const quote = /^>\s?(.*)$/.exec(line);
+    if (quote) {
+      flush();
+      // Consecutive `>` lines are one quote, so quoting a paragraph does not
+      // produce a stack of separate bars.
+      const last = out[out.length - 1];
+      if (last?.kind === 'quote') {
+        last.tokens = [...(last.tokens ?? []), { t: 'text', v: '\n' }, ...inline(quote[1]!)];
+      } else {
+        out.push({ kind: 'quote', tokens: inline(quote[1]!) });
+      }
+      continue;
+    }
+
+    const item = /^\s*(?:([-*+])|(\d{1,3})[.)])\s+(.*)$/.exec(line);
+    if (item) {
+      flush();
+      const ordered = !item[1];
+      const last = out[out.length - 1];
+      // Same list only if it is the same *kind* of list: a bulleted line after
+      // a numbered one is a new list, not item four.
+      if (last?.kind === 'list' && last.ordered === ordered) {
+        last.items = [...(last.items ?? []), inline(item[3]!)];
+      } else {
+        out.push({ kind: 'list', ordered, items: [inline(item[3]!)] });
+      }
+      continue;
+    }
+
+    prose.push(line);
+  }
+  flush();
+  return out;
 }
 
 const PICTOGRAPHIC = /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|️|‍|\s)+$/u;

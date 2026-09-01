@@ -97,11 +97,84 @@ describe('links in the body', () => {
     expect(links('`https://example.com`')).toEqual([]);
   });
 
+  it('shows the label and keeps the destination, for a written link', () => {
+    // The whole reason this file exists: `[label](href)` is the one construct
+    // where the two can differ, which is exactly what a phishing link wants.
+    // The token carries both, and `RichText` puts the href in the title.
+    const [link] = links('see [the docs](https://example.com/a#b) for more');
+    expect(link).toMatchObject({ v: 'the docs', href: 'https://example.com/a#b' });
+  });
+
+  it('does not tear a written link in half on the URL inside it', () => {
+    // The bare-URL rule would match first and leave `[label](` as text either
+    // side of a link — the same precedence bug the `#fragment` case had.
+    const ts = tokens('[docs](https://example.com/x#y)');
+    expect(ts.filter((t) => t.t === 'text').map((t) => t.v).join('')).toBe('');
+    expect(ts).toHaveLength(1);
+  });
+
   it('produces no markup, whatever the body contains', () => {
     // Tokens are rendered as elements by the caller, so a body cannot inject
     // anything — but the tokenizer must not be the place that changes.
     const ts = tokens('<img src=x onerror=alert(1)> https://example.com');
     expect(ts.some((t) => t.t === 'text' && t.v.includes('<img'))).toBe(true);
     expect(links('<img src=x> https://example.com')).toHaveLength(1);
+  });
+});
+
+describe('block structure', () => {
+  const kinds = (body: string) => parse(body).map((b) => b.kind);
+
+  it('reads headings, but only with the space that separates them from a room', () => {
+    // `#general` is a room mention and always was. Requiring the space is both
+    // what CommonMark says and the only thing keeping the two apart.
+    expect(parse('# Title')).toEqual([
+      { kind: 'heading', level: 1, tokens: [{ t: 'text', v: 'Title' }] },
+    ]);
+    expect(kinds('#general')).toEqual(['text']);
+    expect(tokens('#general')).toEqual([{ t: 'room', v: 'general' }]);
+    expect(parse('### Small')[0]).toMatchObject({ kind: 'heading', level: 3 });
+    // Four is a document, not a message.
+    expect(kinds('#### Deeper')).toEqual(['text']);
+  });
+
+  it('joins consecutive quote lines into one quote', () => {
+    // Otherwise quoting a paragraph is a stack of separate bars.
+    const blocks = parse('> one\n> two');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.kind).toBe('quote');
+    expect(blocks[0]?.tokens?.map((t) => t.v).join('')).toBe('one\ntwo');
+  });
+
+  it('gathers list items, and starts a new list when the kind changes', () => {
+    const blocks = parse('- one\n- two\n1. three');
+    expect(blocks.map((b) => b.kind)).toEqual(['list', 'list']);
+    expect(blocks[0]).toMatchObject({ ordered: false });
+    expect(blocks[0]?.items).toHaveLength(2);
+    expect(blocks[1]).toMatchObject({ ordered: true });
+  });
+
+  it('keeps consecutive prose in one block', () => {
+    // The renderer sets `pre-wrap`, so a newline inside a paragraph is already
+    // a line break — splitting per line would double it, which is the
+    // "one line gap between my messages" shape of bug.
+    const blocks = parse('one\ntwo\nthree');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.tokens?.map((t) => t.v).join('')).toBe('one\ntwo\nthree');
+  });
+
+  it('leaves block syntax inside a fence alone', () => {
+    const blocks = parse('```\n# not a heading\n- not a list\n```');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ kind: 'code' });
+    expect(blocks[0]?.raw).toBe('# not a heading\n- not a list');
+  });
+
+  it('still renders an ordinary message as one plain block', () => {
+    // The common case by a very long way, and the one that must not acquire
+    // structure it never asked for.
+    expect(parse('hello there')).toEqual([
+      { kind: 'text', tokens: [{ t: 'text', v: 'hello there' }] },
+    ]);
   });
 });

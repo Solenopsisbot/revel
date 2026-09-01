@@ -1,4 +1,5 @@
 <script lang="ts">
+import { faceColour } from './colour.js';
 import type { Face } from './fake/data.js';
 
 /**
@@ -11,8 +12,10 @@ import type { Face } from './fake/data.js';
  * "Cannot read properties of undefined", and a list that renders nothing is a
  * much worse answer than a list with an anonymous avatar in it.
  *
- * `status` and `colour` are fixture fields a `FaceRef` does not carry either,
- * so both fall back rather than being assumed.
+ * `status` is a fixture field a `FaceRef` does not carry either, so it falls
+ * back rather than being assumed. `colour` is derived from the face's id when
+ * unset — see `colour.ts`. It used to fall back to a fixed `lilac`, which made
+ * every account that had never picked one identical.
  */
 let {
   face,
@@ -43,7 +46,7 @@ const statusColour = $derived(
 
 <span
   class="av"
-  style="--fc: var(--face-{face?.colour ?? 'lilac'}); --sc: {statusColour}; width:{size}px; height:{size}px; font-size:{Math.round(size * 0.38)}px"
+  style="--fc: var(--face-{faceColour(face)}); --sc: {statusColour}; width:{size}px; height:{size}px; font-size:{Math.round(size * 0.38)}px"
   title={name || 'Someone'}
 >
   {initial}
