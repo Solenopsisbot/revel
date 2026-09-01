@@ -479,7 +479,21 @@ function who(by: string[], key: string) {
       </div>
     {/if}
 
-    {#if m.pending && !connection.quiet}
+    {#if m.failed}
+      <!--
+        A failed send is not a pending one, and the difference is the whole
+        point: "it'll go out on its own" is true of an outbox and false here.
+        This one is not going anywhere until somebody says so, and until this
+        existed there was no way to say so — the text was stranded on screen
+        with no way to send it and no way to clear it.
+      -->
+      <p class="failed-note">
+        <Icon name="warn" size={12} />
+        <span>Didn't send.</span>
+        <button class="tiny" onclick={() => core.retrySend(m)}>Try again</button>
+        <button class="tiny quiet" onclick={() => core.discardSend(m)}>Discard</button>
+      </p>
+    {:else if m.pending && !connection.quiet}
       <!-- Only when there is something to say. A message that is pending for
            420ms on a good connection needs no label; one sitting in an outbox
            does, or "it didn't send" is the obvious conclusion. -->
@@ -659,6 +673,16 @@ function who(by: string[], key: string) {
   .thread-line :global(svg) { opacity: .55; }
 
   .row.pending .body { opacity: .6; }
+  .failed-note {
+    display: flex; align-items: center; gap: 8px;
+    margin: 5px 0 0; font-size: var(--text-sm); color: var(--danger, #ff8f9e);
+  }
+  .failed-note .tiny {
+    font: inherit; font-weight: 600; cursor: pointer;
+    background: none; border: 0; padding: 2px 4px; color: var(--danger, #ff8f9e);
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .failed-note .tiny.quiet { color: var(--text-3, inherit); opacity: .8; }
   .queued {
     display: flex; align-items: center; gap: 6px; margin: 5px 0 0;
     font-size: 12px; color: var(--text-mute);

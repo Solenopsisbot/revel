@@ -561,6 +561,72 @@ scenarios('offline and reconnect', () => {
     await world.close();
   });
 
+  it('sends a failed message again, once the network is back', async () => {
+    // `docs/06` phase 2's exit condition is "unplug the network mid-conversation;
+    // nothing is lost or duplicated". Failing honestly is the first half; this
+    // is the other one, and without it the only copy of what somebody typed was
+    // a row on screen with no way to send it.
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    world.offline = true;
+    await expect(bob.say(room, 'sent into the void')).rejects.toThrow();
+    const failed = bob.messages(room).find((m) => m.failed);
+    expect(failed?.body).toBe('sent into the void');
+
+    world.offline = false;
+    const before = world.eventPosts;
+    await bob.rooms.retry(room, failed?.clientNonce as string);
+    await world.settle();
+
+    // It really went out — otherwise the assertions below would pass on a
+    // message that had simply never left.
+    expect(world.eventPosts).toBeGreaterThan(before);
+    expect(bob.texts(room)).toEqual(['sent into the void']);
+    expect(bob.messages(room).some((m) => m.failed || m.pending)).toBe(false);
+    // And it is a real message on the other side, not just locally unstuck.
+    expect(host.texts(room)).toEqual(['sent into the void']);
+    await world.close();
+  });
+
+  it('does not lose or duplicate a send whose answer went missing', async () => {
+    // The interesting half of "nothing is lost or duplicated": the request
+    // arrived and the *response* did not, so the sender believes it failed
+    // while the server has it.
+    //
+    // Nothing needs to retry this. The socket delivers the event like any
+    // other, and the echo reconciles the optimistic row by client nonce — so
+    // the message that looked stuck resolves itself, with one copy. Which is
+    // the reason a retry may reuse its nonce: by the time somebody presses it,
+    // the original may already have landed.
+    const { world, room, host, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    world.dropResponses = true;
+    await expect(bob.say(room, 'did that go?')).rejects.toThrow();
+    world.dropResponses = false;
+    await world.settle();
+
+    expect(bob.texts(room)).toEqual(['did that go?']);
+    expect(host.texts(room)).toEqual(['did that go?']);
+    expect(bob.messages(room).some((m) => m.pending || m.failed)).toBe(false);
+    await world.close();
+  });
+
+  it('takes a failed message off the screen when it is given up on', async () => {
+    const { world, room, guests } = await conversation(['alice', 'bob']);
+    const bob = guests[0] as Client;
+
+    world.offline = true;
+    await expect(bob.say(room, 'never mind')).rejects.toThrow();
+    const failed = bob.messages(room).find((m) => m.failed);
+    world.offline = false;
+
+    await bob.rooms.discard(room, failed?.clientNonce as string);
+    expect(bob.texts(room)).toEqual([]);
+    await world.close();
+  });
+
   it('applies a handshake gap in order when the device comes back', async () => {
     // Three commits happen while bob is away. They have to be applied in
     // sequence: a commit whose predecessor was not applied is a commit for an

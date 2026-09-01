@@ -173,6 +173,14 @@ class LiveConversation implements ConversationCore {
     await this.#rooms.stopTyping(roomId, options.thread);
   }
 
+  async retry(roomId: string, clientNonce: string): Promise<void> {
+    await this.#rooms.retry(roomId, clientNonce);
+  }
+
+  async discard(roomId: string, clientNonce: string): Promise<void> {
+    await this.#rooms.discard(roomId, clientNonce);
+  }
+
   async edit(roomId: string, messageId: string, body: unknown): Promise<void> {
     await this.#rooms.send(roomId, { type: 'm.edit', target: messageId, body });
   }

@@ -552,6 +552,22 @@ export function addPending(
   return draft;
 }
 
+/**
+ * Back to pending: a retry is in flight.
+ *
+ * The row keeps its id and its nonce, because it is the same message — the
+ * server deduplicates on the nonce, so a retry that lands after the original
+ * finally arrived is a no-op rather than a second copy.
+ */
+export function markPending(state: RoomState, clientNonce: string): RoomState {
+  const target = state.messages.find((m) => m.clientNonce === clientNonce && m.failed);
+  if (!target) return state;
+  const draft = clone(state);
+  const { failed: _failed, ...rest } = target;
+  replace(draft, { ...rest, pending: true });
+  return draft;
+}
+
 /** Mark an unacknowledged message as failed, so the UI can offer a retry. */
 export function markFailed(state: RoomState, clientNonce: string): RoomState {
   const target = state.messages.find((m) => m.pending && m.clientNonce === clientNonce);

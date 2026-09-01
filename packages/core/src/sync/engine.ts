@@ -38,7 +38,14 @@ import {
   decide,
   type NotificationSettings,
 } from '../notify/rules.js';
-import { addPending, markFailed, markPurged, reduceAll } from '../rooms/reduce.js';
+import {
+  addPending,
+  dropPending,
+  markFailed,
+  markPending,
+  markPurged,
+  reduceAll,
+} from '../rooms/reduce.js';
 import { emptyRoom, type LocalEvent, type Message, type RoomState } from '../rooms/state.js';
 import type { LocalStore } from '../store/types.js';
 import type { EventStream, Transport } from './transport.js';
@@ -125,6 +132,12 @@ export interface NotifyDeps {
 
 export type RoomListener = (state: RoomState) => void;
 
+/** What `send` accepts beyond the payload itself. */
+export interface RoomSendOptions {
+  class?: Event['class'];
+  localId?: string;
+}
+
 /** Somebody currently typing, and the face they are typing as. */
 export interface TypingPerson {
   account: string;
@@ -169,6 +182,18 @@ export class RoomSync {
    * A client that threw away its own messages could never read them again.
    */
   #outbox = new Map<string, Record<string, unknown>>();
+
+  /**
+   * Failed sends, by nonce, so a retry has the original payload.
+   *
+   * Not the row on screen: that carries what a message *renders* as, and a
+   * retry has to send what was actually sent — the same reply target, the same
+   * thread, the same face, the same attachments.
+   */
+  #unsent = new Map<
+    string,
+    { roomId: string; payload: Record<string, unknown>; options: RoomSendOptions }
+  >();
 
   constructor(options: RoomSyncOptions) {
     this.#crypto = options.crypto;
@@ -848,7 +873,7 @@ export class RoomSync {
   async send(
     roomId: string,
     payload: Record<string, unknown>,
-    options: { class?: Event['class']; localId?: string } = {},
+    options: RoomSendOptions = {},
   ): Promise<RoomState> {
     const groupId = await this.groupFor(roomId);
     await this.open(roomId);
@@ -900,11 +925,35 @@ export class RoomSync {
         body: (payload as { body?: unknown }).body ?? '',
         replyTo: (payload as { replyTo?: string }).replyTo,
         thread: (payload as { thread?: string }).thread,
+        // The face it is being sent as. Without this the row renders as
+        // **Unknown** until the echo replaces it — which is 100 ms on a good
+        // connection and forever on a bad one, so the first place anybody sees
+        // it is the place it matters least to be wrong: your own message,
+        // sitting there attributed to nobody, while the network is down.
+        face: (payload as { face?: Message['face'] }).face,
         clientNonce,
       };
       this.#commitSync(roomId, addPending(this.state(roomId), optimistic));
     }
 
+    return await this.#deliver(roomId, groupId, payload, options, clientNonce);
+  }
+
+  /**
+   * Send something that already has a nonce and a row on screen.
+   *
+   * Shared by `send` and `retry`, and the nonce is what makes sharing it safe:
+   * the transport is idempotent on it, so a retry after a response that was
+   * dropped in flight is the *same* message arriving again rather than a
+   * second one.
+   */
+  async #deliver(
+    roomId: string,
+    groupId: string,
+    payload: Record<string, unknown>,
+    options: RoomSendOptions,
+    clientNonce: string,
+  ): Promise<RoomState> {
     try {
       // 2. Encrypt. The ratchet has now moved, and this device's state on disk
       //    is out of date until step 3.
@@ -932,13 +981,52 @@ export class RoomSync {
 
       // 5. Apply the echo. It carries the same nonce, which is what lets the
       //    reducer swap it for the optimistic copy.
+      this.#unsent.delete(clientNonce);
       return await this.receive(roomId, result.event);
     } catch (error) {
       this.#outbox.delete(clientNonce);
+      // Kept so `retry` has something to send. Only for messages: nothing
+      // else has a row on screen to retry *from*, and a read receipt that
+      // failed is one the next one supersedes anyway.
+      if (payload.type === 'm.message') {
+        this.#unsent.set(clientNonce, { roomId, payload, options });
+      }
       const failed = markFailed(this.state(roomId), clientNonce);
       await this.#commit(roomId, failed);
       throw error;
     }
+  }
+
+  /**
+   * Send a failed message again.
+   *
+   * `docs/29`'s dogfooding condition is "unplug the network mid-conversation;
+   * nothing is lost". A send that fails is *marked* failed rather than
+   * pretending — which is the honest half — and without this it was also the
+   * end of that message, because the only copy of what you typed was a row on
+   * screen with no way to send it.
+   *
+   * Same nonce as the original. If the first attempt actually reached the
+   * server and only the response was lost, the server recognises the nonce and
+   * this resolves to the message that is already there.
+   */
+  async retry(roomId: string, clientNonce: string): Promise<RoomState> {
+    const held = this.#unsent.get(clientNonce);
+    if (!held) return this.state(roomId);
+
+    // Pending again while it is in flight, so the row stops offering a retry
+    // it is already doing.
+    this.#commitSync(roomId, markPending(this.state(roomId), clientNonce));
+    const groupId = await this.groupFor(roomId);
+    return await this.#deliver(roomId, groupId, held.payload, held.options, clientNonce);
+  }
+
+  /** Give up on a failed send and take it off the screen. */
+  async discard(roomId: string, clientNonce: string): Promise<RoomState> {
+    this.#unsent.delete(clientNonce);
+    const next = dropPending(this.state(roomId), clientNonce);
+    await this.#commit(roomId, next);
+    return next;
   }
 
   // -- crypto persistence ---------------------------------------------------

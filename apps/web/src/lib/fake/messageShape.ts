@@ -78,6 +78,9 @@ export function asCoreMessage(m: FakeMessage, faces: Record<string, Face>): UiMe
     at: m.at,
     ...(m.pending ? { pending: true } : {}),
     ...(m.failed ? { failed: true } : {}),
+    // The only name a message that never reached the server has. A retry needs
+    // it, so it has to survive the mapping into the UI's shape.
+    ...(m.clientNonce ? { clientNonce: m.clientNonce } : {}),
     ...(m.editedAt ? { editedAt: m.editedAt } : {}),
     // `deleted` in the fixtures, `redacted` in the protocol. The protocol word
     // is the right one: a redaction is an in-band act by a person, and it is a

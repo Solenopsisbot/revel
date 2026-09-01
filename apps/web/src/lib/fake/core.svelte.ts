@@ -111,6 +111,22 @@ class Core {
     return this.typingIn[thread ? `${roomId}/${thread}` : roomId] ?? [];
   }
   /**
+   * Send a failed message again, or give up on it.
+   *
+   * Both are no-ops in demo mode: a fixture message never went anywhere to
+   * fail, and the rows that look failed there are set dressing.
+   */
+  async retrySend(m: { clientNonce?: string }): Promise<void> {
+    if (!live.running || !m.clientNonce) return;
+    await live.stack?.core.conversation.retry(this.currentRoomId, m.clientNonce).catch(() => {});
+  }
+
+  async discardSend(m: { clientNonce?: string }): Promise<void> {
+    if (!live.running || !m.clientNonce) return;
+    await live.stack?.core.conversation.discard(this.currentRoomId, m.clientNonce).catch(() => {});
+  }
+
+  /**
    * Set — or clear — a room's notification level, and remember it.
    *
    * The canonical writer for *any* room, DM or otherwise.

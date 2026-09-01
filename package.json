@@ -20,6 +20,7 @@
     "test:faces": "node apps/web/e2e/faces.mjs",
     "test:livechat": "node apps/web/e2e/livechat.mjs",
     "test:unread": "node apps/web/e2e/unread.mjs",
+    "test:offline": "node apps/web/e2e/offline.mjs",
     "test:wasm": "cargo test -p revel-crypto --target wasm32-unknown-unknown --test wasm",
     "typecheck": "tsc --build --force",
     "lint": "biome check ."

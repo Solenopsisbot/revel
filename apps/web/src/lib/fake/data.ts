@@ -81,6 +81,13 @@ export interface Message {
   /** Not yet acknowledged by the server. Renders provisional (`docs/32`). */
   pending?: boolean;
   failed?: boolean;
+  /**
+   * The nonce a message was sent under, while it is still unacknowledged.
+   *
+   * The only name it has: a message that never reached the server has no id.
+   * A retry is keyed on this.
+   */
+  clientNonce?: string;
   /** When the author last changed it. Renders as a quiet "edited" marker. */
   editedAt?: number;
   /**

@@ -263,6 +263,16 @@ export class World {
   offline = false;
 
   /**
+   * The request arrives and the answer does not.
+   *
+   * Different from `offline` in the one way that matters for a retry: the
+   * server has the event. A client that treats this as "it did not send" and
+   * retries with a fresh nonce produces a duplicate, which is the failure the
+   * nonce exists to prevent.
+   */
+  dropResponses = false;
+
+  /**
    * The clients' clock.
    *
    * Owned by the test so anything with a timeout — typing notices, session
@@ -302,6 +312,12 @@ export class World {
    */
   fetch: typeof globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     if (this.offline) return Promise.reject(new TypeError('fetch failed'));
+    if (this.dropResponses) {
+      // Let it through, then lose the reply on the way back.
+      return this.app.fetch(new Request(String(input), init)).then(() => {
+        throw new TypeError('fetch failed');
+      });
+    }
     if (init?.method === 'POST' && String(input).endsWith('/events')) this.eventPosts += 1;
     return this.app.fetch(new Request(String(input), init));
   }) as typeof globalThis.fetch;

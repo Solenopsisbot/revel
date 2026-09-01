@@ -94,6 +94,15 @@ export interface ConversationCore {
   nameThread(roomId: string, parentId: string, name: string): Promise<void>;
 
   /**
+   * Send a failed message again, or give up on it.
+   *
+   * Keyed by client nonce rather than by message id, because a message that
+   * never reached the server has no id — the nonce is the only name it has.
+   */
+  retry(roomId: string, clientNonce: string): Promise<void>;
+  discard(roomId: string, clientNonce: string): Promise<void>;
+
+  /**
    * Who is typing. `thread` narrows it to one branch.
    *
    * A room and each of its threads are separate places: somebody typing in a
