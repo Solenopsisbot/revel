@@ -20,7 +20,8 @@ import { core, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
 import type { NotifyLevel } from '$lib/fake/data.js';
 import Icon from '$lib/Icon.svelte';
 import { lastRoom } from '$lib/lastRoom.js';
-import { whyNot } from '$lib/startErrors.js';
+import { clearStash, readStash } from '$lib/invite.js';
+import { reasonOf, whyNot } from '$lib/startErrors.js';
 import { layout } from '$lib/layout.svelte.js';
 import { live } from '$lib/live.svelte.js';
 import MessageList from '$lib/MessageList.svelte';
@@ -223,6 +224,49 @@ if (!demo) {
     else void goto('/signin');
   });
 }
+
+/**
+ * Finish a join that started on `/i/<code>`.
+ *
+ * That page has the words and this one has the stack, so it hands the code
+ * over and the key comes back out of the stash — which is where it has been
+ * since the fragment was read, and is the reason a detour through sign-up does
+ * not lose it.
+ *
+ * Once, and only once the core is running: redeeming needs a signature from
+ * this account's device, and there is no account until the stack exists.
+ */
+let joining = $state('');
+let joinFailed = $state('');
+let joined = false;
+$effect(() => {
+  const code = page.url.searchParams.get('join');
+  if (!code || joined || !live.running) return;
+  joined = true;
+  const secret = readStash(code);
+  if (!secret) {
+    joinFailed = 'That invite link is missing the part after the #. Open it again from the message.';
+    return;
+  }
+  joining = code;
+  void live
+    .stack!.core.directory.redeemInvite(code, secret)
+    .then(async (result) => {
+      clearStash();
+      await live.refreshRooms();
+      await live.refreshSpaces();
+      // Straight in. The rooms are there; the *keys* arrive when a member's
+      // client next syncs and commits the new leaf, which is the one part of
+      // joining nobody here can hurry along.
+      openSpace(result.space);
+      joining = '';
+    })
+    .catch((err) => {
+      console.error('could not join', err);
+      joinFailed = whyNot(reasonOf(err));
+      joining = '';
+    });
+});
 
 const deepLink = page.url.searchParams.get('settings');
 let settingsOpen = $state(!!deepLink);
@@ -1067,6 +1111,23 @@ function toggleMembers() {
     {/if}
   </main>
 
+  {#if joining || joinFailed}
+    <!-- A join is the one thing that can be in flight while the app is
+         otherwise idle, and it is the reason this person opened the tab. It
+         says so rather than leaving them looking at an empty rail wondering
+         whether the link worked. -->
+    <div class="joining" role="status">
+      {#if joining}
+        <span>Joining…</span>
+      {:else}
+        <span>{joinFailed}</span>
+        <button onclick={() => (joinFailed = '')} aria-label="Dismiss">
+          <Icon name="x" size={15} />
+        </button>
+      {/if}
+    </div>
+  {/if}
+
   {#if makingSpace}
     <!-- `docs/18`: "A new space arrives with `#general`, an `@everyone` role,
          one audience, and you in it. No wizard." So: one field. Everything
@@ -1263,6 +1324,21 @@ function toggleMembers() {
     flex-basis: 100%; margin: 2px 0 0; font-size: var(--text-xs);
     color: color-mix(in oklab, var(--text) 66%, transparent);
   }
+
+  .joining {
+    position: fixed; z-index: 64; left: 50%; translate: -50% 0; top: 16px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--ground-2);
+    box-shadow: var(--shadow-lg); font-size: var(--text-sm);
+    max-width: min(46rem, calc(100vw - 32px));
+  }
+  .joining button {
+    flex: none; display: grid; place-items: center; cursor: pointer;
+    width: 24px; height: 24px; border: 0; border-radius: 50%;
+    background: transparent; color: var(--text-mute);
+  }
+  .joining button:hover { color: var(--text); }
 
   .sheet-scrim {
     position: fixed; inset: 0; z-index: 60; border: 0; padding: 0;

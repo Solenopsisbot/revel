@@ -1,6 +1,17 @@
 <script lang="ts">
 import { goto } from '$app/navigation';
+import { safeNext } from '$lib/next.js';
 import { page } from '$app/state';
+
+/**
+ * Where to land afterwards.
+ *
+ * `/app` unless something sent you here on its way somewhere — an invite link
+ * is the case this exists for (`docs/18`: the invite survives sign-up).
+ * Validated by `safeNext`, because a `?next=` that took a full URL would be an
+ * open redirect on the one page where somebody is typing a password.
+ */
+const next = $derived(safeNext(page.url.searchParams.get('next')));
 import Icon from '$lib/Icon.svelte';
 import Button from '$lib/moment/Button.svelte';
 import Field from '$lib/moment/Field.svelte';
@@ -101,7 +112,7 @@ $effect(() => {
  * moves on exactly like "skip".
  */
 async function addPasskey() {
-  if (!enrolled) return goto('/app');
+  if (!enrolled) return goto(next);
   busy = true;
   error = '';
   try {
@@ -122,7 +133,7 @@ async function addPasskey() {
       { ...(await enrolDeps()), prf: webAuthnPrf, authorization: '' },
       { handle: enrolled.handle, accountKey: enrolled.accountKey },
     );
-    goto('/app');
+    goto(next);
   } catch (err) {
     console.error('passkey enrolment failed', err);
     error = 'Could not add a passkey. Your recovery code still works.';
@@ -259,7 +270,7 @@ async function copy() {
           add here. Your recovery code is still your way back in.
         </p>
         <div class="row">
-          <Button onclick={() => goto('/app')}>Finish</Button>
+          <Button onclick={() => goto(next)}>Finish</Button>
         </div>
       {:else}
         {#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -267,7 +278,7 @@ async function copy() {
           <Button disabled={busy} onclick={addPasskey}>
             {busy ? 'Waiting for your device…' : 'Add a passkey'}
           </Button>
-          <Button variant="ghost" onclick={() => goto('/app')}>Skip for now</Button>
+          <Button variant="ghost" onclick={() => goto(next)}>Skip for now</Button>
         </div>
       {/if}
     </div>

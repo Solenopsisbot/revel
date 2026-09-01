@@ -28,6 +28,11 @@ export default defineConfig({
           '/auth',
           '/rooms',
           '/spaces',
+          // The unauthenticated invite preview. `/i/<code>` is a *page* and
+          // `/invites/<code>` is the API behind it — two different things one
+          // letter apart, and forgetting the second is a preview that 404s and
+          // renders as "this link doesn't work".
+          '/invites',
           '/groups',
           '/welcomes',
           '/blobs',

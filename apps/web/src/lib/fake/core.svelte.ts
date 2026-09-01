@@ -8,12 +8,14 @@
  */
 
 import { type Face as CoreFace, newFaceId, resolveSetting } from '@revel/core';
+import type { InviteInfo } from '@revel/protocol';
 import { untoned } from '../emoji.js';
 import { myFaces } from '../faces.svelte.js';
 import { live } from '../live.svelte.js';
 import { notifications as notificationSink } from '../notify.svelte.js';
 import { loadPrefs, savePrefs } from '../notifyPrefs.js';
 import { session } from '../session.svelte.js';
+import { reasonOf } from '../startErrors.js';
 // A cycle — `conversation.svelte.ts` imports this module back. Safe because
 // both sides only *use* the other inside functions, never at module top level,
 // so whichever is evaluated first has the binding it needs by the time anything
@@ -1589,6 +1591,45 @@ class Core {
     }
   }
 
+  /**
+   * Make an invite link, and hand back the whole URL.
+   *
+   * The key is minted on this device and the URL is assembled **here**, in the
+   * client, because the half after the `#` must never be anywhere a server
+   * could see it (`docs/03` §4). Nothing stores the returned string; if it is
+   * lost, the link is lost, and a new one costs nothing.
+   */
+  async newInvite(
+    spaceId: string,
+    options: { maxUses?: number; ttl?: number } = {},
+  ): Promise<{ url?: string; error?: string }> {
+    if (!live.running) return { error: 'not_signed_in' };
+    try {
+      const { invite, secret } = await live.stack!.core.directory.createInvite(spaceId, options);
+      return { url: `${location.origin}/i/${invite.code}#${secret}` };
+    } catch (err) {
+      console.error('could not make an invite', err);
+      return { error: reasonOf(err) };
+    }
+  }
+
+  /** Every live invite for a space. The Host has the codes and not the keys. */
+  async invitesFor(spaceId: string): Promise<InviteInfo[]> {
+    if (!live.running) return [];
+    return live.stack!.core.directory.listInvites(spaceId).catch((err) => {
+      console.error('could not list the invites', err);
+      return [];
+    });
+  }
+
+  /** Kill a link. Anybody who may invite may revoke, including somebody else's. */
+  async killInvite(spaceId: string, code: string): Promise<void> {
+    if (!live.running) return;
+    await live.stack!.core.directory.revokeInvite(spaceId, code).catch((err) => {
+      console.error('could not revoke the invite', err);
+    });
+  }
+
   /** Leave a space. The membership row goes; so does this device's group state. */
   async leaveSpace(spaceId: string): Promise<{ error?: string }> {
     if (!live.running) return { error: 'not_signed_in' };
@@ -1935,22 +1976,5 @@ const EMPTY_SPACE: Space = {
   bans: [],
   purges: [],
 };
-
-/**
- * The machine-readable half of a failure.
- *
- * `TransportError` carries `reason` — `not_a_member`, `cannot_dm_yourself` —
- * and this used to look for `code`, which it has never had. So every refusal
- * the server explained clearly came out as "could not reach your provider",
- * including "that one is you", which is not a network problem and is entirely
- * the user's to fix.
- */
-function reasonOf(err: unknown): string {
-  if (err && typeof err === 'object') {
-    if ('reason' in err && err.reason) return String(err.reason);
-    if ('code' in err && err.code) return String(err.code);
-  }
-  return 'unreachable';
-}
 
 export const core = new Core();

@@ -459,6 +459,15 @@ class LiveDirectory implements DirectoryCore {
    * again.
    */
   async reconcileGroups(): Promise<void> {
+    // Ask first. This compares the Host's membership against the group's, and
+    // the Host's half is `#known` — which is a snapshot from the last refresh.
+    // Somebody who joined by link since then is not in it, so a reconcile
+    // against stale data finds nobody and repairs nothing, which is exactly
+    // what it did.
+    await this.refresh().catch((err) => {
+      console.error('revel: could not refresh before reconciling groups', err);
+    });
+
     const wanted = new Map<string, Set<string>>();
     for (const room of this.#known) {
       if (!room.group) continue;

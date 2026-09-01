@@ -21,6 +21,7 @@ import { core } from '$lib/fake/core.svelte.js';
 import { ago } from '$lib/format.js';
 import Icon from '$lib/Icon.svelte';
 import { whyNot } from '$lib/startErrors.js';
+import type { InviteInfo } from '@revel/protocol';
 import { resolve } from './perms.js';
 
 const space = $derived(core.space);
@@ -47,6 +48,57 @@ async function invite() {
   invited = handle.replace(/^@/, '');
   who = '';
 }
+
+/** Live invites, refreshed after anything that changes them. */
+let links = $state<InviteInfo[]>([]);
+/** The URL just made. Shown once, because nothing keeps the key half. */
+let fresh = $state<string | null>(null);
+let making = $state(false);
+
+$effect(() => {
+  if (core.demo) return;
+  const spaceId = space.id;
+  void core.invitesFor(spaceId).then((found) => (links = found));
+});
+
+async function refreshLinks() {
+  links = await core.invitesFor(space.id);
+}
+
+async function makeLink() {
+  making = true;
+  failed = '';
+  fresh = null;
+  const result = await core.newInvite(space.id, {
+    ...(uses === '∞' ? {} : { maxUses: Number(uses) }),
+    ...(days === 'never' ? {} : { ttl: Number(days) * 24 * 60 * 60 * 1000 }),
+  });
+  making = false;
+  if (result.error) {
+    failed = whyNot(result.error);
+    return;
+  }
+  fresh = result.url ?? null;
+  await refreshLinks();
+}
+
+async function copyLink(url: string) {
+  await navigator.clipboard?.writeText(url).catch(() => {});
+  copied = url;
+  setTimeout(() => (copied = null), 1600);
+}
+
+async function revoke(code: string) {
+  await core.killInvite(space.id, code);
+  await refreshLinks();
+}
+
+/** The fixture `status` helper wants nulls as absences. */
+const liveShape = (i: InviteInfo) => ({
+  uses: i.uses,
+  ...(i.maxUses !== undefined ? { maxUses: i.maxUses } : {}),
+  ...(i.expiresAt !== undefined ? { expiresAt: i.expiresAt } : {}),
+});
 
 let uses = $state<'1' | '10' | '∞'>('10');
 let days = $state<'1' | '7' | '30' | 'never'>('7');
@@ -117,11 +169,66 @@ function status(i: { uses: number; maxUses?: number; expiresAt?: number }) {
 
   <section>
     <h3>Links</h3>
-    <p class="soon">
-      Invite links aren’t built yet. When they are, the half after the
-      <code>#</code> will be key material your browser keeps and the server
-      never sees — which is why they can expire and be counted.
+    <p class="sub">
+      The half after the <code>#</code> is key material. It is made on this
+      device, it goes in the link, and it never reaches the server — which is
+      why the Host is holding a row it cannot use, and why a link that leaks
+      only leaks as far as its use count and expiry allow.
     </p>
+
+    {#if mayInvite}
+      <div class="opts">
+        <div class="opt">
+          <span class="lbl">Uses</span>
+          <div class="seg">
+            {#each ['1', '10', '∞'] as u (u)}
+              <button class:sel={uses === u} onclick={() => (uses = u as typeof uses)}>{u}</button>
+            {/each}
+          </div>
+        </div>
+        <div class="opt">
+          <span class="lbl">Expires</span>
+          <div class="seg">
+            {#each [['1', '1 day'], ['7', '7 days'], ['30', '30 days'], ['never', 'Never']] as [v, l] (v)}
+              <button class:sel={days === v} onclick={() => (days = v as typeof days)}>{l}</button>
+            {/each}
+          </div>
+        </div>
+      </div>
+      <button class="make" onclick={makeLink} disabled={making}>
+        {making ? 'Making it…' : 'Make a link'}
+      </button>
+    {/if}
+
+    {#if fresh}
+      <!-- Shown once, and said so. Nothing stores this string: the key half is
+           not on the server and this client does not keep it either, so
+           closing the panel is losing it. A new one costs nothing, which is
+           the reason that is an acceptable trade rather than a papercut. -->
+      <div class="fresh">
+        <p class="lbl">Copy this now — it is not shown again.</p>
+        <div class="link-row">
+          <code class="url">{fresh}</code>
+          <button onclick={() => copyLink(fresh!)}>{copied === fresh ? 'Copied' : 'Copy'}</button>
+        </div>
+      </div>
+    {/if}
+
+    {#each links as i (i.code)}
+      {@const dead = status(liveShape(i))}
+      <div class="live-link" class:dead={dead.dead}>
+        <div>
+          <code>{i.code}</code>
+          <span class="meta">
+            {i.uses}{i.maxUses ? ` of ${i.maxUses}` : ''} used
+            {#if dead.dead}· {dead.why}{:else if i.expiresAt}· expires {ago(i.expiresAt)}{/if}
+          </span>
+        </div>
+        <button class="revoke" onclick={() => revoke(i.code)}>Revoke</button>
+      </div>
+    {:else}
+      <p class="sub">No links yet.</p>
+    {/each}
   </section>
 {:else}
 <p class="lede">
@@ -243,7 +350,41 @@ function status(i: { uses: number; maxUses?: number; expiresAt?: number }) {
   .by-name .note {
     flex-basis: 100%; margin: 0; font-size: var(--text-xs); color: var(--text-mute);
   }
-  .soon { margin: 0; font-size: var(--text-sm); color: var(--text-mute); line-height: 1.55; max-width: 60ch; }
+  .make {
+    font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer;
+    padding: 0 14px; min-height: var(--tap); border: 0; border-radius: var(--r-sm);
+    background: var(--accent); color: var(--on-accent); margin: 4px 0 18px;
+  }
+  .make:disabled { opacity: .5; cursor: default; }
+  .fresh {
+    margin: 0 0 20px; padding: 14px 16px; border-radius: var(--r-md);
+    border: 1px solid var(--line); background: var(--ground-2);
+  }
+  .fresh .lbl { margin: 0 0 8px; font-size: var(--text-xs); color: var(--text-dim); }
+  .link-row { display: flex; gap: 8px; align-items: center; }
+  .url {
+    flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
+    font-family: var(--font-mono); font-size: var(--text-xs);
+    background: var(--ground-0); padding: 8px 10px; border-radius: var(--r-sm);
+  }
+  .link-row button {
+    font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer;
+    padding: 0 12px; min-height: 34px; border: 0; border-radius: var(--r-sm);
+    background: var(--accent); color: var(--on-accent);
+  }
+  .live-link {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 11px 0; border-top: 1px solid var(--line);
+  }
+  .live-link.dead { opacity: .55; }
+  .live-link code { font-family: var(--font-mono); font-size: var(--text-sm); }
+  .live-link .meta { margin-left: 10px; font-size: var(--text-xs); color: var(--text-mute); }
+  .revoke {
+    font: inherit; font-size: var(--text-sm); cursor: pointer;
+    padding: 0 11px; min-height: 32px; border-radius: var(--r-sm);
+    border: 1px solid var(--line); background: transparent; color: var(--text-dim);
+  }
+  .revoke:hover { color: var(--danger); border-color: var(--danger); }
   h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }
   .lede { color: var(--text-mute); margin: 0 0 24px; font-size: var(--text-sm); max-width: 62ch; line-height: 1.6; }
   .lede code { font-family: var(--font-mono); color: var(--text-dim); }

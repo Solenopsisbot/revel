@@ -271,6 +271,130 @@ ok(
 );
 
 // ---------------------------------------------------------------------------
+console.log('\njoining by link');
+// A third person, who does not exist yet when the link is made — which is the
+// case the whole feature is for.
+const link = await alice.page.evaluate(async (id) => {
+  const r = await window.__revel.core.newInvite(id, { maxUses: 5 });
+  if (r.error) throw new Error(r.error);
+  return r.url;
+}, spaceId);
+ok('the link has a fragment', link.includes('/i/') && link.includes('#'), link?.slice(0, 60));
+ok(
+  'and the server was never given the half after it',
+  await alice.page.evaluate(async ([id, url]) => {
+    const secret = url.split('#')[1];
+    const invites = await window.__revel.live.stack.core.directory.listInvites(id);
+    return !JSON.stringify(invites).includes(secret);
+  }, [spaceId, link]),
+);
+
+const C = `sc${stamp}`;
+const carol = await browser.newContext();
+const cp = await carol.newPage({ viewport: { width: 1280, height: 900 } });
+watch(cp, C);
+
+// Follow the link with no account at all.
+await cp.goto(link.replace('http://localhost:5173', APP), { waitUntil: 'networkidle' });
+await wait(2500);
+ok('a stranger can see the invite is real', (await cp.content()).includes("You've been invited"));
+ok(
+  'and the page never says what the space is called',
+  !(await cp.evaluate(() => document.body.innerText)).includes('Solexsis'),
+);
+ok(
+  'and the key is out of the address bar',
+  !(await cp.evaluate(() => location.hash)),
+  await cp.evaluate(() => location.href),
+);
+
+// Sign up from the invite, and come back to it.
+await cp.getByRole('button', { name: 'Make an account' }).click();
+await cp.waitForURL(/\/signup/, { timeout: 30_000 });
+await cp.fill('input[type=text]', C);
+await cp.fill('input[type=password]', password);
+await cp.waitForFunction(
+  () => ![...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Continue')?.disabled,
+);
+await cp.getByRole('button', { name: 'Continue' }).click();
+await cp.waitForSelector('text=YOUR RECOVERY CODE', { timeout: 90_000 });
+// Through the recovery-code screen the way a person does: the checkbox is
+// what unlocks Continue, and it is there on purpose.
+await cp.getByRole('checkbox').check();
+await cp.getByRole('button', { name: 'Continue' }).click();
+await wait(1500);
+await cp.getByRole('button', { name: /Finish|Skip for now/ }).first().click();
+await wait(4000);
+ok(
+  'signing up comes back to the invite',
+  cp.url().includes('/i/'),
+  cp.url(),
+);
+// **Without the fragment.** It was stripped from the address bar before the
+// detour, so getting back in means the stash survived sign-up — which is what
+// `docs/18` asks for and the only reason the round trip is usable.
+ok('and the URL still carries no key', !(await cp.evaluate(() => location.hash)));
+
+await cp.getByRole('button', { name: 'Join', exact: true }).click();
+await wait(6000);
+ok('joining lands in the app', cp.url().includes('/app'), cp.url());
+// Reload with the test hook on. Also proves the join *stuck* rather than only
+// having happened in the tab that did it.
+await openApp(cp);
+await cp.evaluate(async () => {
+  const { live } = window.__revel;
+  await live.stack.sync();
+  await live.refreshRooms();
+  await live.refreshSpaces();
+});
+await wait(3000);
+ok(
+  'and she is in the space',
+  (await cp.evaluate(() => window.__revel.core.spaces.length)) === 1,
+);
+
+// She holds no keys yet: a row is not access, and nobody was present to
+// commit her leaf. Until somebody does, the space has no readable name.
+ok(
+  'but cannot read a word of it yet — a row is not access',
+  (await cp.evaluate(() => window.__revel.core.spaces[0]?.name)) === 'Unnamed space',
+  await cp.evaluate(() => window.__revel.core.spaces[0]?.name),
+);
+
+// Alice syncs. Nothing told her carol exists; `reconcileGroups` notices.
+await alice.page.evaluate(() => window.__revel.live.stack.sync());
+await wait(9000);
+await resync(cp);
+await wait(3000);
+ok(
+  'and can, once any member syncs and commits her leaf',
+  (await cp.evaluate(() => window.__revel.core.spaces[0]?.name)) === 'Solexsis',
+  await cp.evaluate(() => window.__revel.core.spaces[0]?.name),
+);
+await cp.evaluate(() => {
+  const { core } = window.__revel;
+  const space = core.spaces[0];
+  core.openRoom(space.id, space.rooms.find((r) => r.name === 'general').id);
+});
+await wait(3000);
+
+await alice.page.evaluate(() => {
+  const { core } = window.__revel;
+  const space = core.spaces[0];
+  core.openRoom(space.id, space.rooms.find((r) => r.name === 'general').id);
+});
+await wait(1500);
+await alice.page.evaluate(() => void window.__revel.core.send('welcome, link-follower'));
+await wait(8000);
+await resync(cp);
+await wait(2000);
+ok(
+  'and read a message sent after she arrived',
+  await cp.evaluate(() => document.body.innerText.includes('welcome, link-follower')),
+);
+await carol.close();
+
+// ---------------------------------------------------------------------------
 console.log('\nrenaming things');
 await alice.page.evaluate(async (id) => {
   const { core } = window.__revel;

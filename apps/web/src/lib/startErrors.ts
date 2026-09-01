@@ -8,6 +8,27 @@
  * The codes are the server's `reason` field, which is machine-readable
  * precisely so the client can say something better than the status line.
  */
+/**
+ * The machine-readable half of a failure.
+ *
+ * `TransportError` carries `reason` — `not_a_member`, `cannot_dm_yourself` —
+ * and this used to look for `code`, which it has never had. So every refusal
+ * the server explained clearly came out as "could not reach your provider",
+ * including "that one is you", which is not a network problem and is entirely
+ * the user's to fix.
+ *
+ * Lives next to `whyNot` because the two are halves of one job: this pulls the
+ * code out, that turns it into a sentence. They were a module apart, and the
+ * second page that needed both found only one of them.
+ */
+export function reasonOf(err: unknown): string {
+  if (err && typeof err === 'object') {
+    if ('reason' in err && err.reason) return String(err.reason);
+    if ('code' in err && err.code) return String(err.code);
+  }
+  return 'unreachable';
+}
+
 export function whyNot(code: string): string {
   if (code.startsWith('no_such_account:')) return `Nobody here goes by ${code.split(':')[1]}.`;
   switch (code) {

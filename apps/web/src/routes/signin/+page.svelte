@@ -1,7 +1,18 @@
 <script lang="ts">
 import { renderSVG } from 'uqr';
 import { goto } from '$app/navigation';
+import { safeNext } from '$lib/next.js';
 import { page } from '$app/state';
+
+/**
+ * Where to land afterwards.
+ *
+ * `/app` unless something sent you here on its way somewhere — an invite link
+ * is the case this exists for (`docs/18`: the invite survives sign-up).
+ * Validated by `safeNext`, because a `?next=` that took a full URL would be an
+ * open redirect on the one page where somebody is typing a password.
+ */
+const next = $derived(safeNext(page.url.searchParams.get('next')));
 import Icon from '$lib/Icon.svelte';
 import Button from '$lib/moment/Button.svelte';
 import Field from '$lib/moment/Field.svelte';
@@ -61,7 +72,7 @@ async function attempt(totp?: string) {
     // a serious defence — a page can be inspected — but the cheapest one there
     // is, and leaving it lying around has no upside at all.
     password = '';
-    goto('/app');
+    goto(next);
   } catch (err) {
     console.error('sign-in failed', err);
     const failure = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
@@ -106,7 +117,7 @@ async function startPairing() {
     const { signDeviceCert } = await enrolDeps();
     const device = await signDeviceCert(paired.accountKey, 'this device');
     await saveSession({ ...paired, device });
-    goto('/app');
+    goto(next);
   });
 }
 
@@ -151,7 +162,7 @@ async function withPasskey() {
       accountKey: result.accountKey,
       device: result.device,
     });
-    goto('/app');
+    goto(next);
   } catch (err) {
     console.error('passkey sign-in failed', err);
     const failure = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
