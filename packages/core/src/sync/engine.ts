@@ -1108,6 +1108,27 @@ export class RoomSync {
     this.#unsubscribes.delete(roomId);
   }
 
+  /**
+   * Drop everything this device holds about a room.
+   *
+   * For a room that is *gone* — deleted on the Host — rather than one this
+   * account has left. The distinction matters for the group: leaving takes the
+   * MLS state with it, and a deleted room may have been sharing its group with
+   * siblings that are still there (`docs/03` §4), so this deliberately touches
+   * only the room.
+   *
+   * Listeners are notified with an empty room before the store write, because
+   * the UI is holding the old state and must not keep rendering a room that no
+   * longer exists while a disk write completes.
+   */
+  async forget(roomId: string): Promise<void> {
+    this.stopListening(roomId);
+    this.#commitSync(roomId, emptyRoom(roomId));
+    this.#rooms.delete(roomId);
+    this.#listeners.delete(roomId);
+    await this.#store.forgetRoom(roomId);
+  }
+
   async close(): Promise<void> {
     for (const unsubscribe of this.#unsubscribes.values()) unsubscribe();
     this.#unsubscribes.clear();

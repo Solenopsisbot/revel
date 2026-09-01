@@ -23,7 +23,7 @@ import {
   serialize,
 } from '@revel/protocol';
 import type { LiveSpace } from '../live.svelte.js';
-import type { FaceColour, Member, Perm, Role, Room, Space } from '../fake/data.js';
+import type { Audience, FaceColour, Member, Perm, Role, Room, Space } from '../fake/data.js';
 
 const COLOURS: FaceColour[] = ['gold', 'rose', 'violet', 'sky', 'mint', 'coral', 'lilac', 'aqua'];
 
@@ -63,6 +63,32 @@ function nameSource(space: LiveSpace, stateOf: (id: string) => RoomState | null)
   return stateOf(everyone.id);
 }
 
+/**
+ * A room's audience, back from the canonical key the Host stores it under.
+ *
+ * `audienceKey` flattens the rule to a string because that is what the server
+ * needs to compare — it is the one thing that decides which rooms share a
+ * group. Reading it back is what lets "who can see what" group rooms by their
+ * *rule* rather than by which ones happen to have the same members today.
+ *
+ * An unrecognised prefix falls back to `everyone`. That is the wrong-but-safe
+ * direction for a *display*: it says "this room is as open as the space",
+ * which cannot mislead somebody into thinking a room is more private than it
+ * is. The lock is key possession either way — this string never gates anything.
+ */
+function toAudience(key: string | undefined): Audience {
+  if (!key || key === 'everyone') return { kind: 'everyone' };
+  if (key.startsWith('roles:')) {
+    const roles = key.slice('roles:'.length).split(',').filter(Boolean);
+    return roles.length ? { kind: 'roles', roles } : { kind: 'everyone' };
+  }
+  if (key.startsWith('list:')) {
+    const accounts = key.slice('list:'.length).split(',').filter(Boolean);
+    return accounts.length ? { kind: 'picked', faceIds: accounts } : { kind: 'everyone' };
+  }
+  return { kind: 'everyone' };
+}
+
 /** A room, as the sidebar wants it. Its name lives in its own state. */
 function toRoom(info: RoomInfo, state: RoomState | null, unread: number): Room {
   return {
@@ -77,11 +103,8 @@ function toRoom(info: RoomInfo, state: RoomState | null, unread: number): Room {
     category: 'Rooms',
     ...(state?.topic ? { topic: state.topic } : {}),
     ...(unread ? { unread } : {}),
-    audience:
-      info.audience && info.audience !== 'everyone'
-        ? { kind: 'roles', roleIds: [] }
-        : { kind: 'everyone' },
-  } as Room;
+    audience: toAudience(info.audience),
+  };
 }
 
 /**

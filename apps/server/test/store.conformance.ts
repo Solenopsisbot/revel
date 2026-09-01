@@ -224,6 +224,33 @@ export function describeStore(name: string, harness: StoreHarness): void {
         expect(await store.getSpaceMember(id, 'acct-b')).toMatchObject({ roleIds: [] });
       });
 
+      it('deletes a room, its events and its members — and leaves the group alone', async () => {
+        // The group is the careful half. Rooms with the same audience share
+        // one (`docs/03` §4), so dropping it here would take a sibling room's
+        // history with it — an unreferenced group costs a row and loses
+        // nothing, which is the cheaper mistake by a wide margin.
+        const id = uniq('space');
+        await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });
+        const groupId = uniq('group');
+        const shape = { kind: 'space' as const, spaceId: id, groupId, streamPaging: false, notifyHints: false };
+        const keep = { id: uniq('room'), ...shape };
+        const gone = { id: uniq('room'), ...shape };
+        await store.createRoom(keep, ['acct-a']);
+        await store.createRoom(gone, ['acct-a']);
+        await store.appendEvent(event({ id: uniq('evt'), room: gone.id, sender: 'dev-a' }));
+
+        await store.deleteRoom(gone.id);
+
+        expect(await store.getRoom(gone.id)).toBeNull();
+        expect(await store.listEvents(gone.id, { limit: 10 })).toEqual([]);
+        expect(await store.getMembership(gone.id, 'acct-a')).toBeNull();
+        // The sibling is untouched, group and all.
+        expect(await store.getRoom(keep.id)).toMatchObject({ groupId });
+        expect(await store.groupForAudience(id, 'everyone')).toBe(
+          await store.groupForAudience(id, 'everyone'),
+        );
+      });
+
       it('refuses to delete `@everyone`', async () => {
         const id = uniq('space');
         await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });

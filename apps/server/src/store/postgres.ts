@@ -223,6 +223,21 @@ export class PostgresStore implements Store {
       DELETE FROM memberships WHERE room_id = ${roomId} AND account_id = ${accountId}`;
   }
 
+  async deleteRoom(roomId: string): Promise<void> {
+    // One transaction, and no cascade to lean on — nothing here declares a
+    // foreign key, so the tables that reference a room by id are listed by
+    // hand. The **group is deliberately absent**: it may serve other rooms
+    // with the same audience (`docs/03` §4), and dropping it would take their
+    // history with it.
+    await this.sql.begin(async (tx) => {
+      await tx`DELETE FROM events WHERE room_id = ${roomId}`;
+      await tx`DELETE FROM blobs WHERE room_id = ${roomId}`;
+      await tx`DELETE FROM memberships WHERE room_id = ${roomId}`;
+      await tx`DELETE FROM overrides WHERE room_id = ${roomId}`;
+      await tx`DELETE FROM rooms WHERE id = ${roomId}`;
+    });
+  }
+
   async getMembership(roomId: string, accountId: string): Promise<Membership | null> {
     const [row] = await this.sql`
       SELECT * FROM memberships WHERE room_id = ${roomId} AND account_id = ${accountId}`;

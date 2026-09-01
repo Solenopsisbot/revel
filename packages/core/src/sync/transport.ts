@@ -101,6 +101,8 @@ export interface Transport {
    * has no keys and never will (`docs/03` §4).
    */
   createSpaceRoom(spaceId: string, input: CreateSpaceRoom): Promise<RoomInfo>;
+  /** Delete a room and everything encrypted to it. `MANAGE_ROOMS`. */
+  deleteSpaceRoom(spaceId: string, roomId: string): Promise<void>;
   spaceMembers(spaceId: string): Promise<SpaceMemberInfo[]>;
   inviteToSpace(spaceId: string, accounts: string[]): Promise<void>;
   leaveSpace(spaceId: string, account: string): Promise<void>;
@@ -328,6 +330,12 @@ export class HttpTransport implements Transport {
       method: 'POST',
       body: JSON.stringify(input),
     });
+  }
+  async deleteSpaceRoom(spaceId: string, roomId: string): Promise<void> {
+    await this.#request(
+      `/spaces/${encodeURIComponent(spaceId)}/rooms/${encodeURIComponent(roomId)}`,
+      { method: 'DELETE' },
+    );
   }
   spaceMembers(spaceId: string): Promise<SpaceMemberInfo[]> {
     return this.#json<{ members: SpaceMemberInfo[] }>(

@@ -1684,20 +1684,36 @@ class Core {
     }
   }
 
-  deleteRoom(spaceId: string, roomId: string) {
-    if (!this.demo) {
-      void live
-        .stack!.core.directory.leave(roomId)
-        .then(() => live.refreshSpaces())
-        .catch((err) => console.error('could not delete the room', err));
-      if (this.currentRoomId === roomId) {
-        const next = this.space.rooms.find((r) => r.id !== roomId);
-        if (next) this.openRoom(spaceId, next.id);
-        else this.openHome();
-      }
-      return;
+  /**
+   * Delete a room, for everybody.
+   *
+   * Not a leave. The Host drops the room and every event encrypted to it; the
+   * MLS group stays because sibling rooms with the same audience use it
+   * (`docs/03` §4). Nothing here can un-send what members already have, which
+   * is what the confirmation says.
+   */
+  async deleteRoom(spaceId: string, roomId: string): Promise<{ error?: string }> {
+    if (this.demo) {
+      this.leaveRoom(spaceId, roomId);
+      return {};
     }
-    this.leaveRoom(spaceId, roomId);
+    // Move off it first. Deleting the room you are looking at and *then*
+    // deciding where to go means a frame rendering a room that no longer
+    // exists, with a composer pointed at it.
+    if (this.currentRoomId === roomId) {
+      const next = this.space.rooms.find((r) => r.id !== roomId);
+      if (next) this.openRoom(spaceId, next.id);
+      else this.openHome();
+    }
+    try {
+      await live.stack!.core.directory.deleteSpaceRoom(spaceId, roomId);
+      await live.refreshSpaces();
+      await live.refreshRooms();
+      return {};
+    } catch (err) {
+      console.error('could not delete the room', err);
+      return { error: reasonOf(err) };
+    }
   }
 
   renameRoom(spaceId: string, roomId: string, name: string, topic?: string) {

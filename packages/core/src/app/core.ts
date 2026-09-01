@@ -191,6 +191,13 @@ export interface DirectoryCore {
   ): Promise<RoomInfo>;
   /** Name a room, and set its topic. Both ride one `room.name` event. */
   nameRoom(roomId: string, name: string, topic?: string): Promise<void>;
+  /**
+   * Delete a room and everything encrypted to it. `MANAGE_ROOMS`.
+   *
+   * Leaves the MLS group alone — it may serve sibling rooms with the same
+   * audience, and tearing it down would take their history too.
+   */
+  deleteSpaceRoom(spaceId: string, roomId: string): Promise<void>;
   spaceMembers(spaceId: string): Promise<SpaceMemberInfo[]>;
   /** Adds them to the space *and* commits them into the groups its rooms use. */
   inviteToSpace(spaceId: string, accounts: string[]): Promise<void>;

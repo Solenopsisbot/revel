@@ -221,6 +221,37 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
     );
   });
 
+  /**
+   * Delete a room and everything encrypted to it.
+   *
+   * `MANAGE_ROOMS`, like creating one. The events go with it — they were
+   * encrypted to this room and nothing else references them — and the **group
+   * does not**: it may serve sibling rooms with the same audience (`docs/03`
+   * §4), and tearing it down would take their history too.
+   *
+   * This cannot un-send what members already hold, which is why `docs/18` says
+   * so on the button rather than here. What it does is stop the Host serving
+   * those bytes to anyone else, ever.
+   *
+   * The last room is refusable and is not refused: a space with no rooms is a
+   * space you can still add one to, whereas a space with one room you cannot
+   * delete is a mistake with no way out.
+   */
+  app.delete('/spaces/:id/rooms/:room', async (c) => {
+    const spaceId = c.req.param('id');
+    const roomId = c.req.param('room');
+    const gated = await gate(c.req.raw, spaceId, Permission.MANAGE_ROOMS);
+    if ('error' in gated) return c.json({ error: gated.error }, gated.status);
+
+    const room = await deps.store.getRoom(roomId);
+    // 404 rather than 403 for a room in a different space: the answer to "does
+    // this room exist" must not depend on permissions the asker does not have.
+    if (!room || room.spaceId !== spaceId) return c.json({ error: 'no_such_room' }, 404);
+
+    await deps.store.deleteRoom(roomId);
+    return c.body(null, 204);
+  });
+
   // -- membership ------------------------------------------------------------
 
   app.get('/spaces/:id/members', async (c) => {

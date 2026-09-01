@@ -175,6 +175,18 @@ export interface Store {
   listRoomMembers(roomId: string): Promise<Membership[]>;
   addMember(roomId: string, accountId: string, roleIds?: string[]): Promise<void>;
   removeMember(roomId: string, accountId: string): Promise<void>;
+  /**
+   * Delete a room, its memberships, and its events.
+   *
+   * The events go because there is nothing else they could be for: they were
+   * encrypted to this room and no other row references them. The **group does
+   * not** — it may serve other rooms with the same audience (`docs/03` §4), and
+   * tearing it down would take their history with it.
+   *
+   * Nothing here can un-send what members already hold. `docs/18` says so on
+   * the button; this is the server's half of it.
+   */
+  deleteRoom(roomId: string): Promise<void>;
 
   getAccount(id: string): Promise<Account | null>;
   /**

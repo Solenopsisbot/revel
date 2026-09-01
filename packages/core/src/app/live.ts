@@ -451,6 +451,20 @@ class LiveDirectory implements DirectoryCore {
     return started;
   }
 
+  /**
+   * Delete a room, and forget it locally.
+   *
+   * The MLS group is *not* torn down: sibling rooms with the same audience use
+   * it (`docs/03` §4), and leaving it would take their history with it. When
+   * this was the only room using the group it simply goes unreferenced, which
+   * costs a row and loses nothing.
+   */
+  async deleteSpaceRoom(spaceId: string, roomId: string): Promise<void> {
+    await this.#transport.deleteSpaceRoom(spaceId, roomId);
+    await this.#rooms.forget(roomId);
+    await this.refresh();
+  }
+
   /** Name a room. `room.name` carries the topic too, so both move together. */
   async nameRoom(roomId: string, name: string, topic?: string): Promise<void> {
     await this.#rooms.send(roomId, {

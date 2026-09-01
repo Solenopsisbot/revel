@@ -242,6 +242,60 @@ describe('rooms in a space', () => {
   });
 });
 
+describe('deleting a room', () => {
+  it('needs MANAGE_ROOMS, like making one', async () => {
+    const h = people();
+    const space = await h.space();
+    const room = (await (await h.post('dev-a', `/spaces/${space.id}/rooms`, {})).json()) as {
+      id: string;
+    };
+    expect((await h.del('dev-b', `/spaces/${space.id}/rooms/${room.id}`)).status).toBe(403);
+    expect((await h.del('dev-a', `/spaces/${space.id}/rooms/${room.id}`)).status).toBe(204);
+    expect((await (await h.get('dev-a', `/spaces/${space.id}/rooms`)).json()) as unknown).toEqual({
+      rooms: [],
+    });
+  });
+
+  it('is a 404 for a room in another space, not a 403', async () => {
+    // The answer to "does this room exist" must not depend on permissions the
+    // asker does not have — same rule as a space you are not in.
+    const h = people();
+    const mine = await h.space();
+    const theirs = await h.space();
+    const room = (await (await h.post('dev-a', `/spaces/${theirs.id}/rooms`, {})).json()) as {
+      id: string;
+    };
+    expect((await h.del('dev-a', `/spaces/${mine.id}/rooms/${room.id}`)).status).toBe(404);
+  });
+
+  it('leaves a sibling room that shares its group alone', async () => {
+    // The one thing this must not do. Rooms with the same audience share a
+    // group (`docs/03` §4), and tearing it down would take the sibling's
+    // history with it.
+    const h = people();
+    const space = await h.space();
+    const make = async () =>
+      (await (await h.post('dev-a', `/spaces/${space.id}/rooms`, {})).json()) as {
+        id: string;
+        audience: string;
+      };
+    const keep = await make();
+    const gone = await make();
+    expect(keep.audience).toBe(gone.audience);
+
+    await h.del('dev-a', `/spaces/${space.id}/rooms/${gone.id}`);
+
+    const { rooms } = (await (await h.get('dev-a', `/spaces/${space.id}/rooms`)).json()) as {
+      rooms: { id: string }[];
+    };
+    expect(rooms.map((r) => r.id)).toEqual([keep.id]);
+    // And the audience still resolves, so the next room made here reuses it
+    // rather than starting a second group for the same people.
+    const next = await make();
+    expect(next.audience).toBe(keep.audience);
+  });
+});
+
 describe('audiences and groups', () => {
   it('gives two `everyone` rooms the same group, via the first one to make it', async () => {
     // The whole reason a twelve-room space is one commit. The second room does

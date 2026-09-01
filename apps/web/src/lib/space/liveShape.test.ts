@@ -123,6 +123,46 @@ describe('roles', () => {
   });
 });
 
+describe('audiences', () => {
+  it('reads the rule back out of the key the Host stores it under', () => {
+    // Grouping "who can see what" by rule and not by today's members is the
+    // whole point of that screen — and `audienceKey` is the only place the
+    // rule survives, because the Host stores the flattened string.
+    const shaped = shapeSpace(
+      space({
+        rooms: [
+          { id: 'r1', kind: 'space', space: 'sp1', audience: 'everyone' },
+          { id: 'r2', kind: 'space', space: 'sp1', audience: 'roles:role-a,role-b' },
+          { id: 'r3', kind: 'space', space: 'sp1', audience: 'list:acct-1,acct-2' },
+        ],
+      } as Partial<LiveSpace>),
+      ctx(),
+    );
+    expect(shaped.rooms.map((r) => r.audience)).toEqual([
+      { kind: 'everyone' },
+      { kind: 'roles', roles: ['role-a', 'role-b'] },
+      { kind: 'picked', faceIds: ['acct-1', 'acct-2'] },
+    ]);
+  });
+
+  it('falls back to `everyone` for anything it does not recognise', () => {
+    // The safe direction for a *display*: "as open as the space" cannot
+    // mislead somebody into thinking a room is more private than it is. The
+    // lock is key possession either way; this string gates nothing.
+    const shaped = shapeSpace(
+      space({
+        rooms: [
+          { id: 'r1', kind: 'space', space: 'sp1', audience: 'roles:' },
+          { id: 'r2', kind: 'space', space: 'sp1', audience: 'something-newer' },
+          { id: 'r3', kind: 'space', space: 'sp1' },
+        ],
+      } as Partial<LiveSpace>),
+      ctx(),
+    );
+    expect(shaped.rooms.every((r) => r.audience.kind === 'everyone')).toBe(true);
+  });
+});
+
 describe('membership', () => {
   it('marks the owner flag on my row only, from the answer the server gave', () => {
     // `SpaceInfo.owner` is "does the asking account own this" — the same answer

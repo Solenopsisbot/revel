@@ -56,6 +56,19 @@ $effect(() => {
   if (open) panel?.focus();
 });
 
+function leave() {
+  const name = core.space.name;
+  wren.confirm({
+    title: `Leave ${name}?`,
+    body: `You come out of every room in it and this device drops the keys. Somebody would have to invite you back — and even then, everything said while you were gone stays unreadable, because those messages were encrypted to epochs your leaf was not in.`,
+    confirm: `Leave ${name}`,
+    onConfirm: () => {
+      void core.leaveSpace(core.currentSpaceId);
+      open = false;
+    },
+  });
+}
+
 function del() {
   const name = core.space.name;
   wren.confirm({
@@ -135,17 +148,35 @@ function del() {
                 Hands this space to another member. You keep your account and
                 your membership; you stop being able to undo their decisions.
               </p>
-              <button class="btn">Choose someone</button>
+              <button class="btn" disabled={!core.demo}>Choose someone</button>
+              {#if !core.demo}<p class="sub">Not built yet.</p>{/if}
             </section>
-            <section>
-              <h3>Delete this space</h3>
-              <p class="sub">
-                Deletes every room and all of their history, for everyone. A
-                space is a row and a key group rather than a machine, so there
-                is no backup sitting somewhere to restore from.
-              </p>
-              <button class="btn danger-btn" onclick={del}>Delete {core.space.name}</button>
-            </section>
+            {#if core.demo}
+              <section>
+                <h3>Delete this space</h3>
+                <p class="sub">
+                  Deletes every room and all of their history, for everyone. A
+                  space is a row and a key group rather than a machine, so there
+                  is no backup sitting somewhere to restore from.
+                </p>
+                <button class="btn danger-btn" onclick={del}>Delete {core.space.name}</button>
+              </section>
+            {:else}
+              <!-- Leaving, not deleting. The Host has no delete route, and a
+                   button labelled "delete" that removes one membership row is
+                   the worst possible version of this control — everyone else
+                   would still be in a space its owner believed was gone. -->
+              <section>
+                <h3>Leave this space</h3>
+                <p class="sub">
+                  You come out of every room in it and your device drops the
+                  keys, so the history stops rather than disappearing — it was
+                  encrypted to a group you are no longer in. Everyone else keeps
+                  the space.
+                </p>
+                <button class="btn danger-btn" onclick={leave}>Leave {core.space.name}</button>
+              </section>
+            {/if}
           {:else}
             <h2>{meta.name}</h2>
             <p class="lede">{meta.blurb}</p>

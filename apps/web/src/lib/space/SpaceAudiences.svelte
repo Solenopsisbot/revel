@@ -25,9 +25,13 @@ function key(a: Audience) {
   return `picked:${[...a.faceIds].sort().join(',')}`;
 }
 
+/** A role, by whichever identifier the audience happens to be written in. */
+const nameRole = (ref: string) =>
+  space.roles.find((r) => r.id === ref || r.name === ref)?.name ?? ref;
+
 function describe(a: Audience) {
   if (a.kind === 'everyone') return 'Everyone in this space';
-  if (a.kind === 'roles') return `People with ${a.roles.join(' or ')}`;
+  if (a.kind === 'roles') return `People with ${a.roles.map(nameRole).join(' or ')}`;
   return `${a.faceIds.length} people, picked individually`;
 }
 

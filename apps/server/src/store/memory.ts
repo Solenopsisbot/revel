@@ -200,6 +200,19 @@ export class MemoryStore implements Store {
   async putRole(role: Role) {
     this.roles.set(role.id, role);
   }
+  async deleteRoom(roomId: string) {
+    this.rooms.delete(roomId);
+    this.events.delete(roomId);
+    for (const [key, m] of this.memberships) {
+      if (m.roomId === roomId) this.memberships.delete(key);
+    }
+    for (const [key, b] of this.blobs) {
+      if (b.roomId === roomId) this.blobs.delete(key);
+    }
+    this.overrides = this.overrides.filter((o) => o.roomId !== roomId);
+    // The group stays. It may serve other rooms with the same audience, and
+    // dropping it would take their history with it.
+  }
   async deleteRole(spaceId: string, roleId: string) {
     // Never `@everyone`: it shares the space id, and a space without it gives
     // its members no permissions at all.

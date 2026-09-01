@@ -17,6 +17,7 @@ import { core } from '$lib/fake/core.svelte.js';
 import type { Audience, Room } from '$lib/fake/data.js';
 import Icon from '$lib/Icon.svelte';
 import { whyNot } from '$lib/startErrors.js';
+import { wren } from '$lib/wren/wren.svelte.js';
 
 let { initialRoom }: { initialRoom?: string } = $props();
 
@@ -95,6 +96,49 @@ async function create() {
   newAudience = { kind: 'everyone' };
 }
 
+/**
+ * Ask first. This is the one control on the screen that cannot be undone.
+ *
+ * The body says what is actually true rather than what would be reassuring:
+ * the Host forgets the bytes, and the people who already read them may have
+ * kept them. No app can fix that half and pretending otherwise here would be
+ * the worst place to do it.
+ */
+function confirmDelete(r: Room) {
+  wren.confirm({
+    title: `Delete #${r.name}?`,
+    body: `Every message in it goes, for everyone — they were encrypted to this room and there is nowhere else they live. People who already read them may have kept them; that part no app can fix.`,
+    confirm: `Delete #${r.name}`,
+    onConfirm: async () => {
+      const result = await core.deleteRoom(space.id, r.id);
+      if (result.error) failed = result.error;
+      editing = null;
+    },
+  });
+}
+
+/**
+ * The name and topic boxes, committed on blur.
+ *
+ * Both ride one `room.name` event, so they are saved together — and neither is
+ * saved per keystroke, which is what `oninput` did: live, that is one encrypted
+ * event sent to every member of the room for every character typed.
+ */
+let draftName = $state('');
+let draftTopic = $state('');
+$effect(() => {
+  draftName = room?.name ?? '';
+  draftTopic = room?.topic ?? '';
+});
+
+function saveIdentity() {
+  if (!room) return;
+  const name = draftName.trim();
+  if (!name) return;
+  if (name === room.name && (draftTopic.trim() || undefined) === room.topic) return;
+  core.renameRoom(space.id, room.id, name, draftTopic);
+}
+
 function toggleRole(a: Audience, role: string): Audience {
   if (a.kind !== 'roles') return { kind: 'roles', roles: [role] };
   const roles = a.roles.includes(role) ? a.roles.filter((r) => r !== role) : [...a.roles, role];
@@ -120,8 +164,10 @@ function toggleRole(a: Audience, role: string): Audience {
       <span class="lbl">Name</span>
       <input
         type="text"
-        value={room.name}
-        oninput={(e) => core.renameRoom(space.id, room.id, e.currentTarget.value, room.topic)}
+        bind:value={draftName}
+        onblur={saveIdentity}
+        onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        maxlength="200"
       />
     </label>
 
@@ -131,21 +177,28 @@ function toggleRole(a: Audience, role: string): Audience {
         <input
           type="text"
           placeholder="What's this room for?"
-          value={room.topic ?? ''}
-          oninput={(e) => core.renameRoom(space.id, room.id, room.name, e.currentTarget.value)}
+          bind:value={draftTopic}
+          onblur={saveIdentity}
+          onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+          maxlength="2000"
         />
-        <span class="hint">Shown in the header. Encrypted like everything else.</span>
+        <span class="hint">
+          Shown in the header. Encrypted like everything else — which is why
+          both of these save when you click away rather than as you type.
+        </span>
       </label>
     {/if}
 
-    <label class="field">
-      <span class="lbl">Category</span>
-      <input
-        type="text"
-        value={room.category}
-        oninput={(e) => (room.category = e.currentTarget.value.trim() || 'General')}
-      />
-    </label>
+    {#if core.demo}
+      <label class="field">
+        <span class="lbl">Category</span>
+        <input
+          type="text"
+          value={room.category}
+          oninput={(e) => (room.category = e.currentTarget.value.trim() || 'General')}
+        />
+      </label>
+    {/if}
   </section>
 
   {#if room.kind === 'text'}
@@ -155,10 +208,11 @@ function toggleRole(a: Audience, role: string): Audience {
            Copy from `docs/08`, kept close to its wording because it was
            written to say the awkward thing without either overselling the
            protection or making the default sound reckless. -->
-      <label class="toggle">
+      <label class="toggle" class:off={!core.demo}>
         <input
           type="checkbox"
           checked={room.streamPaging !== false}
+          disabled={!core.demo}
           onchange={(e) => (room.streamPaging = e.currentTarget.checked)}
         />
         <span>
@@ -176,6 +230,16 @@ function toggleRole(a: Audience, role: string): Audience {
         Either way a thread is <b>inside</b> this room — same people, same keys.
         This is about how it is fetched, not about who can read it.
       </p>
+      {#if !core.demo}
+        <!-- The room is created with `streamPaging: false` and there is no
+             route to change it afterwards. A switch that moved and did nothing
+             would be worse here than anywhere else on this screen: it is the
+             one control that claims to change what the server learns. -->
+        <p class="hint">
+          Fixed when the room is made, for now — threads in this room are paged
+          on your device.
+        </p>
+      {/if}
     </section>
   {/if}
 
@@ -199,7 +263,7 @@ function toggleRole(a: Audience, role: string): Audience {
   </section>
 
   <section>
-    <button class="danger" onclick={() => { core.deleteRoom(space.id, room.id); editing = null; }}>
+    <button class="danger" onclick={() => confirmDelete(room)}>
       Delete #{room.name}
     </button>
   </section>
@@ -363,6 +427,7 @@ function toggleRole(a: Audience, role: string): Audience {
 
   .roles { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 0 26px; }
   .failed { margin: 8px 0 0; font-size: 13px; color: var(--danger); }
+  .toggle.off { opacity: .6; }
   .role {
     border: 1px solid var(--line); background: transparent; cursor: pointer;
     font: inherit; font-size: 12px; font-weight: 600; color: var(--text-mute);

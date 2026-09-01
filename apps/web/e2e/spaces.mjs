@@ -271,7 +271,87 @@ ok(
 );
 
 // ---------------------------------------------------------------------------
+console.log('\nrenaming things');
+await alice.page.evaluate(async (id) => {
+  const { core } = window.__revel;
+  core.updateSpace(id, { name: 'Solexsis Research' });
+  const design = core.spaces[0].rooms.find((r) => r.name === 'design');
+  core.renameRoom(id, design.id, 'sketches', 'where the shapes happen');
+}, spaceId);
+await wait(7000);
+await resync(bob.page);
+ok(
+  'a rename reaches the other person',
+  (await bob.page.evaluate(() => window.__revel.core.spaces[0]?.name)) === 'Solexsis Research',
+  await bob.page.evaluate(() => window.__revel.core.spaces[0]?.name),
+);
+ok(
+  'and so does a room rename, with its topic',
+  await bob.page.evaluate(() => {
+    const r = window.__revel.core.spaces[0]?.rooms.find((x) => x.name === 'sketches');
+    return r?.topic === 'where the shapes happen';
+  }),
+  await bob.page.evaluate(() =>
+    (window.__revel.core.spaces[0]?.rooms ?? []).map((r) => [r.name, r.topic]),
+  ),
+);
+
+// ---------------------------------------------------------------------------
+console.log('\ndeleting a room');
+await alice.page.evaluate(async (id) => {
+  const { core } = window.__revel;
+  const sketches = core.spaces[0].rooms.find((r) => r.name === 'sketches');
+  const result = await core.deleteRoom(id, sketches.id);
+  if (result.error) throw new Error(result.error);
+}, spaceId);
+await wait(6000);
+ok(
+  'it is gone for the person who deleted it',
+  await alice.page.evaluate(
+    () => !window.__revel.core.spaces[0].rooms.some((r) => r.name === 'sketches'),
+  ),
+  await alice.page.evaluate(() => window.__revel.core.spaces[0].rooms.map((r) => r.name)),
+);
+await resync(bob.page);
+ok(
+  'and for everybody else',
+  await bob.page.evaluate(
+    () => !(window.__revel.core.spaces[0]?.rooms ?? []).some((r) => r.name === 'sketches'),
+  ),
+  await bob.page.evaluate(() => (window.__revel.core.spaces[0]?.rooms ?? []).map((r) => r.name)),
+);
+ok(
+  'while its sibling — which shared its group — still works',
+  await bob.page.evaluate(
+    () => (window.__revel.core.spaces[0]?.rooms ?? []).some((r) => r.name === 'general'),
+  ),
+);
+
+// ---------------------------------------------------------------------------
 console.log('\nand taking him back out');
+// Put bob in the room the next messages go to, so "he cannot see it" is a
+// claim about keys rather than about which tab he happens to be on.
+await bob.page.evaluate(() => {
+  const { core } = window.__revel;
+  const space = core.spaces[0];
+  core.openRoom(space.id, space.rooms.find((r) => r.name === 'general').id);
+});
+await wait(2000);
+await alice.page.evaluate(() => {
+  const { core } = window.__revel;
+  const space = core.spaces[0];
+  core.openRoom(space.id, space.rooms.find((r) => r.name === 'general').id);
+});
+await wait(1500);
+await alice.page.evaluate(() => void window.__revel.core.send('while he is still here'));
+await wait(8000);
+await resync(bob.page);
+await wait(2000);
+ok(
+  'he can read the room right up until he is removed',
+  await bob.page.evaluate(() => document.body.innerText.includes('while he is still here')),
+);
+
 await alice.page.evaluate(() => {
   const { core } = window.__revel;
   const them = core.spaces[0].members.find((m) => m.accountId !== core.myAccountId);
@@ -281,7 +361,7 @@ await wait(9000);
 await alice.page.evaluate(() => {
   const { core } = window.__revel;
   const space = core.spaces[0];
-  core.openRoom(space.id, space.rooms.find((r) => r.name === 'design').id);
+  core.openRoom(space.id, space.rooms.find((r) => r.name === 'general').id);
 });
 await wait(1500);
 await alice.page.evaluate(() => void window.__revel.core.send('said after he left'));
