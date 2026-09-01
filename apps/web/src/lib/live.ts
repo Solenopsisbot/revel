@@ -197,6 +197,11 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
         await rooms.catchUp(roomId).catch(() => {});
       }
     }
+
+    // And bring in anybody the Host says is a member that the group has never
+    // heard of. Somebody who followed an invite link has no inviter present to
+    // commit them, so every member checks and the first one there wins.
+    await directory?.reconcileGroups().catch(() => {});
   };
 
   let socketStatus: 'connecting' | 'open' | 'closed' = 'closed';

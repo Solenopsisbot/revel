@@ -24,10 +24,13 @@ describe('sending an event', () => {
     expect(res.status).toBe(401);
   });
 
-  it('refuses a device that is not in the room', async () => {
+  it('refuses a device that is not in the room, without confirming it exists', async () => {
+    // 404, not 403. The answer to "is this a real room" must not depend on
+    // permissions the asker does not have — `docs/03` §4: a room you have no
+    // audience for is one you never learn exists.
     const h = harness();
     h.stranger('mallory', 'dev-m');
-    expect((await h.send('dev-m', body())).status).toBe(403);
+    expect((await h.send('dev-m', body())).status).toBe(404);
   });
 
   it('refuses a revoked device', async () => {
@@ -177,10 +180,10 @@ describe('reading and purging', () => {
     expect(page.events.map((e: any) => e.id)).toEqual(ids.slice(0, 2));
   });
 
-  it('refuses to list to a non-member', async () => {
+  it('refuses to list to a non-member, and answers as if the room were not there', async () => {
     const h = harness();
     h.stranger('mallory', 'dev-m');
-    expect((await h.list('dev-m')).status).toBe(403);
+    expect((await h.list('dev-m')).status).toBe(404);
   });
 
   it('purges bytes but keeps a tombstone, and tells live clients', async () => {

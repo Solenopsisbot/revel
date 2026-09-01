@@ -14,10 +14,13 @@
 import type {
   AccountProfile,
   BlobInfo,
+  CreateInvite,
   CreateSpaceRoom,
   DeviceInfo,
   Event,
   EventInput,
+  InviteInfo,
+  InvitePreview,
   RoleInfo,
   RoleInput,
   RoomInfo,
@@ -106,6 +109,15 @@ export interface Transport {
   spaceMembers(spaceId: string): Promise<SpaceMemberInfo[]>;
   inviteToSpace(spaceId: string, accounts: string[]): Promise<void>;
   leaveSpace(spaceId: string, account: string): Promise<void>;
+  // -- invite links ----------------------------------------------------------
+
+  createInvite(spaceId: string, input: CreateInvite): Promise<InviteInfo>;
+  listInvites(spaceId: string): Promise<InviteInfo[]>;
+  revokeInvite(spaceId: string, code: string): Promise<void>;
+  /** Unauthenticated: a link is something you follow before you have an account. */
+  previewInvite(code: string): Promise<InvitePreview>;
+  redeemInvite(code: string, signature: string): Promise<{ space: string; joined: boolean }>;
+
   spaceRoles(spaceId: string): Promise<RoleInfo[]>;
   createRole(spaceId: string, input: RoleInput): Promise<RoleInfo>;
   updateRole(spaceId: string, roleId: string, input: RoleInput): Promise<RoleInfo>;
@@ -355,6 +367,34 @@ export class HttpTransport implements Transport {
       { method: 'DELETE' },
     );
   }
+  createInvite(spaceId: string, input: CreateInvite): Promise<InviteInfo> {
+    return this.#json(`/spaces/${encodeURIComponent(spaceId)}/invites`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+  listInvites(spaceId: string): Promise<InviteInfo[]> {
+    return this.#json<{ invites: InviteInfo[] }>(
+      `/spaces/${encodeURIComponent(spaceId)}/invites`,
+      { method: 'GET' },
+    ).then((r) => r.invites);
+  }
+  async revokeInvite(spaceId: string, code: string): Promise<void> {
+    await this.#request(
+      `/spaces/${encodeURIComponent(spaceId)}/invites/${encodeURIComponent(code)}`,
+      { method: 'DELETE' },
+    );
+  }
+  previewInvite(code: string): Promise<InvitePreview> {
+    return this.#json(`/invites/${encodeURIComponent(code)}`, { method: 'GET' });
+  }
+  redeemInvite(code: string, signature: string): Promise<{ space: string; joined: boolean }> {
+    return this.#json(`/invites/${encodeURIComponent(code)}/redeem`, {
+      method: 'POST',
+      body: JSON.stringify({ signature }),
+    });
+  }
+
   spaceRoles(spaceId: string): Promise<RoleInfo[]> {
     return this.#json<{ roles: RoleInfo[] }>(`/spaces/${encodeURIComponent(spaceId)}/roles`, {
       method: 'GET',

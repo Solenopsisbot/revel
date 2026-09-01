@@ -15,12 +15,18 @@ import {
   type DeviceInfo,
   type FaceCard,
   type FaceRef,
+  fromBase64,
+  type InviteInfo,
+  type InvitePreview,
+  mintInviteKey,
   type RoleInfo,
   type RoleInput,
   type RoomInfo,
+  signInviteRedemption,
   type SpaceInfo,
   type SpaceMemberInfo,
   toAccountId,
+  toBase64,
   type UpdateProfile,
 } from '@revel/protocol';
 import { Attachments } from '../blobs/attachments.js';
@@ -95,6 +101,27 @@ class LiveConversation implements ConversationCore {
    * would put a state event between every pair of messages, and announcing once
    * globally would miss the next room.
    */
+  /**
+   * Say who is here again, because the keys moved.
+   *
+   * `#announceFace` is once per room per session, which is right while the
+   * group is stable and wrong the moment somebody joins: the roster event was
+   * encrypted to an epoch the newcomer was not in, so they arrive to a member
+   * list with nobody on it. Forgetting the room here is what lets the next
+   * announcement through.
+   *
+   * Called by whoever committed the new leaf — which is not necessarily the
+   * person who invited them, and with a link is nobody in particular.
+   */
+  async reannounceFaces(roomIds: string[]): Promise<void> {
+    for (const roomId of roomIds) {
+      const face = this.#faceFor?.(roomId);
+      if (!face) continue;
+      this.#announced.delete(`${roomId}:${face.id}`);
+      await this.#announceFace(roomId, face);
+    }
+  }
+
   async #announceFace(roomId: string, face: FaceCard): Promise<void> {
     const key = `${roomId}:${face.id}`;
     if (this.#announced.has(key)) return;
@@ -300,6 +327,20 @@ class LiveDirectory implements DirectoryCore {
   #known: RoomInfo[] = [];
   #listeners = new Set<(rooms: RoomInfo[]) => void>();
   #account: string;
+  /**
+   * Say the roster again, injected rather than reached for.
+   *
+   * The faces a client announces belong to `ConversationCore` — it owns the
+   * once-per-room cache and the face for a given room. This class is the one
+   * that notices somebody joined. Handing the callback across is a smaller
+   * seam than either of them knowing about the other.
+   */
+  #faces: ((roomIds: string[]) => Promise<void>) | undefined;
+
+  /** Wired by `LiveCore`, which is the only thing holding both halves. */
+  onNewMember(reannounceFaces: (roomIds: string[]) => Promise<void>): void {
+    this.#faces = reannounceFaces;
+  }
 
   constructor(options: LiveCoreOptions) {
     this.#transport = options.transport;
@@ -396,6 +437,64 @@ class LiveDirectory implements DirectoryCore {
   }
 
   // -- spaces ----------------------------------------------------------------
+
+  /**
+   * Commit anyone the Host says is a member but the group has never heard of.
+   *
+   * **The half a membership row cannot do, done by whoever notices first.**
+   * `docs/03` §5: the server hands out membership and cannot hand out keys, so
+   * somebody already inside a group has to add the newcomer's leaf. When an
+   * invite is a person clicking a link there is no inviter present to do it —
+   * so every member's client checks on sync, and the first one there wins.
+   *
+   * Safe to run everywhere at once, which is the only reason this works:
+   * `claim` returns nothing for a device already in the group, so the common
+   * case is one request that commits nothing, and two clients racing to add the
+   * same person means one commit and one no-op (`#commitLoop` rebuilds on an
+   * epoch conflict, and then finds nothing left to claim).
+   *
+   * This also repairs the case `inviteToSpace` used to leave broken forever: an
+   * invite whose commit failed after the row was written left somebody able to
+   * see a room's name and not a word in it, with nothing that would ever try
+   * again.
+   */
+  async reconcileGroups(): Promise<void> {
+    const wanted = new Map<string, Set<string>>();
+    for (const room of this.#known) {
+      if (!room.group) continue;
+      const set = wanted.get(room.group) ?? new Set<string>();
+      for (const account of room.members ?? []) set.add(account);
+      wanted.set(room.group, set);
+    }
+
+    const held = new Set(await this.#crypto.groups().catch(() => []));
+    for (const [groupId, accounts] of wanted) {
+      // Only groups this device is actually in. Committing into one it does
+      // not hold is not something it could do, and asking would be a request
+      // per group per sync for nothing.
+      if (!held.has(groupId)) continue;
+      const result = await this.#groups.invite(groupId, [...accounts]).catch((err) => {
+        // Logged, not thrown: reconciling is a background repair, and one
+        // group the Host is unhappy about must not stop the others.
+        console.error(`revel: could not bring members into group ${groupId}`, err);
+        return null;
+      });
+
+      // Nobody new. The steady state, and the reason this is cheap to run on
+      // every sync — no commit, no epoch change, nothing to say again.
+      if (!result || result.added.length === 0) continue;
+
+      // Somebody joined, so everything they cannot read has to be said again:
+      // the space's name, its roles, its rooms' names, and who is in them. All
+      // of those were encrypted to epochs before their leaf existed, and MLS
+      // keys move forward. With a link there is no inviter present to do this,
+      // which is exactly why it belongs here rather than in `inviteToSpace`.
+      const rooms = this.#known.filter((r) => r.group === groupId);
+      const spaceId = rooms.find((r) => r.space)?.space;
+      if (spaceId) await this.#reannounce(spaceId).catch(() => {});
+      await this.#faces?.(rooms.map((r) => r.id)).catch(() => {});
+    }
+  }
 
   spaces(): Promise<SpaceInfo[]> {
     return this.#transport.spaces();
@@ -605,6 +704,56 @@ class LiveDirectory implements DirectoryCore {
       if (leaves.length) await this.#groups.remove(groupId, leaves);
     }
     await this.refresh();
+  }
+
+  // -- invite links ----------------------------------------------------------
+
+  /**
+   * Make an invite link.
+   *
+   * The keypair is minted **here**, on this device. The public half goes to
+   * the Host; the private half is returned to the caller and belongs in the
+   * URL fragment, which never leaves a browser (`docs/03` §4). Nothing else in
+   * this method may ever send `secret` anywhere — that is the whole trick, and
+   * it is one line away from not being true.
+   */
+  async createInvite(
+    spaceId: string,
+    options: { maxUses?: number; ttl?: number } = {},
+  ): Promise<{ invite: InviteInfo; secret: string }> {
+    const { pub, secret } = await mintInviteKey();
+    const invite = await this.#transport.createInvite(spaceId, {
+      pub: toBase64(pub),
+      ...options,
+    });
+    return { invite, secret: toBase64(secret) };
+  }
+
+  listInvites(spaceId: string): Promise<InviteInfo[]> {
+    return this.#transport.listInvites(spaceId);
+  }
+  revokeInvite(spaceId: string, code: string): Promise<void> {
+    return this.#transport.revokeInvite(spaceId, code);
+  }
+  previewInvite(code: string): Promise<InvitePreview> {
+    return this.#transport.previewInvite(code);
+  }
+
+  /**
+   * Follow an invite: prove the fragment, take the membership, get the keys.
+   *
+   * Three steps and only the first two are the Host's. Redeeming writes a row
+   * and hands over nothing — the Host has no keys to hand over — so a client
+   * that stopped here would be in a space it could see and not read
+   * (`docs/03` §5). The third step is waiting: a member's client notices on
+   * its next sync and commits the new leaf, which is what `reconcileGroups` is
+   * for. `refresh` here is what makes the rooms appear in the meantime.
+   */
+  async redeemInvite(code: string, secret: string): Promise<{ space: string; joined: boolean }> {
+    const signature = await signInviteRedemption(fromBase64(secret), code, this.#account);
+    const result = await this.#transport.redeemInvite(code, toBase64(signature));
+    await this.refresh();
+    return result;
   }
 
   spaceRoles(spaceId: string): Promise<RoleInfo[]> {
@@ -834,7 +983,11 @@ export class LiveCore implements RevelCore {
       options.account,
       options.faceFor,
     );
-    this.directory = new LiveDirectory(options);
+    const directory = new LiveDirectory(options);
+    // The two halves of "somebody joined": the directory notices, the
+    // conversation is what has to say the roster again.
+    directory.onNewMember((roomIds) => this.conversation.reannounceFaces(roomIds));
+    this.directory = directory;
     this.identity = new LiveIdentity(options.transport);
     this.connection = new LiveConnection(options.stream);
   }

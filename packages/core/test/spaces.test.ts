@@ -188,6 +188,156 @@ scenarios('a space', () => {
     await world.close();
   });
 
+  it('lets a member who was never committed in be repaired by anyone on sync', async () => {
+    // The half an invite *link* needs and `inviteToSpace` does not: when a
+    // person follows a link there is no inviter present to add their leaf, so
+    // whoever syncs next has to notice and do it (`docs/03` §5).
+    //
+    // Simulated by putting the membership row in behind the client's back —
+    // which is exactly what redeeming an invite does, and also exactly the
+    // state an `inviteToSpace` whose commit failed used to leave behind
+    // permanently.
+    const { world, alice, bob } = await two();
+
+    const space = await alice.core.directory.createSpace('Solexsis');
+    const room = (await alice.core.directory.spaceRooms(space.id))[0]!;
+    await world.settle();
+
+    // Membership only — the raw HTTP call, without the commit `inviteToSpace`
+    // wraps around it. So bob is a member and holds no keys.
+    await alice.transport.inviteToSpace(space.id, [bob.account]);
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+
+    await alice.core.conversation.send(room.id, 'before the repair');
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+    expect(bob.texts(room.id)).toEqual([]);
+
+    // Alice syncs. Nothing told her to do this and nothing knows bob is stuck.
+    await alice.core.directory.refresh();
+    await alice.core.directory.reconcileGroups();
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+
+    await alice.core.conversation.send(room.id, 'after the repair');
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+
+    // Only what was sent after his leaf existed. MLS keys move forward, so the
+    // repair lets him in from now on and never retroactively.
+    expect(bob.texts(room.id)).toEqual(['after the repair']);
+    await world.close();
+  });
+
+  it('commits nothing when everybody is already in', async () => {
+    // The reason it is safe to run on every client on every sync. `claim`
+    // returns nothing for a device already in the group, so the steady state
+    // is one request that changes no epoch.
+    const { world, alice, bob } = await two();
+
+    const space = await alice.core.directory.createSpace('Solexsis');
+    await world.settle();
+    await alice.core.directory.inviteToSpace(space.id, [bob.account]);
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+
+    const before = world.handshakePosts;
+    await alice.core.directory.reconcileGroups();
+    await bob.core.directory.refresh();
+    await bob.core.directory.reconcileGroups();
+    await world.settle();
+    expect(world.handshakePosts).toBe(before);
+    await world.close();
+  });
+
+  it('lets somebody join by link and then actually read the room', async () => {
+    // The whole point, end to end. `docs/06` phase 3's exit condition is a
+    // friend group moving off Discord, and that means a link somebody pastes
+    // in a chat — not "sign up and tell me your handle".
+    //
+    // Three steps, and only the first two are the Host's: the fragment proves
+    // entitlement, the row is written, and then *a member* has to commit the
+    // new leaf. Nobody is present to do it, so alice's next sync does.
+    const { world, alice, bob } = await two();
+
+    // She speaks as somebody, so there is a roster for bob to arrive to — and
+    // so the assertion at the end is about the announcement rather than about
+    // a harness that never had a face to announce.
+    alice.face = { id: '1', name: 'Viola', colour: 'aqua' };
+
+    const space = await alice.core.directory.createSpace('Solexsis');
+    const room = (await alice.core.directory.spaceRooms(space.id))[0]!;
+    await world.settle();
+    await alice.core.conversation.send(room.id, 'said before he had the link');
+    await world.settle();
+
+    const { invite, secret } = await alice.core.directory.createInvite(space.id, { maxUses: 5 });
+    // The Host got the public half and nothing else.
+    expect(invite.pub).not.toBe(secret);
+
+    // Bob follows it. He can see the link is real before joining, and what he
+    // is told is deliberately almost nothing — the Host has never been given
+    // the space's name.
+    const preview = await bob.core.directory.previewInvite(invite.code);
+    expect(preview).toMatchObject({ space: space.id, status: 'ok', members: 1 });
+    expect(JSON.stringify(preview)).not.toContain('Solexsis');
+
+    expect(await bob.core.directory.redeemInvite(invite.code, secret)).toMatchObject({
+      space: space.id,
+      joined: true,
+    });
+    await world.settle();
+
+    // A row, and no keys. This is the state the architecture guarantees and
+    // the one a client must not mistake for having joined.
+    await bob.sync();
+    await world.settle();
+    expect(bob.texts(room.id)).toEqual([]);
+
+    // Alice syncs — nothing told her bob exists — and repairs him in.
+    await alice.core.directory.refresh();
+    await alice.core.directory.reconcileGroups();
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+
+    await alice.core.conversation.send(room.id, 'and now he can read');
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+
+    // Only from his leaf onwards. The message from before the link is bytes he
+    // holds no key for, which is the property working rather than a gap.
+    expect(bob.texts(room.id)).toEqual(['and now he can read']);
+    // And everything a newcomer cannot read for himself, because whoever
+    // committed his leaf said it again: the space's name, and the roster.
+    // Both were encrypted to epochs before he existed.
+    expect(bob.rooms.state(room.id).spaceName).toBe('Solexsis');
+    expect([...bob.rooms.state(room.id).faces.values()].length).toBeGreaterThan(0);
+    await world.close();
+  });
+
+  it('refuses a link whose fragment is wrong, without spending it', async () => {
+    const { world, alice, bob } = await two();
+    const space = await alice.core.directory.createSpace('Solexsis');
+    await world.settle();
+
+    const { invite } = await alice.core.directory.createInvite(space.id, { maxUses: 1 });
+    // Somebody else's fragment. Having the code is not having the link.
+    const other = await alice.core.directory.createInvite(space.id);
+    await expect(bob.core.directory.redeemInvite(invite.code, other.secret)).rejects.toThrow();
+
+    // Still spendable, so a wrong signature cannot burn a link for everyone.
+    expect((await alice.core.directory.listInvites(space.id))[0]?.uses).toBe(0);
+    await world.close();
+  });
+
   it('invites once per audience, not once per room', async () => {
     // The number this design exists for. Three rooms, one audience: bob is
     // committed into one group, and every one of the three opens for him.

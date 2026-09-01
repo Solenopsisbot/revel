@@ -53,6 +53,7 @@ import type {
   GroupMemberInput,
   HandshakeAppend,
   HandshakeResult,
+  Invite,
   LoginSession,
   Membership,
   Override,
@@ -221,6 +222,45 @@ export class PostgresStore implements Store {
   async removeMember(roomId: string, accountId: string): Promise<void> {
     await this.sql`
       DELETE FROM memberships WHERE room_id = ${roomId} AND account_id = ${accountId}`;
+  }
+
+  // -- invites ---------------------------------------------------------------
+
+  async putInvite(invite: Invite): Promise<void> {
+    await this.sql`
+      INSERT INTO invites (code, space_id, created_by, pub, uses, max_uses, expires_at, created_at)
+      VALUES (${invite.code}, ${invite.spaceId}, ${invite.createdBy}, ${invite.pub},
+              ${invite.uses}, ${invite.maxUses}, ${invite.expiresAt}, ${invite.createdAt})`;
+  }
+
+  async getInvite(code: string): Promise<Invite | null> {
+    const [row] = await this.sql`SELECT * FROM invites WHERE code = ${code}`;
+    return row ? inviteOf(row) : null;
+  }
+
+  async listInvites(spaceId: string): Promise<Invite[]> {
+    const rows = await this.sql`
+      SELECT * FROM invites WHERE space_id = ${spaceId} ORDER BY created_at DESC`;
+    return rows.map(inviteOf);
+  }
+
+  async deleteInvite(spaceId: string, code: string): Promise<void> {
+    await this.sql`DELETE FROM invites WHERE code = ${code} AND space_id = ${spaceId}`;
+  }
+
+  async redeemInvite(code: string, now: number): Promise<Invite | null> {
+    // One statement. The `WHERE` carries the whole policy — not revoked, not
+    // expired, not spent — so two people following the last use of a link at
+    // the same moment cannot both win, which is exactly what a link posted in
+    // a group chat produces. `RETURNING` gives back the row *before* the
+    // increment, which is what the caller wants to report.
+    const [row] = await this.sql`
+      UPDATE invites SET uses = uses + 1
+      WHERE code = ${code}
+        AND (expires_at IS NULL OR expires_at > ${now})
+        AND (max_uses IS NULL OR uses < max_uses)
+      RETURNING code, space_id, created_by, pub, uses - 1 AS uses, max_uses, expires_at, created_at`;
+    return row ? inviteOf(row) : null;
   }
 
   async deleteRoom(roomId: string): Promise<void> {
@@ -1380,4 +1420,18 @@ export class PostgresStore implements Store {
   async deleteTotp(accountPub: string): Promise<void> {
     await this.sql`DELETE FROM totp_secrets WHERE account_pub = ${accountPub}`;
   }
+}
+
+/** A row from `invites`, as the store's shape. */
+function inviteOf(row: Record<string, unknown>): Invite {
+  return {
+    code: row.code as string,
+    spaceId: row.space_id as string,
+    createdBy: row.created_by as string,
+    pub: row.pub as string,
+    uses: Number(row.uses),
+    maxUses: row.max_uses === null ? null : Number(row.max_uses),
+    expiresAt: row.expires_at === null ? null : Number(row.expires_at),
+    createdAt: Number(row.created_at),
+  };
 }

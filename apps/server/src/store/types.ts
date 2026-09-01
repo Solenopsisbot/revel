@@ -157,6 +157,19 @@ export interface Session {
   expiresAt: number;
 }
 
+/** An invite link's server-side half. See `putInvite`. */
+export interface Invite {
+  code: string;
+  spaceId: string;
+  createdBy: string;
+  /** Base64url Ed25519 public key. The private half is in the URL fragment. */
+  pub: string;
+  uses: number;
+  maxUses: number | null;
+  expiresAt: number | null;
+  createdAt: number;
+}
+
 export interface Store {
   getRoom(id: string): Promise<Room | null>;
 
@@ -253,6 +266,25 @@ export interface Store {
   removeSpaceMember(spaceId: string, accountId: string): Promise<void>;
   getSpaceMember(spaceId: string, accountId: string): Promise<SpaceMember | null>;
   listSpaceMembers(spaceId: string): Promise<SpaceMember[]>;
+
+  // -- invites (`docs/03` §4 — the Wormhole trick) ---------------------------
+  //
+  // The row is deliberately not enough to redeem: the private half of `pub`
+  // lives in the URL fragment and never reaches here.
+
+  putInvite(invite: Invite): Promise<void>;
+  getInvite(code: string): Promise<Invite | null>;
+  listInvites(spaceId: string): Promise<Invite[]>;
+  deleteInvite(spaceId: string, code: string): Promise<void>;
+  /**
+   * Spend one use, atomically, and only if there is one to spend.
+   *
+   * Returns the invite as it was *before* the increment, or null if it was
+   * revoked, expired or spent. One statement rather than read-then-write: two
+   * people following the last use of a link at once is not a rare case, it is
+   * exactly what a link posted in a group chat does.
+   */
+  redeemInvite(code: string, now: number): Promise<Invite | null>;
 
   /** Every role in a space, for the editor. `getRoles` fetches a named few. */
   listRoles(spaceId: string): Promise<Role[]>;

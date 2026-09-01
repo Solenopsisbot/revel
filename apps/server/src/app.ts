@@ -88,7 +88,20 @@ export interface AppDeps {
 
 const denialStatus: Record<string, ContentfulStatusCode> = {
   no_such_room: 404,
-  not_a_member: 403,
+  /**
+   * 404, not 403 — the same rule a space you are not in already follows.
+   *
+   * The answer to "does this room exist" must not depend on permissions the
+   * asker does not have. A 403 here confirmed the id was real, which is the
+   * only thing somebody probing for a room they have no audience for could
+   * learn — and `docs/03` §4 says a room you have no audience for is one you
+   * never learn exists.
+   *
+   * `missing_permission` stays 403 on purpose: it is a different sentence. It
+   * means you are in the room and may not do this, which you already knew the
+   * room existed to be told.
+   */
+  not_a_member: 404,
   missing_permission: 403,
   stream_not_enabled: 400,
   notify_not_enabled: 400,

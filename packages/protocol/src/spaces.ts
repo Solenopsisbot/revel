@@ -97,6 +97,81 @@ export const MemberRolesInput = z.object({
 });
 export type MemberRolesInput = z.infer<typeof MemberRolesInput>;
 
+// ---------------------------------------------------------------------------
+// Invite links (`docs/03` §4 — the Wormhole trick, `docs/18` §Joining)
+// ---------------------------------------------------------------------------
+
+/**
+ * An invite as the Host sees it — which is not enough to redeem.
+ *
+ * `pub` is the public half of a keypair minted on the inviter's device. The
+ * private half lives in the URL fragment (`revel.chat/i/<code>#<key>`) and
+ * never reaches the server, so redeeming means signing a challenge with
+ * something this row does not contain.
+ *
+ * **No name, no key material, no member list.** A space's name is an encrypted
+ * event (`docs/04` §1) and the Host has never been told it, so an invite
+ * cannot carry one either — which is why the landing page learns what the
+ * space is called only after joining it.
+ */
+export const InviteInfo = z.object({
+  code: z.string().min(1).max(64),
+  space: Snowflake,
+  pub: z.string().max(128),
+  createdBy: AccountId,
+  createdAt: z.number().int(),
+  uses: z.number().int().nonnegative(),
+  /** Absent means unlimited, which the UI says in words rather than as an ∞. */
+  maxUses: z.number().int().positive().optional(),
+  /** Absent means it does not expire. */
+  expiresAt: z.number().int().optional(),
+});
+export type InviteInfo = z.infer<typeof InviteInfo>;
+
+export const CreateInvite = z.object({
+  /** Base64url Ed25519 public key. Minted on the device, never derived here. */
+  pub: z.string().min(16).max(128),
+  maxUses: z.number().int().positive().max(10_000).optional(),
+  /** How long it lives, in milliseconds. Absent means forever. */
+  ttl: z
+    .number()
+    .int()
+    .positive()
+    .max(365 * 24 * 60 * 60 * 1000)
+    .optional(),
+});
+export type CreateInvite = z.infer<typeof CreateInvite>;
+
+/**
+ * What an invite looks like to somebody who has not joined yet.
+ *
+ * Deliberately almost nothing. The Host cannot describe a space it has never
+ * been told the name of, and inventing a preview would mean putting a name
+ * where `docs/04` §1 says one may not go. What is here is what the Host
+ * genuinely knows and a stranger genuinely needs: does this link work, and how
+ * many people are on the other side of it.
+ */
+export const InvitePreview = z.object({
+  code: z.string(),
+  space: Snowflake,
+  members: z.number().int().nonnegative(),
+  /** Whether it is spent, expired, or fine — the client says which, in words. */
+  status: z.enum(['ok', 'expired', 'used_up', 'revoked']),
+});
+export type InvitePreview = z.infer<typeof InvitePreview>;
+
+/**
+ * Redeeming: a signature over the challenge, by the key in the fragment.
+ *
+ * The challenge is `redeem:<code>:<account>`, so a signature captured off one
+ * account's redemption cannot be replayed to join a different one.
+ */
+export const RedeemInvite = z.object({
+  /** Base64url Ed25519 signature over `redeem:<code>:<account>`. */
+  signature: z.string().min(16).max(256),
+});
+export type RedeemInvite = z.infer<typeof RedeemInvite>;
+
 /**
  * The canonical name for an audience.
  *

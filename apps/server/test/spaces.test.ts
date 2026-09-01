@@ -354,6 +354,200 @@ describe('audiences and groups', () => {
   });
 });
 
+describe('invite links', () => {
+  /** A keypair whose private half stands in for the URL fragment. */
+  async function key() {
+    const { mintInviteKey, signInviteRedemption, toBase64 } = await import('@revel/protocol');
+    const { pub, secret } = await mintInviteKey();
+    return {
+      pub: toBase64(pub),
+      sign: async (code: string, account: string) =>
+        toBase64(await signInviteRedemption(secret, code, account)),
+    };
+  }
+
+  it('needs INVITE to make one, and hands back no key material', async () => {
+    const h = people();
+    const space = await h.space();
+    const k = await key();
+
+    expect((await h.post('dev-b', `/spaces/${space.id}/invites`, { pub: k.pub })).status).toBe(403);
+    const res = await h.post('dev-a', `/spaces/${space.id}/invites`, { pub: k.pub });
+    expect(res.status).toBe(201);
+    const invite = (await res.json()) as { code: string; pub: string };
+    expect(invite.code).toMatch(/^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/);
+    // The *public* half, which is all the Host was ever given.
+    expect(invite.pub).toBe(k.pub);
+  });
+
+  it('previews without an account, and says nothing it was never told', async () => {
+    // The whole point of a link is that you follow it before you have an
+    // account. And the Host has never been told what the space is called
+    // (`docs/04` §1), so the preview cannot carry a name — inventing one would
+    // be putting a name exactly where the design says one may not go.
+    const h = people();
+    const space = await h.space();
+    const k = await key();
+    const { code } = (await (
+      await h.post('dev-a', `/spaces/${space.id}/invites`, { pub: k.pub })
+    ).json()) as { code: string };
+
+    const res = await h.app.request(`/invites/${code}`);
+    expect(res.status).toBe(200);
+    const preview = (await res.json()) as Record<string, unknown>;
+    expect(preview).toEqual({ code, space: space.id, members: 2, status: 'ok' });
+    expect(Object.keys(preview)).not.toContain('name');
+  });
+
+  it('is a 404 for a code that never existed and one that was revoked alike', async () => {
+    // Telling them apart would make this an oracle for which codes have ever
+    // been real, to somebody who by construction has no account.
+    const h = people();
+    const space = await h.space();
+    const k = await key();
+    const { code } = (await (
+      await h.post('dev-a', `/spaces/${space.id}/invites`, { pub: k.pub })
+    ).json()) as { code: string };
+
+    await h.del('dev-a', `/spaces/${space.id}/invites/${code}`);
+    expect((await h.app.request(`/invites/${code}`)).status).toBe(404);
+    expect((await h.app.request('/invites/aaaa-bbbb-cccc')).status).toBe(404);
+  });
+
+  it('refuses a redemption that cannot prove it holds the fragment', async () => {
+    // The code alone is not enough, which is what makes a database dump a list
+    // of codes nobody can use.
+    const h = people();
+    const space = await h.space(false);
+    const k = await key();
+    const other = await key();
+    const { code } = (await (
+      await h.post('dev-a', `/spaces/${space.id}/invites`, { pub: k.pub })
+    ).json()) as { code: string };
+
+    const wrong = await other.sign(code, CAROL);
+    const res = await h.post('dev-c', `/invites/${code}/redeem`, { signature: wrong });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'bad_signature' });
+    // And the use was not spent — a wrong signature must not burn a link.
+    const { invites } = (await (
+      await h.get('dev-a', `/spaces/${space.id}/invites`)
+    ).json()) as { invites: { uses: number }[] };
+    expect(invites[0]?.uses).toBe(0);
+  });
+
+  it('will not let a signature for one account join a different one', async () => {
+    // The account is inside the challenge, so a signature captured off
+    // somebody else's redemption is not a way in.
+    const h = people();
+    const space = await h.space(false);
+    const k = await key();
+    const { code } = (await (
+      await h.post('dev-a', `/spaces/${space.id}/invites`, { pub: k.pub })
+    ).json()) as { code: string };
+
+    const forBob = await k.sign(code, BOB);
+    expect((await h.post('dev-c', `/invites/${code}/redeem`, { signature: forBob })).status).toBe(
+      403,
+    );
+    expect((await h.post('dev-b', `/invites/${code}/redeem`, { signature: forBob })).status).toBe(
+      201,
+    );
+  });
+
+  it('spends a use, and stops at the limit', async () => {
+    const h = people();
+    const space = await h.space(false);
+    const k = await key();
+    const { code } = (await (
+      await h.post('dev-a', `/spaces/${space.id}/invites`, { pub: k.pub, maxUses: 1 })
+    ).json()) as { code: string };
+
+    expect(
+      (await h.post('dev-b', `/invites/${code}/redeem`, { signature: await k.sign(code, BOB) }))
+        .status,
+    ).toBe(201);
+    const spent = await h.post('dev-c', `/invites/${code}/redeem`, {
+      signature: await k.sign(code, CAROL),
+    });
+    expect(spent.status).toBe(410);
+    expect(await spent.json()).toMatchObject({ error: 'invite_spent' });
+  });
+
+  it('is idempotent for somebody already in, and does not spend a use', async () => {
+    // A link opened in two tabs is not two joins.
+    const h = people();
+    const space = await h.space();
+    const k = await key();
+    const { code } = (await (
+      await h.post('dev-a', `/spaces/${space.id}/invites`, { pub: k.pub, maxUses: 1 })
+    ).json()) as { code: string };
+
+    const res = await h.post('dev-b', `/invites/${code}/redeem`, {
+      signature: await k.sign(code, BOB),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ joined: false });
+    const { invites } = (await (
+      await h.get('dev-a', `/spaces/${space.id}/invites`)
+    ).json()) as { invites: { uses: number }[] };
+    expect(invites[0]?.uses).toBe(0);
+  });
+
+  it('refuses one that has expired', async () => {
+    const h = people();
+    const space = await h.space(false);
+    const k = await key();
+    const { code } = (await (
+      await h.post('dev-a', `/spaces/${space.id}/invites`, { pub: k.pub, ttl: 1 })
+    ).json()) as { code: string };
+
+    await new Promise((r) => setTimeout(r, 5));
+    expect((await h.app.request(`/invites/${code}`)).status).toBe(200);
+    expect(
+      (await (await h.app.request(`/invites/${code}`)).json() as { status: string }).status,
+    ).toBe('expired');
+    expect(
+      (await h.post('dev-b', `/invites/${code}/redeem`, { signature: await k.sign(code, BOB) }))
+        .status,
+    ).toBe(410);
+  });
+
+  it('does not put a new member in a room they have no audience for', async () => {
+    // A room membership is what `canRead` resolves against, so a brand new
+    // member with no roles used to be able to fetch a moderators-only room's
+    // event log. Not its contents — they hold no keys — but its sizes, its
+    // timings and who sent what, which is the metadata `docs/03` §7 is careful
+    // about. It mattered less when the only way in was somebody typing your
+    // handle; a link goes to strangers.
+    const h = people();
+    const space = await h.space(false);
+    const mod = (await (
+      await h.post('dev-a', `/spaces/${space.id}/roles`, { bits: serialize(Permission.SEND) })
+    ).json()) as { id: string };
+    const open = (await (await h.post('dev-a', `/spaces/${space.id}/rooms`, {})).json()) as {
+      id: string;
+    };
+    const shut = (await (
+      await h.post('dev-a', `/spaces/${space.id}/rooms`, {
+        audience: { kind: 'roles', roles: [mod.id] },
+      })
+    ).json()) as { id: string };
+
+    const k = await key();
+    const { code } = (await (
+      await h.post('dev-a', `/spaces/${space.id}/invites`, { pub: k.pub })
+    ).json()) as { code: string };
+    await h.post('dev-b', `/invites/${code}/redeem`, { signature: await k.sign(code, BOB) });
+
+    const { rooms } = (await (await h.get('dev-b', `/spaces/${space.id}/rooms`)).json()) as {
+      rooms: { id: string }[];
+    };
+    expect(rooms.map((r) => r.id)).toEqual([open.id]);
+    expect((await h.get('dev-b', `/rooms/${shut.id}/events`)).status).toBe(404);
+  });
+});
+
 describe('leaving and removing', () => {
   it('lets anybody leave, and takes them out of the rooms too', async () => {
     const h = people();

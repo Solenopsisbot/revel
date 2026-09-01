@@ -39,6 +39,8 @@ import type {
   RoleInput,
   RoomInfo,
   SpaceInfo,
+  InviteInfo,
+  InvitePreview,
   SpaceMemberInfo,
   UpdateProfile,
 } from '@revel/protocol';
@@ -123,6 +125,16 @@ export interface ConversationCore {
   markRead(roomId: string, upTo?: string): Promise<void>;
 
   /** Local-only, because the server is the search adversary (`docs/03`). */
+  /**
+   * Say who is here again, because the group's keys moved.
+   *
+   * The roster is announced once per room per session, which is right while a
+   * group is stable and wrong the moment somebody joins — their leaf did not
+   * exist at the epoch the announcement was encrypted to, so they arrive to an
+   * empty member list. Called by whoever committed the new leaf.
+   */
+  reannounceFaces(roomIds: string[]): Promise<void>;
+
   search(query: Query, options?: SearchOptions): Hit[];
 }
 
@@ -172,6 +184,14 @@ export interface DirectoryCore {
   // authority: the server resolves who may see what from its roles, and the
   // client turns that into MLS groups (`docs/03` §4).
 
+  /**
+   * Commit anyone the Host says is a member but the group has never heard of.
+   *
+   * The half a membership row cannot do, done by whoever notices first — which
+   * is what makes an invite *link* work at all, since nobody is present to
+   * commit the person who followed it. Safe to run on every client at once.
+   */
+  reconcileGroups(): Promise<void>;
   spaces(): Promise<SpaceInfo[]>;
   /** Makes it, gives it a `#general`, and names it — `docs/18`, no wizard. */
   createSpace(name: string, colour?: string): Promise<SpaceInfo>;
@@ -204,6 +224,23 @@ export interface DirectoryCore {
   leaveSpace(spaceId: string): Promise<void>;
   /** A kick. Drops the membership row *and* removes their leaves from the groups. */
   removeFromSpace(spaceId: string, account: string): Promise<void>;
+
+  // -- invite links (`docs/03` §4 — the Wormhole trick) ----------------------
+
+  /**
+   * Make one. The private half comes back to you and belongs in a URL
+   * fragment; it must never be sent anywhere, which is the whole trick.
+   */
+  createInvite(
+    spaceId: string,
+    options?: { maxUses?: number; ttl?: number },
+  ): Promise<{ invite: InviteInfo; secret: string }>;
+  listInvites(spaceId: string): Promise<InviteInfo[]>;
+  revokeInvite(spaceId: string, code: string): Promise<void>;
+  /** Unauthenticated: a link is something you follow before you have an account. */
+  previewInvite(code: string): Promise<InvitePreview>;
+  /** Prove the fragment and take the membership. Keys come later, from a member. */
+  redeemInvite(code: string, secret: string): Promise<{ space: string; joined: boolean }>;
 
   spaceRoles(spaceId: string): Promise<RoleInfo[]>;
   /**

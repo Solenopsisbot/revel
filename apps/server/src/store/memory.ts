@@ -14,6 +14,7 @@ import type {
   GroupMemberInput,
   HandshakeAppend,
   HandshakeResult,
+  Invite,
   LoginSession,
   Membership,
   Override,
@@ -200,6 +201,38 @@ export class MemoryStore implements Store {
   async putRole(role: Role) {
     this.roles.set(role.id, role);
   }
+  invites = new Map<string, Invite>();
+
+  async putInvite(invite: Invite) {
+    this.invites.set(invite.code, { ...invite });
+  }
+  async getInvite(code: string) {
+    const found = this.invites.get(code);
+    return found ? { ...found } : null;
+  }
+  async listInvites(spaceId: string) {
+    return [...this.invites.values()]
+      .filter((i) => i.spaceId === spaceId)
+      .map((i) => ({ ...i }))
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+  async deleteInvite(spaceId: string, code: string) {
+    const found = this.invites.get(code);
+    if (found?.spaceId === spaceId) this.invites.delete(code);
+  }
+  async redeemInvite(code: string, now: number) {
+    const found = this.invites.get(code);
+    if (!found) return null;
+    if (found.expiresAt !== null && found.expiresAt <= now) return null;
+    if (found.maxUses !== null && found.uses >= found.maxUses) return null;
+    // The caller gets it as it was; the stored copy has spent a use. Postgres
+    // does the same thing in one statement, and the reference implementation
+    // has to agree or the conformance suite is worthless.
+    const before = { ...found };
+    this.invites.set(code, { ...found, uses: found.uses + 1 });
+    return before;
+  }
+
   async deleteRoom(roomId: string) {
     this.rooms.delete(roomId);
     this.events.delete(roomId);

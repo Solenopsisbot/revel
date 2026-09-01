@@ -21,21 +21,25 @@ import {
   CreateSpace,
   CreateSpaceRoom,
   canGrant,
+  CreateInvite,
   DEFAULT_EVERYONE,
+  fromBase64,
   has,
   MemberRolesInput,
   Permission,
   parse,
   type RoleInfo,
+  RedeemInvite,
   RoleInput,
   type SnowflakeFactory,
   type SpaceInfo,
   SpaceMembersInput,
   serialize,
+  verifyInviteRedemption,
 } from '@revel/protocol';
 import type { Hono } from 'hono';
-import { type Actor, spacePermissionsFor } from './policy.js';
-import type { Store } from './store/types.js';
+import { type Actor, canRead, spacePermissionsFor } from './policy.js';
+import type { Invite, Store } from './store/types.js';
 
 export interface SpaceDeps {
   store: Store;
@@ -126,7 +130,21 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
     const gated = await gate(c.req.raw, c.req.param('id'));
     if ('error' in gated) return c.json({ error: gated.error }, gated.status);
 
-    const rooms = await deps.store.listSpaceRooms(c.req.param('id'));
+    // Filtered by the same read check a fetch of the room would make, which is
+    // what `docs/03` §4 means by an audience: a room you have no audience for
+    // is a room you never learn exists. Unfiltered, being in a space was enough
+    // to enumerate its moderator-only rooms by name — no contents, since those
+    // are keys nobody can hand over, but their existence, their ids, and a
+    // handle to ask the event log about.
+    //
+    // `GET /groups/:id` already filters its own room list exactly this way.
+    // This is the same rule, applied where somebody actually goes looking.
+    const rooms = [];
+    for (const room of await deps.store.listSpaceRooms(c.req.param('id'))) {
+      if (await canRead(deps.store, room.id, gated.actor)) continue;
+      rooms.push(room);
+    }
+
     return c.json({
       rooms: rooms.map((r) => ({
         id: r.id,
@@ -243,6 +261,142 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
     return c.body(null, 204);
   });
 
+  // -- invite links (`docs/03` §4 — the Wormhole trick) -----------------------
+  //
+  // What the Host holds is deliberately not enough to use: the private half of
+  // an invite's key lives in the URL fragment and never arrives here, so
+  // redeeming means signing a challenge with something no row contains.
+  //
+  // That bounds a *leak*. It is not a defence against this server, which can
+  // write a membership row for anyone at any time — and does not need to,
+  // because a membership row is not access. Only a member's client can commit
+  // somebody into an MLS group (`docs/03` §5), which is the property doing the
+  // real work here and the reason this route is allowed to be this simple.
+
+  app.post('/spaces/:id/invites', async (c) => {
+    const spaceId = c.req.param('id');
+    const gated = await gate(c.req.raw, spaceId, Permission.INVITE);
+    if ('error' in gated) return c.json({ error: gated.error }, gated.status);
+
+    const parsed = CreateInvite.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
+
+    const now = Date.now();
+    const invite = {
+      code: inviteCode(),
+      spaceId,
+      createdBy: gated.actor.accountId,
+      pub: parsed.data.pub,
+      uses: 0,
+      maxUses: parsed.data.maxUses ?? null,
+      expiresAt: parsed.data.ttl ? now + parsed.data.ttl : null,
+      createdAt: now,
+    };
+    await deps.store.putInvite(invite);
+    return c.json(wireInvite(invite), 201);
+  });
+
+  app.get('/spaces/:id/invites', async (c) => {
+    const spaceId = c.req.param('id');
+    const gated = await gate(c.req.raw, spaceId, Permission.INVITE);
+    if ('error' in gated) return c.json({ error: gated.error }, gated.status);
+
+    const invites = await deps.store.listInvites(spaceId);
+    return c.json({ invites: invites.map(wireInvite) });
+  });
+
+  app.delete('/spaces/:id/invites/:code', async (c) => {
+    const spaceId = c.req.param('id');
+    const gated = await gate(c.req.raw, spaceId, Permission.INVITE);
+    if ('error' in gated) return c.json({ error: gated.error }, gated.status);
+
+    // Anyone who may invite may revoke, including somebody else's link. A link
+    // is a way into a space rather than a possession of the person who made
+    // it, and a leaked one that only its author can kill is a leak with a
+    // single point of failure.
+    await deps.store.deleteInvite(spaceId, c.req.param('code'));
+    return c.body(null, 204);
+  });
+
+  /**
+   * What an invite looks like to somebody who has not joined.
+   *
+   * **Unauthenticated on purpose** — the whole point of a link is that you
+   * follow it before you have an account. And deliberately almost empty: the
+   * Host has never been told what the space is called (`docs/04` §1), so it
+   * cannot put a name here, and inventing one would be putting a name exactly
+   * where the design says one may not go. A member count is a true thing it
+   * genuinely knows.
+   */
+  app.get('/invites/:code', async (c) => {
+    const invite = await deps.store.getInvite(c.req.param('code'));
+    // 404 for a code that never existed *and* for one that was revoked. The
+    // difference is not a stranger's business, and telling them would make
+    // this endpoint an oracle for which codes have ever been real.
+    if (!invite) return c.json({ error: 'no_such_invite' }, 404);
+
+    const now = Date.now();
+    const status =
+      invite.expiresAt !== null && invite.expiresAt <= now
+        ? 'expired'
+        : invite.maxUses !== null && invite.uses >= invite.maxUses
+          ? 'used_up'
+          : 'ok';
+
+    return c.json({
+      code: invite.code,
+      space: invite.spaceId,
+      members: (await deps.store.listSpaceMembers(invite.spaceId)).length,
+      status,
+    });
+  });
+
+  /**
+   * Redeem: a membership row, and nothing else.
+   *
+   * Signed rather than bearer, so the code alone is not enough — a database
+   * dump is a list of codes nobody can use. The challenge names the redeeming
+   * account, so a signature captured off one redemption cannot be replayed to
+   * join a different one.
+   *
+   * This hands over **no keys**, and could not: the Host has none. Somebody
+   * whose row exists and whose leaf does not can see a room and read nothing
+   * in it, until a member's client reconciles them in.
+   */
+  app.post('/invites/:code/redeem', async (c) => {
+    const actor = await deps.authenticate(c.req.raw);
+    if (!actor) return c.json({ error: 'unauthenticated' }, 401);
+
+    const code = c.req.param('code');
+    const parsed = RedeemInvite.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
+
+    const peek = await deps.store.getInvite(code);
+    if (!peek) return c.json({ error: 'no_such_invite' }, 404);
+
+    // Verified **before** the use is spent, so a wrong signature cannot burn
+    // somebody else's link.
+    const ok = await verifyInviteRedemption(
+      fromBase64(peek.pub),
+      code,
+      actor.accountId,
+      fromBase64(parsed.data.signature),
+    ).catch(() => false);
+    if (!ok) return c.json({ error: 'bad_signature' }, 403);
+
+    // Already in. Idempotent rather than an error, and *without* spending a
+    // use: a link opened twice in two tabs is not two joins.
+    if (await deps.store.getSpaceMember(peek.spaceId, actor.accountId)) {
+      return c.json({ space: peek.spaceId, joined: false });
+    }
+
+    const invite = await deps.store.redeemInvite(code, Date.now());
+    if (!invite) return c.json({ error: 'invite_spent' }, 410);
+
+    await joinSpace(deps.store, invite.spaceId, actor.accountId);
+    return c.json({ space: invite.spaceId, joined: true }, 201);
+  });
+
   // -- membership ------------------------------------------------------------
 
   app.get('/spaces/:id/members', async (c) => {
@@ -267,17 +421,10 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
       }
     }
 
+    // Membership is delivery; a member's client still has to commit them into
+    // the MLS group before they can read a word (`docs/03` §5).
     for (const account of parsed.data.accounts) {
-      // No roles to start. Adding somebody and granting them something are two
-      // decisions, and rolling them into one invite is how people end up with
-      // permissions nobody remembers giving them.
-      await deps.store.putSpaceMember(spaceId, account, []);
-      // Into every room whose audience they now match. Membership is delivery;
-      // a member's client still has to commit them into the MLS group before
-      // they can read a word (`docs/03` §5).
-      for (const room of await deps.store.listSpaceRooms(spaceId)) {
-        await deps.store.addMember(room.id, account);
-      }
+      await joinSpace(deps.store, spaceId, account);
     }
     return c.json({ added: parsed.data.accounts }, 201);
   });
@@ -442,4 +589,64 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
 /** Whether any of `held` is in `wanted`. */
 function holdsAny(held: readonly string[], wanted: readonly string[]): boolean {
   return held.some((h) => wanted.includes(h));
+}
+
+/** Six characters of unambiguous alphabet, three groups. `docs/18`'s shape. */
+function inviteCode(): string {
+  // No `l`, `1`, `0` or `o`: this is a thing people read off a screen and type
+  // into another one, and a code that cannot be transcribed is a code that
+  // generates a support conversation instead of a join.
+  const alphabet = 'abcdefghijkmnpqrstuvwxyz23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  const chars = [...bytes].map((b) => alphabet[b % alphabet.length]);
+  return `${chars.slice(0, 4).join('')}-${chars.slice(4, 8).join('')}-${chars.slice(8).join('')}`;
+}
+
+/** The wire shape of an invite. Null becomes absent, per the schema. */
+function wireInvite(i: Invite) {
+  return {
+    code: i.code,
+    space: i.spaceId,
+    pub: i.pub,
+    createdBy: i.createdBy,
+    createdAt: i.createdAt,
+    uses: i.uses,
+    ...(i.maxUses !== null ? { maxUses: i.maxUses } : {}),
+    ...(i.expiresAt !== null ? { expiresAt: i.expiresAt } : {}),
+  };
+}
+
+/**
+ * Put somebody in a space, and in the rooms they actually match.
+ *
+ * **Rooms whose audience covers them, not every room.** The membership loop
+ * this replaces added a new member to every room in the space including
+ * role-gated ones — and a room membership is what `canRead` resolves against,
+ * so a brand new member with no roles could fetch a moderators-only room's
+ * event log. Not its contents: they hold no keys and never would. But its
+ * sizes, its timings and who sent what, which is exactly the metadata
+ * `docs/03` §7 is careful about.
+ *
+ * It mattered less when the only way in was somebody typing your handle. An
+ * invite link goes to strangers.
+ */
+async function joinSpace(store: Store, spaceId: string, account: string): Promise<void> {
+  // No roles to start. Adding somebody and granting them something are two
+  // decisions, and rolling them into one invite is how people end up with
+  // permissions nobody remembers giving them.
+  await store.putSpaceMember(spaceId, account, []);
+  const roles: string[] = [];
+
+  for (const room of await store.listSpaceRooms(spaceId)) {
+    const audience = room.audience ?? 'everyone';
+    if (audience === 'everyone') {
+      await store.addMember(room.id, account);
+    } else if (audience.startsWith('roles:')) {
+      const wanted = audience.slice('roles:'.length).split(',').filter(Boolean);
+      if (holdsAny(roles, wanted)) await store.addMember(room.id, account);
+    } else if (audience.startsWith('list:')) {
+      const named = audience.slice('list:'.length).split(',').filter(Boolean);
+      if (named.includes(account)) await store.addMember(room.id, account);
+    }
+  }
 }

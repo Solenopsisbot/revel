@@ -251,6 +251,102 @@ export function describeStore(name: string, harness: StoreHarness): void {
         );
       });
 
+      it('spends an invite once, even when two people redeem the last use at once', async () => {
+        // A link posted in a group chat is followed by several people within a
+        // second of each other, so this is the normal case rather than a race
+        // worth being clever about. `redeemInvite` is one statement carrying
+        // the whole policy for exactly that reason.
+        const id = uniq('space');
+        await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });
+        const code = uniq('code');
+        await store.putInvite({
+          code,
+          spaceId: id,
+          createdBy: 'acct-a',
+          pub: 'pub',
+          uses: 0,
+          maxUses: 1,
+          expiresAt: null,
+          createdAt: 1,
+        });
+
+        const both = await Promise.all([
+          store.redeemInvite(code, 100),
+          store.redeemInvite(code, 100),
+        ]);
+        expect(both.filter(Boolean)).toHaveLength(1);
+        // And the winner was handed the row as it was *before* its use, which
+        // is what a caller reports back.
+        expect(both.find(Boolean)).toMatchObject({ uses: 0, maxUses: 1 });
+      });
+
+      it('refuses an invite that has expired, without spending it', async () => {
+        const id = uniq('space');
+        await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });
+        const code = uniq('code');
+        await store.putInvite({
+          code,
+          spaceId: id,
+          createdBy: 'acct-a',
+          pub: 'pub',
+          uses: 0,
+          maxUses: null,
+          expiresAt: 50,
+          createdAt: 1,
+        });
+
+        expect(await store.redeemInvite(code, 100)).toBeNull();
+        expect((await store.getInvite(code))?.uses).toBe(0);
+        // Still fine a moment before it lapses.
+        expect(await store.redeemInvite(code, 49)).toMatchObject({ uses: 0 });
+      });
+
+      it('lists a space\'s invites and revokes one without touching the others', async () => {
+        const id = uniq('space');
+        await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });
+        const base = {
+          spaceId: id,
+          createdBy: 'acct-a',
+          pub: 'pub',
+          uses: 0,
+          maxUses: null,
+          expiresAt: null,
+        };
+        const keep = uniq('code');
+        const gone = uniq('code');
+        await store.putInvite({ ...base, code: keep, createdAt: 1 });
+        await store.putInvite({ ...base, code: gone, createdAt: 2 });
+        expect((await store.listInvites(id)).map((i) => i.code)).toEqual([gone, keep]);
+
+        await store.deleteInvite(id, gone);
+        expect((await store.listInvites(id)).map((i) => i.code)).toEqual([keep]);
+        // A revoked code is gone rather than flagged: the preview route is
+        // unauthenticated, and "this used to be real" is not a stranger's
+        // business.
+        expect(await store.getInvite(gone)).toBeNull();
+      });
+
+      it('will not let one space revoke another space\'s invite', async () => {
+        const mine = uniq('space');
+        const theirs = uniq('space');
+        await store.createSpace({ id: mine, owner: 'acct-a', everyoneBits: '3' });
+        await store.createSpace({ id: theirs, owner: 'acct-b', everyoneBits: '3' });
+        const code = uniq('code');
+        await store.putInvite({
+          code,
+          spaceId: theirs,
+          createdBy: 'acct-b',
+          pub: 'pub',
+          uses: 0,
+          maxUses: null,
+          expiresAt: null,
+          createdAt: 1,
+        });
+
+        await store.deleteInvite(mine, code);
+        expect(await store.getInvite(code)).not.toBeNull();
+      });
+
       it('refuses to delete `@everyone`', async () => {
         const id = uniq('space');
         await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });

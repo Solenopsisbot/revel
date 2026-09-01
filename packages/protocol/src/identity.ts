@@ -209,6 +209,95 @@ export async function verifyAuth(
  * false rather than throwing on a key that will not import: an attacker
  * supplies these bytes.
  */
+// ---------------------------------------------------------------------------
+// Invite links (`docs/03` §4 — the Wormhole trick)
+// ---------------------------------------------------------------------------
+
+const INVITE_CONTEXT = ENC.encode('revel/invite-redeem/v1');
+
+/**
+ * What a redeemer signs, and what the Host verifies.
+ *
+ * The **account is in the challenge**, so a signature captured off one
+ * person's redemption cannot be replayed to join a different account. The
+ * code is in it too, so a signature from one link is not a signature for
+ * another made with the same key.
+ *
+ * Context-prefixed like `verifyAuth`, and for the same reason: a key that
+ * signs one kind of thing should not be able to be tricked into having signed
+ * another. This one only ever signs redemptions, which makes the prefix cheap
+ * insurance rather than load-bearing — but the cost of getting it wrong later
+ * is a key with two meanings.
+ */
+function inviteChallenge(code: string, account: string): Uint8Array {
+  const payload = ENC.encode(`${code}:${account}`);
+  const signed = new Uint8Array(INVITE_CONTEXT.length + payload.length);
+  signed.set(INVITE_CONTEXT, 0);
+  signed.set(payload, INVITE_CONTEXT.length);
+  return signed;
+}
+
+/**
+ * Mint an invite keypair.
+ *
+ * The public half goes to the Host; the private half goes in the URL fragment
+ * and must never be sent anywhere. Returned raw rather than as a `CryptoKey`
+ * because the private half's destination is a string in a link.
+ */
+export async function mintInviteKey(): Promise<{ pub: Uint8Array; secret: Uint8Array }> {
+  // `generateKey`'s type is the union of "one key" and "a pair", and only the
+  // caller's algorithm decides which. Ed25519 is always a pair.
+  const pair = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, [
+    'sign',
+    'verify',
+  ])) as unknown as { publicKey: CryptoKey; privateKey: CryptoKey };
+  const pub = new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey));
+  // PKCS#8, because WebCrypto will not export an Ed25519 private key as raw —
+  // and it is what `importKey` wants back, so the fragment carries exactly the
+  // bytes that go straight back in.
+  const secret = new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey));
+  return { pub, secret };
+}
+
+/** Sign a redemption with the key from the fragment. */
+export async function signInviteRedemption(
+  secret: Uint8Array,
+  code: string,
+  account: string,
+): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
+    'pkcs8',
+    new Uint8Array(secret),
+    { name: 'Ed25519' },
+    false,
+    ['sign'],
+  );
+  // `slice()` so the argument is backed by a plain `ArrayBuffer`, which is
+  // what `BufferSource` means and what a `Uint8Array` over a `SharedArrayBuffer`
+  // is not. Same copy the verify path makes, for the same reason.
+  const signature = await crypto.subtle.sign(
+    { name: 'Ed25519' },
+    key,
+    inviteChallenge(code, account).slice(),
+  );
+  return new Uint8Array(signature);
+}
+
+/**
+ * Does this signature prove the redeemer holds the fragment?
+ *
+ * False rather than throwing on anything malformed: a stranger supplies every
+ * one of these bytes.
+ */
+export async function verifyInviteRedemption(
+  pub: Uint8Array,
+  code: string,
+  account: string,
+  signature: Uint8Array,
+): Promise<boolean> {
+  return verifyEd25519(pub, signature, inviteChallenge(code, account));
+}
+
 async function verifyEd25519(
   publicKey: Uint8Array,
   signature: Uint8Array,

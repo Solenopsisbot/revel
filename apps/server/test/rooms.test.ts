@@ -159,7 +159,9 @@ describe('opening a DM', () => {
     const h = people();
     const room = (await (await h.dm('dev-a', BOB)).json()) as any;
     expect((await h.send('dev-a', bodyFor(), room.id)).status).toBe(201);
-    expect((await h.send('dev-c', bodyFor(), room.id)).status).toBe(403);
+    // 404 rather than 403 for carol: a DM's id is derived from its two
+    // accounts, so a 403 would confirm that those two people have one.
+    expect((await h.send('dev-c', bodyFor(), room.id)).status).toBe(404);
   });
 });
 
@@ -252,7 +254,7 @@ describe('group DMs', () => {
     const h = people();
     const room = (await (await h.groupRoom('dev-a', [BOB])).json()) as any;
     await h.del('dev-b', `/rooms/${room.id}/members/me`);
-    expect((await h.send('dev-b', bodyFor(), room.id)).status).toBe(403);
+    expect((await h.send('dev-b', bodyFor(), room.id)).status).toBe(404);
     // ...and nothing here can undo bob's copy of what he already decrypted.
   });
 });
