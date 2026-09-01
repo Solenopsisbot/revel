@@ -21,6 +21,7 @@ import {
   CreateSpace,
   CreateSpaceRoom,
   canGrant,
+  DEFAULT_EVERYONE,
   has,
   MemberRolesInput,
   Permission,
@@ -41,16 +42,6 @@ export interface SpaceDeps {
   ids: SnowflakeFactory;
   authenticate(req: Request): Promise<Actor | null>;
 }
-
-/**
- * `@everyone`'s starting permissions.
- *
- * Enough to take part and nothing that changes the space. A new member can
- * read, say something, and attach a file; everything else is a decision
- * somebody has to make on purpose.
- */
-const DEFAULT_EVERYONE =
-  Permission.VIEW | Permission.SEND | Permission.SEND_MEDIA | Permission.MENTION_EVERYONE;
 
 export function mountSpaces(app: Hono, deps: SpaceDeps): void {
   /** The space, plus what *you* may do in it — so the client gates on the same numbers. */

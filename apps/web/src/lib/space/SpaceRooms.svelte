@@ -148,9 +148,10 @@ function toggleRole(a: Audience, role: string): Audience {
 
 <h2>Rooms</h2>
 <p class="lede">
-  {space.rooms.length} rooms in {space.name}. Deleting one deletes its history
-  for everyone — the messages were encrypted to this room and there's nowhere
-  else they live.
+  {space.rooms.length}
+  {space.rooms.length === 1 ? 'room' : 'rooms'} in {space.name}. Deleting one
+  deletes its history for everyone — the messages were encrypted to this room
+  and there's nowhere else they live.
 </p>
 
 {#if room}

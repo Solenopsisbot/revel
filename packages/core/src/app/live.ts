@@ -137,6 +137,19 @@ class LiveConversation implements ConversationCore {
     // budget is for the first of those and says nothing about the second.
     void this.#rooms.catchUp(roomId).catch(() => {});
     this.#rooms.listen(roomId);
+
+    // Say who is here, on arrival rather than on the first message.
+    //
+    // The roster is `room.faces` and nothing else writes it (`docs/03` §7), so
+    // a room announced only on send reads "In this room — 0" to the person
+    // standing in it — which is exactly what a new space looks like, and reads
+    // as broken rather than as empty. Being in a room is the thing being
+    // claimed, and opening it is when that becomes true.
+    //
+    // `#announceFace` is once per room per session, so this costs one silent
+    // state event the first time and nothing afterwards.
+    const face = this.#faceFor?.(roomId);
+    if (face) void this.#announceFace(roomId, face);
     return state;
   }
 

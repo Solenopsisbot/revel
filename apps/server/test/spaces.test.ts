@@ -11,7 +11,7 @@
  *   exist.** Anything else makes membership of every private space on a Host
  *   enumerable by anybody with an account.
  */
-import { Permission, serialize } from '@revel/protocol';
+import { DEFAULT_EVERYONE, Permission, serialize } from '@revel/protocol';
 import { describe, expect, it } from 'vitest';
 import { harness } from './helpers.js';
 
@@ -77,6 +77,13 @@ describe('making a space', () => {
     const bits = BigInt(roles.roles[0]?.bits as string);
     expect(bits & Permission.SEND).toBe(Permission.SEND);
     expect(bits & Permission.MANAGE_ROLES).toBe(0n);
+    // Not `MENTION_EVERYONE`. Waking every phone in a community is the loudest
+    // thing a member can do, and `docs/35` rule 8 puts the check on every
+    // reader — a default that granted it would mean the check never refused
+    // anything. There were two copies of this constant and they disagreed;
+    // this is the one, from `@revel/protocol`.
+    expect(bits & Permission.MENTION_EVERYONE).toBe(0n);
+    expect(bits).toBe(DEFAULT_EVERYONE);
   });
 
   it('lists only the spaces you are in', async () => {

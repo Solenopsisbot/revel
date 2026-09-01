@@ -38,9 +38,27 @@ export const Permission = {
 
 export type PermissionName = keyof typeof Permission;
 
-/** What `@everyone` gets in a new space. */
-export const DEFAULT_EVERYONE =
-  Permission.VIEW | Permission.SEND | Permission.SEND_MEDIA | Permission.INVITE;
+/**
+ * What `@everyone` gets in a new space.
+ *
+ * Enough to take part and nothing that changes the space or reaches past it: a
+ * new member can read, say something, and attach a file. Everything else is a
+ * decision somebody makes on purpose.
+ *
+ * `MENTION_EVERYONE` is deliberately **off**. Waking every phone in a
+ * community is the loudest thing a member can do, and `docs/35` rule 8 makes
+ * every reader enforce it — a default that granted it would mean the check
+ * existed and never refused anything.
+ *
+ * `INVITE` is off for the same shape of reason one level down: who is in a
+ * space is the space's central fact, and "anyone here can add anyone" is a
+ * choice rather than a starting point.
+ *
+ * **The one definition.** `apps/server` had a second copy of this that granted
+ * `MENTION_EVERYONE` while its own comment said it did not, which is the exact
+ * failure two copies of a constant produce.
+ */
+export const DEFAULT_EVERYONE = Permission.VIEW | Permission.SEND | Permission.SEND_MEDIA;
 
 export function combine(...flags: bigint[]): bigint {
   return flags.reduce((a, f) => a | f, 0n);

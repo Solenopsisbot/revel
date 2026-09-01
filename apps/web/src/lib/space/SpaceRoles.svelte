@@ -36,8 +36,16 @@ const gate = $derived(
   role ? canEditRole(space, role, me) : { ok: false as const, why: 'No roles yet.' },
 );
 
-/** Everyone carrying this role, for the "who does this affect" line. */
-const holders = $derived(role ? space.members.filter((m) => holds(m.roles, role)) : []);
+/**
+ * Everyone carrying this role, for the "who does this affect" line.
+ *
+ * `@everyone` is every member by definition and is never listed on anybody's
+ * membership — so filtering by it counted nobody, and the screen said "0 people
+ * have this role" about the one role that literally everyone has.
+ */
+const holders = $derived(
+  role ? (role.everyone ? space.members : space.members.filter((m) => holds(m.roles, role))) : [],
+);
 
 const isAdmin = $derived(!!role?.perms.includes('ADMINISTRATOR'));
 
