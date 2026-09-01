@@ -15,6 +15,7 @@
  * which is also the moment a spinner is already justified.
  */
 import type { EnrolDeps, EnvelopeApi, IdpTransport, PrfProvider } from '@revel/core';
+import { cryptoWasm } from './wasm.js';
 
 /** Where the IdP lives. Same origin in dev; configurable for a real deployment. */
 const IDP = import.meta.env.VITE_IDP_URL ?? '';
@@ -64,8 +65,7 @@ export async function authenticateDevice(session: {
   if (deviceToken) return deviceToken;
 
   const [{ authPayload, decodeDeviceCert, toAccountId, toBase64, fromBase64 }, wasm] =
-    await Promise.all([import('@revel/protocol'), import('@revel/crypto-wasm')]);
-  await wasm.default();
+    await Promise.all([import('@revel/protocol'), cryptoWasm()]);
 
   // The protocol's decoder rather than the wasm one: `readDeviceCert` returns a
   // `MemberInfo` for rendering and does not carry the device key, which is the
@@ -137,8 +137,7 @@ let envelopePromise: Promise<EnvelopeApi> | null = null;
 /** The wasm envelope, initialised once and shared. */
 export function loadEnvelope(): Promise<EnvelopeApi> {
   envelopePromise ??= (async () => {
-    const wasm = await import('@revel/crypto-wasm');
-    await wasm.default();
+    const wasm = await cryptoWasm();
     const { Envelope } = wasm;
     return {
       generateAccountKey: () => Envelope.generateAccountKey(),
@@ -171,8 +170,7 @@ export async function enrolDeps(): Promise<EnrolDeps> {
     transport,
     envelope: await loadEnvelope(),
     signDeviceCert: async (accountSeed, label) => {
-      const wasm = await import('@revel/crypto-wasm');
-      await wasm.default();
+      const wasm = await cryptoWasm();
       const account = wasm.Account.fromSecret(accountSeed);
       const device = new wasm.Device(account, label);
       return {

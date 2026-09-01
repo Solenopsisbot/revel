@@ -44,6 +44,7 @@ import {
 import { LocalCryptoEngine } from '@revel/crypto';
 import { myFaces } from './faces.svelte.js';
 import { notifications } from './notify.svelte.js';
+import { cryptoWasm } from './wasm.js';
 
 /** Where the Host lives. Same origin in dev, behind the vite proxy. */
 const HOST = import.meta.env.VITE_HOST_URL ?? '';
@@ -88,9 +89,9 @@ export interface LiveStack {
 export async function startLive(signedIn: Session): Promise<LiveStack> {
   if (!signedIn.device) throw new Error('this device has no certificate yet');
 
-  // The wasm has to be up before the engine touches it.
-  const wasm = await import('@revel/crypto-wasm');
-  await wasm.default();
+  // The wasm has to be up before the engine touches it. Shared, because two
+  // overlapping initialisations produce two instances and one of them wins.
+  await cryptoWasm();
 
   const crypto = new LocalCryptoEngine();
   const identity = await crypto.open({

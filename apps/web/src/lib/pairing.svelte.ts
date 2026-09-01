@@ -14,6 +14,7 @@
  * cheap enough not to be worth the complexity of anything else.
  */
 import { transport } from './identity.js';
+import { cryptoWasm } from './wasm.js';
 
 /** How often to ask, and for how long. Matches the channel's own lifetime. */
 const POLL_MS = 2000;
@@ -46,8 +47,7 @@ class Pairing {
     this.stop();
     this.status = 'waiting';
     try {
-      const wasm = await import('@revel/crypto-wasm');
-      await wasm.default();
+      const wasm = await cryptoWasm();
       const secret = wasm.Transfer.generateKey();
       const pub = wasm.Transfer.publicKey(secret);
       this.#secret = secret;

@@ -42,7 +42,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const pageErrors = [];
-/** The open MLS wasm trap (`docs/31` §32). Counted so a run says whether it hit. */
+/** Was `docs/31` §32, now fixed. Kept as an assertion so a regression is loud. */
 const cryptoFailures = [];
 
 /** A signed-up account with one face, sitting in the app with the real core up. */
@@ -95,6 +95,26 @@ const C = `uc${stamp}`;
 const alice = await signUp(A, 'Viola');
 const bob = await signUp(B, 'Rae');
 const kit = await signUp(C, 'Kit');
+
+// The root cause of `docs/31` §32: `revel_crypto.js` guards initialisation
+// with a check that happens before the await that instantiates, so two
+// overlapping callers each got their own `WebAssembly.Instance` and the second
+// replaced the first — leaving every object already made pointing into the
+// wrong linear memory. One fetch means one instance.
+for (const [who, page] of [
+  ['alice', alice],
+  ['bob', bob],
+  ['kit', kit],
+]) {
+  const loads = await page.evaluate(
+    () =>
+      performance
+        .getEntriesByType('resource')
+        .map((e) => e.name)
+        .filter((n) => /revel_crypto_bg\.wasm/.test(n)).length,
+  );
+  ok(`${who} instantiated the crypto wasm exactly once`, loads === 1, loads);
+}
 
 await openDm(alice, B);
 await alice.evaluate(() => void window.__revel.core.send('from alice'));
@@ -190,19 +210,15 @@ const rendered = await bob.evaluate(() => ({
     .messages.map((m) => m.body),
   showing: window.__revel.core.currentRoomId,
 }));
-// Same `docs/31` §32 trap, seen from the other side: when it fires during
-// `send` the message never leaves, and alice's own copy sits there as failed.
-// Reported rather than asserted, for the same reason as the muted case below.
-const aliceSent = await alice.evaluate(() =>
-  window.__revel.live.stack.rooms
-    .state(window.__revel.core.currentRoomId)
-    .messages.some((m) => m.body === 'three' && !m.failed),
+ok('but it does render', rendered.dom, rendered);
+ok(
+  "and alice's send did not fail",
+  await alice.evaluate(() =>
+    window.__revel.live.stack.rooms
+      .state(window.__revel.core.currentRoomId)
+      .messages.some((m) => m.body === 'three' && !m.failed),
+  ),
 );
-if (!aliceSent) {
-  console.log("  --    skipped: alice's send failed — the docs/31 §32 wasm trap");
-} else {
-  ok('but it does render', rendered.dom, rendered);
-}
 
 console.log('\nmuting it — `docs/35`: mute wins, always');
 await bob.evaluate((r) => window.__revel.core.openHome(r), kitRoom);
@@ -224,17 +240,9 @@ const muted = await bob.evaluate(
   }),
   aliceRoom,
 );
-// `docs/31` §32: the MLS wasm traps on `exportGroup` after a device sends a
-// silent event and then receives in the same room, and when it trips on the
-// *sending* side the message never leaves. Asserting on a message that was
-// never sent would turn an open crypto bug into a flaky notification test, so
-// this says so instead.
-if (!muted.arrived) {
-  console.log('  --    skipped: "four" never arrived — the docs/31 §32 wasm trap');
-} else {
-  ok('a quiet dot, never a badge', muted.mark === 'dot' && muted.dm?.mention === false, muted);
-  ok('and it still counts as unread', (muted.dm?.unread ?? 0) > 0, muted);
-}
+ok('the message arrived at all', muted.arrived, muted);
+ok('a quiet dot, never a badge', muted.mark === 'dot' && muted.dm?.mention === false, muted);
+ok('and it still counts as unread', (muted.dm?.unread ?? 0) > 0, muted);
 
 console.log('\ncoming back');
 await bob.reload({ waitUntil: 'load' });
@@ -250,7 +258,7 @@ ok(
 );
 
 console.log(`\npage errors: ${pageErrors.length ? pageErrors.join('; ') : 'none'}`);
-console.log(`crypto persist failures (docs/31 §32): ${cryptoFailures.length}`);
+ok('no crypto persist failures', cryptoFailures.length === 0, cryptoFailures);
 await browser.close();
 console.log(failures ? `\n${failures} failed` : '\nall passed');
 process.exitCode = failures ? 1 : 0;

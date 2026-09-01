@@ -2101,8 +2101,8 @@ propagated out of `receive` into a socket handler that swallows errors.
 
 Two separate faults, and only one of them is the crypto's:
 
-1. **The wasm trap.** Still open. Narrowed a long way in §33 below, which is
-   worth reading before picking it up again.
+1. **The wasm trap.** Fixed — see §33. It was two `WebAssembly.Instance`s
+   where the code assumed one.
 
 2. **The engine's response to it.** `receive` let an unrelated failure discard
    work that was already durable. The events were decrypted, written to the
@@ -2123,10 +2123,52 @@ third to be looking elsewhere, a read receipt, and a real socket. Every half of
 it passed its own tests.
 
 
-## 33. Hunting the wasm trap, and what it is not
+## 33. Two wasm instances, and a day spent looking inside the wrong one
 
-A day on `RuntimeError: memory access out of bounds`. Not fixed. This is what
-is known, so the next attempt does not start from nothing.
+`RuntimeError: memory access out of bounds`, and the answer was not in the
+crypto at all.
+
+### The cause
+
+`revel_crypto.js` guards initialisation like this:
+
+```js
+async function __wbg_init(module_or_path) {
+    if (wasm !== undefined) return wasm;
+    ...
+    const { instance, module } = await __wbg_load(await module_or_path, imports);
+```
+
+The check happens **before** the await that fetches and instantiates. Two
+callers that overlap therefore both see `undefined`, both instantiate, and the
+second to finish overwrites the module-level `wasm` with a different instance
+and a different linear memory.
+
+Every `Account`, `Device` and `Group` created before that swap keeps a pointer
+that is now read against the wrong heap. The pointers are still *valid* — they
+just address someone else's memory. Which is why the symptoms made no sense:
+
+- Out-of-bounds reads from accessors that do nothing but take a mutex and read
+  a field.
+- A key-package store reporting zero entries while insisting nothing changed.
+- `recursive use of an object detected which would lead to unsafe aliasing in
+  rust`, because the borrow flag being read belongs to the other instance.
+
+The app called `wasm.default()` from six places, and `session.restore()` starts
+three floating promises that each want it — so in practice they overlapped, and
+whether they overlapped *badly* depended on timing. Hence: about half of runs.
+
+The fix is `apps/web/src/lib/wasm.ts`, which memoises the **promise** rather
+than a ready flag. Nothing in the app calls `default()` directly any more. The
+`unread` e2e now asserts each page fetches `revel_crypto_bg.wasm` exactly once,
+which is the cheapest possible guard against this coming back.
+
+`performance.getEntriesByType('resource')` is what finally said it out loud:
+one glue module, two fetches of the binary.
+
+### What it was not
+
+Worth recording, because each of these cost a run and each looked plausible.
 
 ### What actually happens
 
@@ -2151,7 +2193,8 @@ survive contact.
 ### Ruled out, each by measurement rather than argument
 
 - **Re-entrancy.** A guard around every call at the `Session` boundary, logging
-  any call that begins while another is running. It never fired once.
+  any call that begins while another is running. It never fired once — which
+  was true, and pointed away from the answer.
 - **Use-after-free.** `__wbg_ptr` for the `Device`, the `Account` and every
   `Group`, sampled at the moment of the trap, is identical to what it was while
   healthy and non-zero.
@@ -2167,20 +2210,18 @@ survive contact.
   shuffled delivery, `members()` and the state getters on every round, and
   key-package churn every tenth. It has never faulted.
 
-### What it does need
+### The clue that was right, read wrongly
 
-The app, and **concurrency**. `Promise.all([alice.send, bob.send,
-bob.markRead])` against one room faults inside about three rounds. The same
-operations issued one after another do not, however many times they are
-repeated.
+It needed the app, and it needed **concurrency**: `Promise.all([alice.send,
+bob.send, bob.markRead])` faulted inside about three rounds, the same
+operations sequentially never did. I read that as "concurrency changes the
+allocation pattern, so it must be a dependency" and went looking at mls-rs.
 
-That is the part worth sitting with: wasm calls provably never overlap — the
-re-entrancy guard proves it, and JavaScript would have to yield inside a
-synchronous call for it to be otherwise. So what concurrency changes is not
-simultaneity. It changes *ordering* and *allocation pattern*: which awaits
-resolve between which wasm calls, and therefore what the heap looks like when
-the next one runs. That points at a dependency rather than at this crate, which
-contains no `unsafe` at all.
+It was simpler than that. Concurrency was not perturbing the crypto — it was
+making two `default()` calls overlap. The tell was there the whole time: the
+node harness runs *more* clients through *one* wasm instance and never fails,
+and `repro.html` calls `init()` exactly once and never fails. Both of those
+were "controls that pass"; both were actually saying *one instance is fine*.
 
 ### The tool that made it findable
 
@@ -2207,10 +2248,16 @@ of it is idempotent.
 It is **not** the cause of the trap — the trap survives the fix — but it was
 real work nobody asked for, hiding an error nobody read.
 
-### Where to go next
+### The lesson
 
-Bisect `mls-rs` and `mls-rs-crypto-rustcrypto` versions against the concurrent
-scenario. Failing that, reproduce it headlessly by driving `RoomSync` under
-`wasm-bindgen-test` with a transport that interleaves deliveries on purpose,
-which would turn a three-minute browser run into a fast loop and make it
-something to send upstream.
+I spent a long time inside the crypto because the stack trace pointed there,
+and a stack trace names where a fault *surfaced*, not where it was caused. Two
+of my "controls" — the node harness and `repro.html` — were quietly holding the
+answer, because the thing they had in common was not "no app" but "one
+instance". A control that passes is evidence about what it holds fixed, and I
+had not written down what that was.
+
+The generalisation worth keeping: **any lazily-initialised global with a guard
+that is checked before an await is a race**, and when the thing being
+initialised owns memory that other objects point into, the failure arrives
+later, somewhere else, looking like memory corruption.

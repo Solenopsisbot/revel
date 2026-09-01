@@ -11,11 +11,11 @@ const ENC = new TextEncoder();
 /**
  * Two devices and one group, driven straight against the wasm bindings.
  *
- * No server, no socket, no app — which is the point. `docs/31` §33 chases a
- * `memory access out of bounds` that only appears when the app runs
- * operations concurrently, and this is the control: every sequence it does
- * here has been run thousands of times without a fault, so anything that
- * *does* fault is not one of these.
+ * No server, no socket, no app — and, as it turned out, exactly one call to
+ * `init()`, which is why it never reproduced `docs/31` §33's fault. Kept
+ * anyway: it is the fastest way to drive the real bindings in a browser, and
+ * every sequence below has now run thousands of times clean, so a fault here
+ * would be genuinely new.
  *
  * What it covers:
  *

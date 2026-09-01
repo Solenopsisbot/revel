@@ -27,6 +27,7 @@ import Button from '$lib/moment/Button.svelte';
 import Field from '$lib/moment/Field.svelte';
 import Moment from '$lib/moment/Moment.svelte';
 import { session } from '$lib/session.svelte.js';
+import { cryptoWasm } from '$lib/wasm.js';
 
 let link = $state('');
 let busy = $state(false);
@@ -53,8 +54,7 @@ async function read() {
     const pub = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
     if (pub.length !== 32) throw new Error('not a transfer key');
 
-    const wasm = await import('@revel/crypto-wasm');
-    await wasm.default();
+    const wasm = await cryptoWasm();
     pending = { channel, pub, fingerprint: wasm.Transfer.fingerprint(pub) };
   } catch {
     error = "That doesn't look like a pairing link. Copy the whole thing.";
@@ -69,8 +69,7 @@ async function send() {
   busy = true;
   error = '';
   try {
-    const wasm = await import('@revel/crypto-wasm');
-    await wasm.default();
+    const wasm = await cryptoWasm();
     // Sealed here, opened there. The IdP relays bytes under a key it never had.
     const sealed = wasm.Transfer.seal(target.pub, me.accountKey);
     const res = await transport.post(`/idp/enrol/channel/${encodeURIComponent(target.channel)}`, {
