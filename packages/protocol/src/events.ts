@@ -37,6 +37,25 @@ export const FaceRef = z.object({
 });
 export type FaceRef = z.infer<typeof FaceRef>;
 
+/**
+ * A face as it appears on the room's roster, which is a face plus its note.
+ *
+ * Deliberately *not* `FaceRef`. A `FaceRef` rides on every single message, and
+ * `docs/29` §1 is blunt that encrypted history can never be re-encrypted — so
+ * a field added there is a field on every message anyone ever sends, forever,
+ * carrying something that changes about twice a year.
+ *
+ * `room.faces` is the right home: one event per face per room, superseded by
+ * the next one the way a rename already is (the reducer keeps `facesAt` and
+ * takes the newest by event id). The profile card reads the roster; the
+ * message keeps carrying only what it needs to render a row.
+ */
+export const FaceCard = FaceRef.extend({
+  /** `docs/11`'s one-line note — "the bit that does the actual work". */
+  note: z.string().max(280).optional(),
+});
+export type FaceCard = z.infer<typeof FaceCard>;
+
 /** A sealed attachment. The key travels in the event; the blob store holds
  *  ciphertext with no name and no type (`docs/22`). */
 export const BlobRef = z.object({
@@ -176,7 +195,7 @@ export const EncryptedEvent = z.discriminatedUnion('type', [
   }),
   /** This account's faces as present in this room — so the server never learns
    *  a plural system's roster (`docs/11`). */
-  evt({ ...base, type: z.literal('room.faces'), faces: z.array(FaceRef).max(64) }),
+  evt({ ...base, type: z.literal('room.faces'), faces: z.array(FaceCard).max(64) }),
 ]);
 export type EncryptedEvent = z.infer<typeof EncryptedEvent>;
 

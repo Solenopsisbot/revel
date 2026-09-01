@@ -7,9 +7,11 @@
  */
 import { IDBFactory } from 'fake-indexeddb';
 import 'fake-indexeddb/auto';
+import { FaceCard, FaceRef } from '@revel/protocol';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   addFace,
+  cardOf,
   type Face,
   type FaceBook,
   forgetFaces,
@@ -129,6 +131,41 @@ describe('the ref that goes on a message', () => {
     // An empty string in encrypted history is permanent, and `docs/29` §1 is
     // blunt that encrypted history cannot be rewritten.
     expect(refOf({ id: 'ash', name: 'Ash' })).toEqual({ id: 'ash', name: 'Ash' });
+  });
+
+  it('never carries the note, however the face is written', () => {
+    // The whole reason `FaceCard` exists. A note on `FaceRef` would ride on
+    // every message anyone ever sends, forever, for something that changes
+    // about twice a year — and `docs/29` §1 means it could never be taken off
+    // again. This is the assertion that keeps it off.
+    const ref = refOf({ id: 'viola', name: 'Viola', note: 'building the thing' });
+    expect(ref).not.toHaveProperty('note');
+    expect(ref).toEqual({ id: 'viola', name: 'Viola' });
+  });
+});
+
+describe('the card that goes on the roster', () => {
+  it('is the ref plus the note', () => {
+    const face = { id: 'viola', name: 'Viola', colour: 'violet', note: 'building the thing' };
+    expect(cardOf(face)).toEqual({
+      id: 'viola',
+      name: 'Viola',
+      colour: 'violet',
+      note: 'building the thing',
+    });
+  });
+
+  it('omits the note when there is not one', () => {
+    expect(cardOf({ id: 'ash', name: 'Ash' })).toEqual({ id: 'ash', name: 'Ash' });
+  });
+
+  it('is what `room.faces` accepts and a message payload does not', () => {
+    const withNote = { id: '1', name: 'Viola', note: 'building the thing' };
+    expect(FaceCard.safeParse(withNote).success).toBe(true);
+    // `FaceRef` is a plain object schema, so it does not reject the extra key
+    // — it strips it. Which is the property that matters: a note put on a
+    // message by a future client does not survive the parse into history.
+    expect(FaceRef.parse(withNote)).toEqual({ id: '1', name: 'Viola' });
   });
 });
 

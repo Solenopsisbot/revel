@@ -109,6 +109,42 @@ class Core {
     return this.typingIn[thread ? `${roomId}/${thread}` : roomId] ?? [];
   }
   /**
+   * A face for the profile card, from wherever this one happens to live.
+   *
+   * Three places, in order: the fixtures, this account's own book, and the
+   * room's roster. The last is the one that matters for a real conversation —
+   * somebody else's face arrives in `room.faces` and exists nowhere else on
+   * this device, which is exactly where its note lives too (`FaceCard`).
+   *
+   * Returns a partial: a roster card has no `accountId` and no `status`,
+   * because neither is something the roster carries or the card needs.
+   */
+  faceCard(id: string): Partial<Face> & { id: string; name: string } {
+    const known = this.faces[id];
+    if (known) return known;
+
+    const mine = this.myFaces.find((f) => f.id === id);
+    if (mine) return mine;
+
+    const card = live.running ? live.room(this.currentRoomId)?.faces.get(id) : undefined;
+    if (card) {
+      return {
+        id: card.id,
+        name: card.name,
+        colour: (card.colour ?? 'grey') as FaceColour,
+        ...(card.pronouns ? { pronouns: card.pronouns } : {}),
+        ...(card.note ? { note: card.note } : {}),
+        ...(card.avatar ? { avatar: card.avatar } : {}),
+      };
+    }
+
+    // Named rather than blank. A face we cannot resolve is a real state — a
+    // message from before this device joined, or one whose `room.faces` never
+    // arrived — and saying so beats an empty card.
+    return { id, name: 'Unknown', colour: 'grey' as FaceColour };
+  }
+
+  /**
    * The names to put in a typing indicator.
    *
    * Separate from `typing` because a real typing notice arrives *carrying* its

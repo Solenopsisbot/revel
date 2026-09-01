@@ -12,6 +12,7 @@ import {
   type AccountProfile,
   type BlobRef,
   type DeviceInfo,
+  type FaceCard,
   type FaceRef,
   type RoomInfo,
   toAccountId,
@@ -54,14 +55,14 @@ export interface LiveCoreOptions {
    * have to own its storage too, which belongs with the session rather than
    * with the sync engines.
    */
-  faceFor?: (roomId: string) => FaceRef | undefined;
+  faceFor?: (roomId: string) => FaceCard | undefined;
 }
 
 class LiveConversation implements ConversationCore {
   #rooms: RoomSync;
   #files: Attachments;
   #account: string;
-  #faceFor: ((roomId: string) => FaceRef | undefined) | undefined;
+  #faceFor: ((roomId: string) => FaceCard | undefined) | undefined;
   /** Rooms already told about a face, so the roster is announced once. */
   #announced = new Set<string>();
 
@@ -69,7 +70,7 @@ class LiveConversation implements ConversationCore {
     rooms: RoomSync,
     files: Attachments,
     account: string,
-    faceFor?: (roomId: string) => FaceRef | undefined,
+    faceFor?: (roomId: string) => FaceCard | undefined,
   ) {
     this.#rooms = rooms;
     this.#files = files;
@@ -89,7 +90,7 @@ class LiveConversation implements ConversationCore {
    * would put a state event between every pair of messages, and announcing once
    * globally would miss the next room.
    */
-  async #announceFace(roomId: string, face: FaceRef): Promise<void> {
+  async #announceFace(roomId: string, face: FaceCard): Promise<void> {
     const key = `${roomId}:${face.id}`;
     if (this.#announced.has(key)) return;
     this.#announced.add(key);
@@ -151,8 +152,12 @@ class LiveConversation implements ConversationCore {
     // Stamped onto the message rather than looked up later: `docs/04` §2 makes
     // it a snapshot, which is why renaming a face does not silently rewrite
     // every message it ever sent.
-    const face = options.face ?? this.#faceFor?.(roomId);
-    if (face) await this.#announceFace(roomId, face);
+    const card = options.face ?? this.#faceFor?.(roomId);
+    if (card) await this.#announceFace(roomId, card);
+    // The roster gets the card, the message gets the ref. The note is profile
+    // data that belongs on `room.faces`, once per face per room, not on every
+    // message forever — see `FaceCard`.
+    const face = card && refOnly(card);
 
     await this.#rooms.send(roomId, {
       type: 'm.message',
@@ -227,12 +232,13 @@ class LiveConversation implements ConversationCore {
 
   async setTyping(
     roomId: string,
-    options: { face?: FaceRef; thread?: string } = {},
+    options: { face?: FaceCard; thread?: string } = {},
   ): Promise<void> {
     // Same default as `send`. A typing notice that arrived facelessly while the
     // message that followed it wore a face would show the room two different
     // people for one person's sentence.
-    const face = options.face ?? this.#faceFor?.(roomId);
+    const card = options.face ?? this.#faceFor?.(roomId);
+    const face = card && refOnly(card);
     await this.#rooms.setTyping(roomId, { ...options, face });
   }
 
@@ -496,4 +502,21 @@ export class LiveCore implements RevelCore {
   async close(): Promise<void> {
     await this.#rooms.close();
   }
+}
+
+/**
+ * A roster card, narrowed to what a message carries.
+ *
+ * Explicit rather than a spread, because the whole point is that this list is
+ * short and stays short: anything added to `FaceCard` should have to be added
+ * here on purpose before it starts riding on every message.
+ */
+function refOnly(card: FaceCard): FaceRef {
+  return {
+    id: card.id,
+    name: card.name,
+    ...(card.colour ? { colour: card.colour } : {}),
+    ...(card.avatar ? { avatar: card.avatar } : {}),
+    ...(card.pronouns ? { pronouns: card.pronouns } : {}),
+  };
 }

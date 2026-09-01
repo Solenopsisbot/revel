@@ -26,7 +26,7 @@
  * single account-wide selection would let you switch where it is harmless and
  * arrive where it is not, already set to the face that gives you away.
  */
-import type { FaceRef } from '@revel/protocol';
+import type { FaceCard, FaceRef } from '@revel/protocol';
 import { deleteSealed, getSealed, putSealed } from './sealed.js';
 
 export interface Face {
@@ -48,11 +48,11 @@ export interface Face {
   /**
    * The one-line note on the profile card — `docs/11`'s "does the actual work".
    *
-   * **Local only, for now.** `FaceRef` carries id, name, colour, pronouns and
-   * avatar, and not this — so a note shows on your own card and not on anybody
-   * else's. Fixing that means a new field in a payload that goes into encrypted
-   * history, which `docs/29` §1 says can never be rewritten, so it is a decision
-   * rather than an oversight and it is not made here.
+   * Travels on the room's roster (`room.faces`) and **not** on messages: it is
+   * profile data that changes about twice a year, and a field added to
+   * `FaceRef` would ride on every message anyone ever sends, forever, since
+   * `docs/29` §1 is blunt that encrypted history can never be re-encrypted.
+   * `cardOf` is what carries it; `refOf` is what messages get.
    */
   note?: string;
 }
@@ -111,6 +111,22 @@ export function speakerIn(book: FaceBook, roomId: string): Face | null {
 }
 
 /** The `FaceRef` to stamp on a message. Only the fields the protocol carries. */
+/**
+ * A face as the room's roster carries it — everything `refOf` gives, plus the
+ * note.
+ *
+ * Two functions rather than one with a flag, because the difference is not a
+ * detail: `refOf` is what goes on every message and must stay as small as the
+ * thing it renders, and this is what goes in `room.faces`, once per face per
+ * room. See `FaceCard` in `@revel/protocol` for why that split is permanent.
+ */
+export function cardOf(face: Face): FaceCard {
+  return {
+    ...refOf(face),
+    ...(face.note ? { note: face.note } : {}),
+  };
+}
+
 export function refOf(face: Face): FaceRef {
   return {
     id: face.id,

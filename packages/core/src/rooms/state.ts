@@ -7,7 +7,7 @@
  * that makes a room's contents a function of its event log rather than of
  * whatever order things happened to arrive in.
  */
-import type { FaceRef } from '@revel/protocol';
+import type { FaceCard, FaceRef } from '@revel/protocol';
 
 /** A decrypted event, ready to be applied. */
 export interface LocalEvent {
@@ -167,8 +167,14 @@ export interface RoomState {
   threadNames: Map<string, string>;
   /** Which event set each name, so a page of old history cannot un-rename one. */
   threadNamesAt: Map<string, string>;
-  /** face id → the face, from `room.faces`. */
-  faces: Map<string, FaceRef>;
+  /**
+   * face id → the face, from `room.faces`.
+   *
+   * A `FaceCard` rather than a `FaceRef`: the roster is where a face's note
+   * lives, because it is one event per face rather than a field on every
+   * message. See `FaceCard` in `@revel/protocol`.
+   */
+  faces: Map<string, FaceCard>;
   /** face id → the id of the event that last set it. Same reason as `nameAt`. */
   facesAt: Map<string, string>;
   /** thread root id → reply ids, in order. */

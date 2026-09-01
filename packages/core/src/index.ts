@@ -41,6 +41,7 @@ export {
 } from './identity/enrol.js';
 export {
   addFace,
+  cardOf,
   type Face,
   type FaceBook,
   forgetFaces,

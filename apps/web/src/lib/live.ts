@@ -36,7 +36,7 @@ import {
   IndexedDbStore,
   LiveCore,
   RoomSync,
-  refOf,
+  cardOf,
   type Session,
   type SocketLike,
   toAccountId,
@@ -309,7 +309,7 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
     // because the book belongs to the session, not to the sync engines.
     faceFor: (roomId) => {
       const face = myFaces.speaking(roomId);
-      return face ? refOf(face) : undefined;
+      return face ? cardOf(face) : undefined;
     },
   });
 

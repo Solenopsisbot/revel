@@ -15,7 +15,9 @@
  *   faces are publicly linked is off by default, so this line is drawn from
  *   your own account rather than from anything the other person can see.
  * - **Nothing here is fetched.** Everything on the card is already on this
- *   device, which is why it can appear instantly and why it works offline.
+ *   device — including somebody else's note, which arrived on the room's
+ *   roster (`room.faces`) rather than being asked for. That is why the card
+ *   can appear instantly and why it works offline.
  */
 import Avatar from './Avatar.svelte';
 import { core, MY_ACCOUNT } from './fake/core.svelte.js';
@@ -35,7 +37,9 @@ let {
   onedit?: (faceId: string) => void;
 } = $props();
 
-const face = $derived(core.faces[faceId]!);
+// Resolved rather than looked up: for a real conversation the other person's
+// face arrives on the room roster and is in no fixture map. See `core.faceCard`.
+const face = $derived(core.faceCard(faceId));
 const mine = $derived(face?.accountId === MY_ACCOUNT);
 const isMe = $derived(face?.id === core.speakingAs);
 
