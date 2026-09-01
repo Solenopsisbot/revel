@@ -257,6 +257,45 @@ ok(
   await bob.evaluate(() => window.__revel.core.currentRoomId),
 );
 
+// The assertions whose absence let a refresh quietly end every conversation.
+//
+// History surviving proves nothing on its own: the timeline is plaintext in
+// the local store, so it renders whether or not the MLS state came back. The
+// question is whether this device can still *talk*, and until `restoreCrypto`
+// had a caller the answer was no — sends threw "no group in this session" and
+// arriving messages failed to decrypt into a catch that drops them.
+ok(
+  'history is still there',
+  await bob.evaluate(() => document.body.innerText.includes('from kit')),
+);
+
+await bob.evaluate((r) => window.__revel.core.openHome(r), aliceRoom);
+await wait(2500);
+await alice.evaluate(() => void window.__revel.core.send('after the reload'));
+await wait(6000);
+ok(
+  'and a message sent after the reload arrives',
+  await bob.evaluate(() => document.body.innerText.includes('after the reload')),
+);
+
+await bob.evaluate(() => void window.__revel.core.send('and he can answer'));
+await wait(5000);
+ok(
+  'and he can answer',
+  await alice.evaluate(() => document.body.innerText.includes('and he can answer')),
+);
+ok(
+  'with nothing left failed',
+  (
+    await bob.evaluate(() =>
+      window.__revel.live.stack.rooms
+        .state(window.__revel.core.currentRoomId)
+        .messages.filter((m) => m.failed)
+        .map((m) => m.body),
+    )
+  ).length === 0,
+);
+
 console.log(`\npage errors: ${pageErrors.length ? pageErrors.join('; ') : 'none'}`);
 ok('no crypto persist failures', cryptoFailures.length === 0, cryptoFailures);
 await browser.close();

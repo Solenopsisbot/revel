@@ -142,9 +142,19 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
    * on. Idempotent by construction — `acceptWelcomes` acks what it takes and
    * `catchUp` is a cursor.
    */
+  /**
+   * Groups whose sealed state was read back off disk at startup.
+   *
+   * `restoreCrypto` imports them into the device without *opening* them, so
+   * they do not appear in `crypto.groups()` — that lists what the session is
+   * holding in memory, which on a fresh page is nothing. Without this set a
+   * reload binds no rooms at all.
+   */
+  let restoredGroups = new Set<string>();
+
   const syncGroups = async () => {
     await groups.acceptWelcomes();
-    for (const groupId of await crypto.groups()) {
+    for (const groupId of new Set([...restoredGroups, ...(await crypto.groups())])) {
       await groups.catchUp(groupId).catch(() => {});
       for (const roomId of await groups.roomsOf(groupId).catch(() => [])) {
         // Bind *and* listen. `open` reads state; binding is what tells the
@@ -236,6 +246,28 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
     // back rather than keeping a second copy that could disagree.
     persist: () => rooms.persistCrypto(),
   });
+
+  /**
+   * Read this device's sealed MLS state back before anything asks for it.
+   *
+   * The other half of every `persistCrypto` this device has ever done, and it
+   * had no caller at all — so a reload left the crypto session empty while the
+   * sealed blobs sat on disk. History still rendered (that is plaintext in the
+   * local store) and everything else failed: sends threw "no group in this
+   * session", and incoming messages failed to decrypt into a `.catch` that
+   * drops them. A refresh quietly ended the conversation.
+   *
+   * Awaited rather than floated, because `stream.start()` below can deliver an
+   * event immediately and the reducer needs the keys to be there when it does.
+   * Failure is not fatal: without it this device catches up the slow way,
+   * which is a bad start rather than a broken one.
+   */
+  restoredGroups = new Set(
+    await rooms.restoreCrypto().catch((err) => {
+      console.error('revel: could not restore sealed crypto state', err);
+      return [];
+    }),
+  );
 
   stream.start();
 

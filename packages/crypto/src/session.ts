@@ -259,14 +259,32 @@ export class Session {
 
   #group(groupId: string): Group {
     this.#alive();
-    const group = this.#groups.get(groupId);
-    if (!group) {
-      // Naming what we do hold, because "no such group" during a sync bug is a
-      // question about which ids exist, every time.
-      const held = this.#groups.size ? [...this.#groups.keys()].join(', ') : 'none';
-      throw new Error(`no group ${groupId} in this session (holding: ${held})`);
+    const held = this.#groups.get(groupId);
+    if (held) return held;
+
+    // Stored but not loaded. `importGroup` puts a group's state back into the
+    // device without opening it, because opening every group a device has ever
+    // been in would spend a cold start on rooms nobody is looking at. Which
+    // leaves a gap: after a reload the state is *there* and the session does
+    // not hold it, and every call that needs it fails with "no group in this
+    // session" — the room's history still renders, because that is plaintext
+    // in the local store, so the app looks fine right up until you try to say
+    // something.
+    //
+    // Loading on first use closes it and keeps the laziness: nothing is opened
+    // until something actually needs it, and then it is opened exactly once.
+    try {
+      const loaded = this.#device.loadGroup(ENC.encode(groupId));
+      this.#groups.set(groupId, loaded);
+      return loaded;
+    } catch {
+      // Genuinely not here — fall through to the error, which is the useful
+      // one. Naming what we do hold, because "no such group" during a sync bug
+      // is a question about which ids exist, every time.
     }
-    return group;
+
+    const holding = this.#groups.size ? [...this.#groups.keys()].join(', ') : 'none';
+    throw new Error(`no group ${groupId} in this session (holding: ${holding})`);
   }
 
   #alive(): void {
