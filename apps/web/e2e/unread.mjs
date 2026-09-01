@@ -227,7 +227,9 @@ console.log('\nmuting it — `docs/35`: mute wins, always');
 await bob.evaluate((r) => window.__revel.core.openHome(r), kitRoom);
 await bob.evaluate(async (r) => {
   const { core, live, notifications } = window.__revel;
-  core.dmsSeed.push({ id: r, kind: 'dm', withIds: [], mineIds: [], notify: 'nothing' });
+  // The real writer. This used to push a fixture row into `dmsSeed`, which is
+  // how the test passed while muting a live DM did nothing at all.
+  core.setNotifyFor(r, 'nothing');
   await live.markRead(r);
   notifications.clear(r);
 }, aliceRoom);

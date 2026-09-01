@@ -1153,6 +1153,12 @@ export interface Notifications {
   global: NotifyLevel;
   /** Space id → level. Absent means it follows the global default. */
   spaces: Record<string, NotifyLevel>;
+  /**
+   * Room id → level. Beats the space it is in, and it is the only place a DM's
+   * setting can live — a DM has no space to inherit from (`docs/35`), so
+   * muting one is always an explicit per-room act.
+   */
+  rooms: Record<string, NotifyLevel>;
   quietHours: { on: boolean; from: string; to: string };
   /**
    * Whether the lock screen shows message content. Off by default: the push
@@ -1166,6 +1172,7 @@ export interface Notifications {
 export const notifications: Notifications = {
   global: 'mentions',
   spaces: { braid: 'everything' },
+  rooms: {},
   quietHours: { on: true, from: '23:00', to: '08:00' },
   previews: false,
   sound: true,

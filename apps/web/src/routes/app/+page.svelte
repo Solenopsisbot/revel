@@ -389,7 +389,12 @@ function openDmMenu(e: MouseEvent, id: string) {
     ],
     (picked) => {
       const [verb, arg] = picked.split(':');
-      if (verb === 'notify') dm.notify = arg === 'inherit' ? undefined : (arg as NotifyLevel);
+      if (verb === 'notify') {
+        // Through `core`, not onto `dm`: a live DM is derived from the room
+        // list, so a write to it is discarded on the next read and the rules
+        // engine never sees it.
+        core.setNotifyFor(dm.id, arg === 'inherit' ? undefined : (arg as NotifyLevel));
+      }
       if (picked === 'mark-read') {
         // Live `dms` are derived from the room list, so writing to one is
         // writing to a value that gets rebuilt on the next read. The real

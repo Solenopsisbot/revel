@@ -30,6 +30,15 @@ const overridden = $derived(
   core.spaces.flatMap((s) => s.rooms.filter((r) => r.notify).map((r) => ({ space: s, room: r }))),
 );
 
+/**
+ * Conversations with a rule of their own.
+ *
+ * Separate from `overridden` because a DM has no space: it cannot inherit, so
+ * there is nothing to say it is following and nothing to clear it back to
+ * except the floor.
+ */
+const mutedDms = $derived(core.dms.filter((d) => d.notify));
+
 let addingFor = $state<string | null>(null);
 
 /**
@@ -80,7 +89,10 @@ const noPush = $derived(layout.ios && !layout.standalone);
     {#each LEVELS as l (l.id)}
       <button
         class:sel={n.global === l.id}
-        onclick={() => (n.global = l.id)}
+        onclick={() => {
+          n.global = l.id;
+          core.saveNotifications();
+        }}
         aria-pressed={n.global === l.id}
       >{l.label}</button>
     {/each}
@@ -146,6 +158,37 @@ const noPush = $derived(layout.ios && !layout.standalone);
     <p class="empty">No room overrides. Every room follows its space.</p>
   {/each}
 
+  <!--
+    Conversations, which have no space to follow. `docs/35`: a DM's floor is
+    `everything`, so muting one is always an explicit act — which makes this
+    the only place it can be undone. A mute you cannot find is a mute you
+    cannot lift.
+  -->
+  {#each mutedDms as dm (dm.id)}
+    <div class="row">
+      <div class="meta">
+        <div class="nm">{dm.name ?? core.dmTitle(dm)}<span class="in">a conversation</span></div>
+        <div class="bl">
+          {LEVELS.find((l) => l.id === dm.notify)?.label} · set on this conversation
+        </div>
+      </div>
+      <div class="seg small">
+        {#each LEVELS as l (l.id)}
+          <button
+            class:sel={dm.notify === l.id}
+            onclick={() => core.setNotifyFor(dm.id, l.id)}
+            aria-pressed={dm.notify === l.id}
+          >{l.label}</button>
+        {/each}
+      </div>
+      <button
+        class="clear"
+        title="Notify for everything again"
+        onclick={() => core.setNotifyFor(dm.id, undefined)}
+      ><Icon name="x" size={14} /></button>
+    </div>
+  {/each}
+
   {#if addingFor}
     {@const space = core.spaces.find((s) => s.id === addingFor)!}
     <div class="picker">
@@ -172,7 +215,11 @@ const noPush = $derived(layout.ios && !layout.standalone);
 <section>
   <h3>Quiet hours</h3>
   <label class="check">
-    <input type="checkbox" bind:checked={n.quietHours.on} />
+    <input
+      type="checkbox"
+      bind:checked={n.quietHours.on}
+      onchange={() => core.saveNotifications()}
+    />
     <span>
       <b>Hold notifications overnight</b>
       <span class="sub">
@@ -183,8 +230,14 @@ const noPush = $derived(layout.ios && !layout.standalone);
   </label>
   {#if n.quietHours.on}
     <div class="times">
-      <label>From <input type="time" bind:value={n.quietHours.from} /></label>
-      <label>Until <input type="time" bind:value={n.quietHours.to} /></label>
+      <label>
+        From
+        <input type="time" bind:value={n.quietHours.from} onchange={() => core.saveNotifications()} />
+      </label>
+      <label>
+        Until
+        <input type="time" bind:value={n.quietHours.to} onchange={() => core.saveNotifications()} />
+      </label>
     </div>
   {/if}
 </section>
@@ -222,11 +275,16 @@ const noPush = $derived(layout.ios && !layout.standalone);
   </p>
 
   <label class="check">
-    <input type="checkbox" bind:checked={n.sound} />
+    <input type="checkbox" bind:checked={n.sound} onchange={() => core.saveNotifications()} />
     <span><b>Sound</b></span>
   </label>
   <label class="check" class:off={noPush}>
-    <input type="checkbox" bind:checked={n.previews} disabled={noPush} />
+    <input
+      type="checkbox"
+      bind:checked={n.previews}
+      disabled={noPush}
+      onchange={() => core.saveNotifications()}
+    />
     <span>
       <b>Show message text on the lock screen</b>
       <span class="sub">

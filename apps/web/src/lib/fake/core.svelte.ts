@@ -12,6 +12,7 @@ import { untoned } from '../emoji.js';
 import { myFaces } from '../faces.svelte.js';
 import { live } from '../live.svelte.js';
 import { notifications as notificationSink } from '../notify.svelte.js';
+import { loadPrefs, savePrefs } from '../notifyPrefs.js';
 // A cycle — `conversation.svelte.ts` imports this module back. Safe because
 // both sides only *use* the other inside functions, never at module top level,
 // so whichever is evaluated first has the binding it needs by the time anything
@@ -32,6 +33,7 @@ import {
   type Message,
   messages,
   myFaces as myFacesSeed,
+  type Notifications,
   type NotifyLevel,
   notifications,
   type Perm,
@@ -108,6 +110,31 @@ class Core {
     }
     return this.typingIn[thread ? `${roomId}/${thread}` : roomId] ?? [];
   }
+  /**
+   * Set — or clear — a room's notification level, and remember it.
+   *
+   * The canonical writer for *any* room, DM or otherwise.
+   *
+   * The only writer. A live DM is derived from the room list, so writing
+   * `dm.notify` on one is writing to a value that gets rebuilt on the next
+   * read; the setting has to live somewhere the rules engine actually looks.
+   */
+  setNotifyFor(roomId: string, level: NotifyLevel | undefined): void {
+    if (level) this.notifications.rooms[roomId] = level;
+    else delete this.notifications.rooms[roomId];
+    this.saveNotifications();
+  }
+
+  /** Persist the notification preferences. Called by every writer. */
+  saveNotifications(): void {
+    savePrefs($state.snapshot(this.notifications) as Notifications);
+  }
+
+  /** Load this account's stored preferences over the defaults. */
+  loadNotifications(): void {
+    this.notifications = loadPrefs($state.snapshot(this.notifications) as Notifications);
+  }
+
   /**
    * A face for the profile card, from wherever this one happens to live.
    *
@@ -306,9 +333,13 @@ class Core {
     notificationSink.useSettings(() => ({
       default: this.notifications.global,
       spaces: this.notifications.spaces,
-      rooms: Object.fromEntries(
-        this.dmsSeed.flatMap((dm) => (dm.notify ? [[dm.id, dm.notify]] : [])),
-      ),
+      // The real per-room map. It used to be built from `dmsSeed`, which is
+      // fixture data — so muting a *live* DM wrote a setting the rules engine
+      // never read, and the room carried on notifying.
+      rooms: {
+        ...Object.fromEntries(this.dmsSeed.flatMap((dm) => (dm.notify ? [[dm.id, dm.notify]] : []))),
+        ...this.notifications.rooms,
+      },
       previews: this.notifications.previews,
       sound: this.notifications.sound,
       // `docs/35`'s quiet hours are minutes from midnight so the rule stays
@@ -682,6 +713,7 @@ class Core {
         // *about you* — a mention, a reply, or a DM that is not muted. The
         // sidebar turns that into a count instead of a plain dot.
         mention: notificationSink.mark(r.id) === 'badge',
+        ...(this.notifications.rooms[r.id] ? { notify: this.notifications.rooms[r.id] } : {}),
       }));
   }
 
@@ -1083,15 +1115,23 @@ class Core {
     }
   }
 
-  /** Set or clear a room's override. `undefined` returns it to inheriting. */
+  /**
+   * Set or clear a room's override. `undefined` returns it to inheriting.
+   *
+   * Keeps the fixture room in step so the reference screens still read right,
+   * and delegates the setting itself to `setNotifyFor`, which is the one the
+   * rules engine reads and the one that persists.
+   */
   setRoomNotify(spaceId: string, roomId: string, level: NotifyLevel | undefined) {
     const room = this.spaces.find((s) => s.id === spaceId)?.rooms.find((r) => r.id === roomId);
     if (room) room.notify = level;
+    this.setNotifyFor(roomId, level);
   }
 
   setSpaceNotify(spaceId: string, level: NotifyLevel | undefined) {
     if (level) this.notifications.spaces[spaceId] = level;
     else delete this.notifications.spaces[spaceId];
+    this.saveNotifications();
   }
 
   // --- rooms and spaces ----------------------------------------------------

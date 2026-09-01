@@ -40,6 +40,14 @@ class DeviceSession {
         const { forAccount } = await import('./lastRoom.js');
         forAccount(this.current.accountPub);
 
+        // Notification preferences are per account too, and they have to be in
+        // place before `live.start` below: the rules engine reads them on the
+        // first event that arrives.
+        const { forAccount: notifyForAccount } = await import('./notifyPrefs.js');
+        notifyForAccount(this.current.accountPub);
+        const { core } = await import('./fake/core.svelte.js');
+        core.loadNotifications();
+
         // The real core. Floating on purpose: it opens a socket and a database
         // and talks to a Host, and none of that may stop the app rendering —
         // `live.error` is what the connection banner reads if it fails.
