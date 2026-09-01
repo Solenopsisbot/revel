@@ -1,0 +1,12 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
+await new Promise((r) => setTimeout(r, 1200));
+await page.screenshot({ path: '/tmp/home-full.png', fullPage: true });
+await page.goto('http://localhost:5173/security', { waitUntil: 'networkidle' });
+await new Promise((r) => setTimeout(r, 800));
+const h = await page.evaluate(() => ({ scroll: document.scrollingElement.scrollHeight, client: document.scrollingElement.clientHeight }));
+console.log('security scrollable:', h.scroll > h.client, JSON.stringify(h));
+await page.screenshot({ path: '/tmp/security-full.png', fullPage: true });
+await browser.close();

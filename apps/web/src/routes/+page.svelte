@@ -66,7 +66,7 @@ const costs: [string, string][] = [
     <!-- Leaning, not standing: the landing page is the one screen where she
          is waiting on you rather than answering you. -->
     <img class="art" src="/wren/leaning.webp" alt="" aria-hidden="true" />
-    <div class="hero-in">
+    <div class="wrap hero-in">
       <h1>Somewhere to actually talk.</h1>
       <p class="sub">
         Every room is end to end encrypted, with no cleartext path and no
@@ -119,9 +119,15 @@ const costs: [string, string][] = [
   </section>
 
   <section class="band" id="faces">
-    <div class="wrap two">
+    <div class="wrap">
+      <h2 class="big">Who's in the room is the whole point.</h2>
+      <p class="lede">
+        Two kinds of member most apps make you work around, and neither of them
+        is a plug-in here.
+      </p>
+      <div class="two">
       <div class="feature">
-        <h2>One account, many faces.</h2>
+        <h3>One account, many faces.</h3>
         <p>
           If you're a plural system, you shouldn't need five accounts and a bot
           to be yourself. One login, many names, avatars and pronouns —
@@ -135,7 +141,7 @@ const costs: [string, string][] = [
         </p>
       </div>
       <div class="feature">
-        <h2>Computer friends are members.</h2>
+        <h3>Computer friends are members.</h3>
         <p>
           The people in your rooms who happen to be AI aren't integrations
           bolted on from the side. Same presence, same permissions, same
@@ -146,6 +152,7 @@ const costs: [string, string][] = [
           member list. It's also why we don't offer to host one for you: we'd
           be holding its keys, and then we could read your rooms.
         </p>
+      </div>
       </div>
     </div>
   </section>
@@ -197,8 +204,26 @@ const costs: [string, string][] = [
 </div>
 
 <style>
-  .page { height: 100dvh; overflow-y: auto; background: var(--ground-0); }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 6vw; }
+  /* Scrolls with the page now: `body` no longer hides its overflow for
+     everybody, so this does not need to be its own scroll container — and a
+     document that scrolls the document is the one that gets the browser's
+     address-bar collapse on a phone. */
+  .page { min-height: 100dvh; background: var(--ground-0); }
+  /*
+   * One measure and one gutter, shared by the hero and every band below it.
+   *
+   * The hero used to set its own `6vw` padding while the bands were a centred
+   * 1080px box *plus* `6vw` — so at a desktop width the headline started about
+   * a hundred pixels left of every heading under it, and nothing on the page
+   * lined up with anything else. A landing page is mostly a column of text; if
+   * the column moves, that is the thing people see.
+   */
+  .wrap {
+    width: 100%;
+    max-width: 68rem;
+    margin: 0 auto;
+    padding-inline: max(6vw, 20px);
+  }
 
   .nav {
     position: sticky; top: 0; z-index: 20;
@@ -219,14 +244,17 @@ const costs: [string, string][] = [
 
   .hero {
     position: relative; overflow: hidden; background: var(--moment-bg);
-    padding: 11vh 6vw 13vh; display: flex; align-items: center; min-height: 76dvh;
+    padding-block: 12vh 14vh; display: flex; align-items: center; min-height: 74dvh;
   }
-  .hero-in { position: relative; z-index: 2; max-width: 36rem; }
+  .hero-in { position: relative; z-index: 2; }
+  /* The measure the headline reads at, inside the shared gutter rather than
+     instead of it — so `.wrap` still decides where the column starts. */
+  .hero-in > * { max-width: 34rem; }
   h1 {
     font-family: var(--font-display); font-size: clamp(2.6rem, 6.4vw, 4.4rem);
     line-height: .97; letter-spacing: -.035em; font-weight: 600; margin: 0 0 22px;
   }
-  .sub { font-size: 1.0625rem; line-height: 1.55; margin: 0 0 30px; color: color-mix(in oklab, var(--text) 88%, transparent); }
+  .sub { font-size: 1.0625rem; line-height: 1.6; margin: 0 0 30px; color: color-mix(in oklab, var(--text) 90%, transparent); }
   /*
     GitHub's own colours, because a link to a repository that looks like every
     other button on the page is a link people do not recognise as one. White
@@ -247,7 +275,10 @@ const costs: [string, string][] = [
   .gh:active { transform: translateY(1px); }
 
   .cta { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-  .fine { margin-top: 30px; font-size: var(--text-sm); line-height: 1.75; color: color-mix(in oklab, var(--text) 60%, transparent); }
+  /* Quiet, not invisible. At 60% over the hero gradient this was below the
+     point where it can be read at a glance, and it is the most honest sentence
+     on the page — it should not be the hardest one to see. */
+  .fine { margin-top: 30px; font-size: var(--text-sm); line-height: 1.7; color: color-mix(in oklab, var(--text) 74%, transparent); }
 
   .haze { position: absolute; z-index: 0; border-radius: 50%; filter: blur(70px); pointer-events: none; }
   .a { width: 520px; height: 520px; background: var(--face-violet); left: -160px; top: -140px; opacity: .5; }
@@ -261,33 +292,68 @@ const costs: [string, string][] = [
     filter: drop-shadow(0 12px 34px rgb(0 0 0 / .5));
   }
 
-  .band { padding: 92px 0; }
+  /*
+   * One vertical rhythm for every band, so the page has a beat instead of five
+   * different amounts of air. `clamp` because 92px of padding on a phone is
+   * most of a screen.
+   */
+  .band { padding-block: clamp(64px, 9vw, 108px); }
   .band.alt { background: var(--ground-1); border-block: 1px solid var(--line); }
-  h2 { font-family: var(--font-display); font-weight: 600; letter-spacing: -.025em; }
-  .big { font-size: clamp(1.9rem, 3.6vw, 2.6rem); margin: 0 0 14px; }
-  .lede { color: var(--text-dim); max-width: 56ch; margin: 0 0 34px; }
+  h2, h3 { font-family: var(--font-display); font-weight: 600; letter-spacing: -.025em; }
+  .big { font-size: clamp(1.9rem, 3.6vw, 2.6rem); margin: 0 0 16px; line-height: 1.1; }
+  /* A heading with no deck under it still needs the same air before its
+     content, or the two sections that have one and the two that don't read as
+     different amounts of section. */
+  .big:last-child { margin-bottom: 38px; }
+  /* A deck, not body copy. At body size under a 2.6rem heading it read as the
+     first paragraph of something rather than as the subtitle of the section. */
+  .lede {
+    color: var(--text-dim); max-width: 54ch; margin: 0 0 38px;
+    font-size: 1.0625rem; line-height: 1.6;
+  }
 
   .pillars {
-    margin-top: 26px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 26px; }
-  .pillar h3 { font-size: var(--text-xl); margin: 0 0 8px; }
-  .pillar p { color: var(--text-dim); margin: 0; }
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 34px;
+  }
+  /*
+   * Anchored at the top by a rule, not by their bottoms.
+   *
+   * Three paragraphs of honest prose are never the same length, so the grid
+   * always ends ragged — and a ragged grid floating in an empty band reads as a
+   * layout that broke. A shared line across the top gives them one edge they do
+   * all agree on, and the unevenness underneath becomes obviously fine.
+   */
+  .pillar { border-top: 1px solid var(--line); padding-top: 20px; }
+  .pillar h3 { font-size: var(--text-xl); margin: 0 0 10px; }
+  .pillar p { color: var(--text-dim); margin: 0; line-height: 1.62; }
 
-  .costs { display: grid; gap: 1px; background: var(--line); border-radius: var(--r-md); overflow: hidden; }
+  .costs {
+    display: grid; gap: 1px; background: var(--line);
+    border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden;
+    max-width: 62rem;
+  }
   .cost {
-    display: grid; grid-template-columns: minmax(180px, 1fr) 2fr; gap: 20px;
-    background: var(--ground-0); padding: 20px 22px;
+    display: grid; grid-template-columns: minmax(180px, 1fr) 2fr; gap: 24px;
+    /* Darker than the band it sits on, so the table reads as a panel of rows
+       rather than as five stray lines. It is the only inset thing on the page
+       and it is the only place the page is making a list of losses. */
+    background: var(--ground-0); padding: 18px 22px;
     transition: background var(--t-base) var(--ease);
   }
   .cost:hover { background: var(--ground-2); }
+  .back { line-height: 1.6; }
   /* Coral, because these are genuinely losses. Softening the colour here
      would be softening the claim. */
   .lost { font-weight: 700; color: var(--face-coral); }
   .back { color: var(--text-dim); font-size: var(--text-sm); }
 
-  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 40px; }
-  .feature h2 { font-size: var(--text-xl); margin: 0 0 10px; }
-  .feature p { color: var(--text-dim); margin: 0 0 12px; }
-  .micro { font-size: var(--text-sm); color: var(--text-mute); }
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 34px; }
+  /* Same top rule as the pillars, for the same reason and so the two grids on
+     the page are recognisably the same kind of thing. */
+  .feature { border-top: 1px solid var(--line); padding-top: 20px; }
+  .feature h3 { font-size: var(--text-xl); margin: 0 0 10px; }
+  .feature p { color: var(--text-dim); margin: 0 0 14px; line-height: 1.62; }
+  .micro { font-size: var(--text-sm); color: var(--text-mute); line-height: 1.6; }
 
   .link {
     display: inline-flex; align-items: center; gap: 7px; color: var(--text-dim);
@@ -302,6 +368,10 @@ const costs: [string, string][] = [
 
   @media (max-width: 860px) {
     .art { display: none; }
+    /* The hero's height was making room for her. With her gone it was 14vh of
+       empty gradient under the last line — on the screen where vertical space
+       is the scarce thing and the fold is the whole argument. */
+    .hero { min-height: 0; padding-block: 8vh 9vh; }
     .cost { grid-template-columns: 1fr; gap: 6px; }
     /*
       "Open the app" goes; **"Sign in" stays.** Hiding both left a returning

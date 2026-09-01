@@ -17,6 +17,19 @@ body {
   font-family: var(--font-ui);
   font-size: var(--text-base);
   line-height: var(--leading-body);
+}
+/*
+ * The chat app owns its own scrolling and the page must not also scroll —
+ * two scrollbars on one screen, and a composer that walks off the bottom.
+ *
+ * Scoped to the app rather than set on `body` globally, which is where it
+ * used to be. Every *document* page then had to remember to make itself a
+ * scroll container to undo it; `/security` did not, and simply could not be
+ * scrolled past the fold. A default that every page but one has to work
+ * around is the wrong default, and it fails silently in the direction of
+ * hiding content.
+ */
+body:has(.shell) {
   overflow: hidden;
 }
 button {
