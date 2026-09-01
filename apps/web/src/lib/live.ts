@@ -29,6 +29,7 @@
 
 import {
   Attachments,
+  cardOf,
   GroupSync,
   HostSession,
   HttpGroupTransport,
@@ -36,7 +37,6 @@ import {
   IndexedDbStore,
   LiveCore,
   RoomSync,
-  cardOf,
   type Session,
   type SocketLike,
   toAccountId,
@@ -166,6 +166,21 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
     await groups.acceptWelcomes();
     for (const groupId of new Set([...restoredGroups, ...(await crypto.groups())])) {
       await groups.catchUp(groupId).catch(() => {});
+
+      // Bring this account's *other* devices into the group.
+      //
+      // `docs/03` §1 gives every device its own leaf, and a leaf can only be
+      // added by somebody already inside — so a device that pairs later is in
+      // the account, sees the room list, and cannot read a word of it. Nothing
+      // did this, which made "two devices each" (`docs/06` phase 2's exit
+      // condition) quietly impossible: the second device signed in fine and
+      // then failed every send with "no group in this session".
+      //
+      // Cheap when there is nothing to do. The claim endpoint already skips
+      // devices that are in the group, so this is one request that comes back
+      // empty and commits nothing — and when it does find one, the commit
+      // carries the Welcome that device is waiting for.
+      await groups.invite(groupId, [account]).catch(() => {});
       for (const roomId of await groups.roomsOf(groupId).catch(() => [])) {
         // Bind *and* listen. `open` reads state; binding is what tells the
         // reducer which group's keys open this room, and listening is what
