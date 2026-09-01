@@ -25,12 +25,15 @@
  */
 import type { CryptoEngine } from '@revel/crypto';
 import {
+  commitment,
   type Event,
   encodePayload,
   type FaceRef,
+  frankingKey,
   parseEncrypted,
   payloadBytes,
   toAccountId,
+  toBase64,
 } from '@revel/protocol';
 import {
   type Candidate,
@@ -887,11 +890,24 @@ export class RoomSync {
     // typing notice through the message path put a blank pending message in the
     // timeline, which is how this was found.
     if (options.class === 'ephemeral') {
-      const body = { v: 1, ...payload };
-      const sealed = await this.#crypto.encrypt(
-        groupId,
-        new TextEncoder().encode(JSON.stringify(body)),
-      );
+      // Frank it, if it is a thing anybody could report.
+      //
+      // The key goes *inside* and the commitment goes *outside*, which is the
+      // whole mechanism (`docs/03` §9, `franking.ts`): every member ends up
+      // holding the key, the server holds a value it cannot open, and a
+      // reporter therefore cannot invent a message a moderator would believe.
+      //
+      // Only `m.message`. A receipt is not something anybody reports, and 32
+      // bytes on each of them is permanent overhead for nothing.
+      const frank = payload.type === 'm.message' ? frankingKey() : undefined;
+      const body = { v: 1, ...payload, ...(frank ? { frank: toBase64(frank) } : {}) };
+
+      // Committed over the bytes that are actually encrypted, byte for byte —
+      // the only definition both ends can agree on without a canonical-JSON
+      // rule that has to stay right forever.
+      const plaintext = new TextEncoder().encode(JSON.stringify(body));
+      const commits = frank ? await commitment(frank, plaintext) : undefined;
+      const sealed = await this.#crypto.encrypt(groupId, plaintext);
       await this.persistCrypto();
       const { epoch } = await this.#crypto.state(groupId);
       await this.#transport.send(roomId, {
@@ -957,11 +973,24 @@ export class RoomSync {
     try {
       // 2. Encrypt. The ratchet has now moved, and this device's state on disk
       //    is out of date until step 3.
-      const body = { v: 1, ...payload };
-      const sealed = await this.#crypto.encrypt(
-        groupId,
-        new TextEncoder().encode(JSON.stringify(body)),
-      );
+      // Frank it, if it is a thing anybody could report.
+      //
+      // The key goes *inside* and the commitment goes *outside*, which is the
+      // whole mechanism (`docs/03` §9, `franking.ts`): every member ends up
+      // holding the key, the server holds a value it cannot open, and a
+      // reporter therefore cannot invent a message a moderator would believe.
+      //
+      // Only `m.message`. A receipt is not something anybody reports, and 32
+      // bytes on each of them is permanent overhead for nothing.
+      const frank = payload.type === 'm.message' ? frankingKey() : undefined;
+      const body = { v: 1, ...payload, ...(frank ? { frank: toBase64(frank) } : {}) };
+
+      // Committed over the bytes that are actually encrypted, byte for byte —
+      // the only definition both ends can agree on without a canonical-JSON
+      // rule that has to stay right forever.
+      const plaintext = new TextEncoder().encode(JSON.stringify(body));
+      const commits = frank ? await commitment(frank, plaintext) : undefined;
+      const sealed = await this.#crypto.encrypt(groupId, plaintext);
       // Remembered so the echo can be applied without decrypting it, which MLS
       // will not let this device do for its own messages.
       this.#outbox.set(clientNonce, body);
@@ -976,6 +1005,7 @@ export class RoomSync {
         epoch,
         class: options.class ?? 'normal',
         payload: encodePayload(sealed),
+        ...(commits ? { commitment: commits } : {}),
         clientNonce,
       });
 

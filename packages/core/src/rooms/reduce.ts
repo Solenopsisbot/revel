@@ -309,6 +309,10 @@ function insertMessage(draft: RoomState, event: LocalEvent, payload: KnownShape)
     mentions: payload.mentions,
     expression: payload.expression,
     expiresAt: payload.expiresAt,
+    // Carried through rather than dropped: a report is the plaintext plus this
+    // key, checked against the commitment the Host holds (`docs/03` §9). A
+    // reducer that discarded it would leave the key only in bytes nobody kept.
+    frank: payload.frank,
     clientNonce: event.clientNonce,
   };
 

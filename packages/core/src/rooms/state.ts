@@ -82,6 +82,20 @@ export interface Message {
   failed?: boolean;
   clientNonce?: string;
 
+  /**
+   * The franking key that came inside this message (`docs/03` §9).
+   *
+   * **Kept because a report needs it.** Every member of the room holds it, and
+   * a report is "here is the plaintext, here is the key" — a moderator then
+   * checks both against the commitment the *Host* is holding. Dropping it on
+   * the way through the reducer would mean the key existed only in the bytes
+   * nobody kept, so nothing could ever be reported.
+   *
+   * Not rendered anywhere and not meant to be. It is 32 bytes of proof
+   * material sitting next to the message it proves.
+   */
+  frank?: string;
+
   /** When the body last changed. Renders as a quiet "edited". */
   editedAt?: number;
   /** Every earlier body, oldest first. */

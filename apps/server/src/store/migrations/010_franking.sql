@@ -1,0 +1,12 @@
+-- The franking commitment (`docs/03` §9, `packages/protocol/src/franking.ts`).
+--
+-- 32 bytes of HMAC over a plaintext this server has never seen and cannot
+-- derive. It is here so that a *moderator* checking a report checks it against
+-- a value the reporter never controlled — which is the difference between a
+-- report queue and a place to paste anything you like about somebody.
+--
+-- Nullable, and it stays nullable forever: most event classes have nothing to
+-- report, and a message sent before this column existed genuinely cannot be
+-- proven. "Not reportable" is the honest answer there, and backfilling a
+-- plausible one would be the single worst lie available on a moderation screen.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS commitment text;

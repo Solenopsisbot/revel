@@ -174,6 +174,18 @@ export const EncryptedEvent = z.discriminatedUnion('type', [
     /** Honoured client-side. The setting's own copy says a reader can always
      *  keep what they saw (`docs/03` §10). */
     expiresAt: z.number().int().optional(),
+    /**
+     * The franking key, base64 (`docs/03` §9, `franking.ts`).
+     *
+     * **Inside the ciphertext on purpose.** Every member of the room ends up
+     * holding it, which is what lets any of them report; the server never
+     * does, which is what stops it opening the commitment itself.
+     *
+     * On `m.message` only — the other event types are not things anybody
+     * reports, and a key on each of them would be 32 bytes of permanent
+     * overhead per receipt.
+     */
+    frank: z.string().base64().max(64).optional(),
   }),
   evt({ ...base, type: z.literal('m.edit'), target: Id, body: RichText }),
   evt({ ...base, type: z.literal('m.redact'), target: Id, reason: z.string().max(500).optional() }),

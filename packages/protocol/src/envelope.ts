@@ -49,6 +49,21 @@ export const EventInput = z.object({
    * nothing had populated it yet, which is the only reason it was cheap to fix.
    */
   notify: z.array(AccountId).max(256).optional(),
+  /**
+   * The franking commitment — `HMAC-SHA256(key, plaintext)`, base64.
+   *
+   * Server-visible and opaque to it: 32 bytes that commit to a plaintext it
+   * has never seen and cannot derive. What it buys is that a *reporter* cannot
+   * invent a message, because the value a moderator checks against came from
+   * the Host rather than from them (`docs/03` §9, `franking.ts`).
+   *
+   * Optional because most event classes have nothing to report — a receipt, a
+   * typing notice, a roster announcement. Absent means "not reportable", which
+   * is honest rather than a gap: a message sent before this existed genuinely
+   * cannot be proven, and pretending otherwise would be the one lie that
+   * matters on a moderation screen.
+   */
+  commitment: z.string().base64().max(64).optional(),
   /** Idempotency key so a retry after a dropped response can't duplicate. */
   clientNonce: z.string().min(8).max(64),
 });

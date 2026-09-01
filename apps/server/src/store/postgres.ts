@@ -700,6 +700,7 @@ export class PostgresStore implements Store {
       payload: row.payload as string,
       size: row.size as number,
       clientNonce: (row.client_nonce as string | null) ?? '',
+      ...(row.commitment ? { commitment: row.commitment as string } : {}),
       createdAt: num(row.created_at),
       purgedAt: numOrNull(row.purged_at),
     };
@@ -715,10 +716,10 @@ export class PostgresStore implements Store {
     // may legitimately pick the same nonce and neither may shadow the other.
     const [inserted] = await this.sql`
       INSERT INTO events (id, room_id, sender, epoch, class, payload, size,
-                          client_nonce, created_at, purged_at, stream, notify)
+                          client_nonce, created_at, purged_at, stream, notify, commitment)
       VALUES (${e.id}, ${e.room}, ${e.sender}, ${e.epoch}, ${e.class}, ${e.payload}, ${e.size},
               ${e.clientNonce}, ${e.createdAt}, ${e.purgedAt ?? null}, ${e.stream ?? null},
-              ${e.notify ? this.sql.array(e.notify) : null})
+              ${e.notify ? this.sql.array(e.notify) : null}, ${e.commitment ?? null})
       ON CONFLICT (sender, client_nonce) WHERE client_nonce IS NOT NULL DO NOTHING
       RETURNING *`;
     if (inserted) return { event: this.#event(inserted), deduped: false };

@@ -11,6 +11,7 @@ export * from './blobs.js';
 export * from './enrolment.js';
 export * from './envelope.js';
 export * from './events.js';
+export * from './franking.js';
 export * from './groups.js';
 export * from './identity.js';
 export * from './ids.js';
