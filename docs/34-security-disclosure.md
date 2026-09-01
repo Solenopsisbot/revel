@@ -10,8 +10,8 @@ policy, because it advertises that nobody is on the other end.
 
 | `29` §6 asks for | Status |
 | --- | --- |
-| `/.well-known/security.txt` | Built, and now has a contact to serve. |
-| A written disclosure policy | This document. Decided and publishable. |
+| `/.well-known/security.txt` | Built, served, and pointed at the page below. |
+| A written disclosure policy | Published at `/security`. This document is the reasoning behind it. |
 | Signed authorisation letters | Not built. Kith's `authz.md` ports directly. |
 | A published threat model | Written (`03` §10). Needs to be a page, not a doc. |
 
@@ -103,10 +103,26 @@ directly.
 
 ## Decisions still needed
 
-Collected so they are one list rather than five brackets:
+None. All five are made, and this is what they came out as:
 
-1. The contact address.
-2. Acknowledgement and response times.
-3. The disclosure window, and whether it can be extended.
-4. Where credit is published.
-5. Whether to publish a PGP key, given that most reporters will not use one.
+1. **The contact address** — `security@revel.chat`.
+2. **Acknowledgement and response times** — 72 hours to acknowledge, 7 days for
+   an assessment.
+3. **The disclosure window** — 90 days, and the clock does not stop.
+4. **Where credit is published** — `SECURITY-CREDITS.md` in this repository.
+5. **A PGP key** — no. Most reporters will not use one, and publishing a key
+   nobody has the private half of the habit for is a way of looking prepared
+   rather than being reachable. The offer of another channel on request is the
+   part that actually helps.
+
+## What is published where
+
+- **`/security`** — the policy, in the product's voice, for somebody who has
+  just found something. `apps/web/src/routes/security/+page.svelte`.
+- **`/.well-known/security.txt`** — RFC 9116, served only when
+  `REVEL_SECURITY_CONTACT` is set, with `Policy:` pointing at the page above.
+  See `.env.example`.
+- **`SECURITY-CREDITS.md`** — the credit list, at the root of this repository.
+- **This document** — the reasoning. Every commitment on the page has one here,
+  which is the difference between a policy and a promise somebody can argue
+  their way out of later.

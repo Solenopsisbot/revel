@@ -2,8 +2,9 @@
 
 People who found a security bug in Revel and told us about it first.
 
-There is no bug bounty — see [`docs/34-security-disclosure.md`](docs/34-security-disclosure.md)
-for why, and for how to report something. This file is the credit half of that
+There is no bug bounty — see [the disclosure policy](https://revel.chat/security),
+or [`docs/34-security-disclosure.md`](docs/34-security-disclosure.md) for the
+reasoning behind it. This file is the credit half of that
 promise, and it is a file rather than a page so that adding a name is one pull
 request rather than a website deploy.
 
