@@ -423,6 +423,32 @@ describe('invite links', () => {
     expect(Object.keys(preview)).not.toContain('name');
   });
 
+  it('says who invited you, when the IdP knows them', async () => {
+    // `docs/18`'s "who invited you" — the one thing on that page somebody can
+    // check against the message the link arrived in. Absent rather than an
+    // error for an account with no handle, because the link still works.
+    const h = people();
+    h.store.accounts.set(ALICE, {
+      id: ALICE,
+      handle: 'viola',
+      displayName: null,
+      avatar: null,
+      status: 'active',
+      createdAt: 0,
+      movedTo: null,
+    });
+    const space = await h.space();
+    const k = await key();
+    const { code } = (await (
+      await h.post('dev-a', `/spaces/${space.id}/invites`, { pub: k.pub })
+    ).json()) as { code: string };
+
+    const preview = (await (await h.app.request(`/invites/${code}`)).json()) as {
+      invitedBy?: string;
+    };
+    expect(preview.invitedBy).toBe('viola');
+  });
+
   it('is a 404 for a code that never existed and one that was revoked alike', async () => {
     // Telling them apart would make this an oracle for which codes have ever
     // been real, to somebody who by construction has no account.

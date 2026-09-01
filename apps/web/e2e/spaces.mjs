@@ -320,7 +320,11 @@ watch(cp, C);
 // Follow the link with no account at all.
 await cp.goto(link.replace('http://localhost:5173', APP), { waitUntil: 'networkidle' });
 await wait(2500);
-ok('a stranger can see the invite is real', (await cp.content()).includes("You've been invited"));
+ok(
+  'a stranger can see the invite is real, and who sent it',
+  (await cp.evaluate(() => document.body.innerText)).includes(`${A} invited you`),
+  await cp.evaluate(() => document.body.innerText.slice(0, 120)),
+);
 ok(
   'and the page never says what the space is called',
   !(await cp.evaluate(() => document.body.innerText)).includes('Solexsis'),

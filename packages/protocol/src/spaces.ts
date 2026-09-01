@@ -155,6 +155,16 @@ export const InvitePreview = z.object({
   code: z.string(),
   space: Snowflake,
   members: z.number().int().nonnegative(),
+  /**
+   * The handle of whoever made the link. `docs/18` asks for it, and it is the
+   * one thing on this page that lets somebody judge whether a link is real:
+   * "Viola invited you" is a claim you can check against who sent it to you,
+   * and "1 person is in this space" is not.
+   *
+   * Absent when the IdP does not know them — a foreign account, or one that
+   * never claimed a handle. Not an error: the link still works.
+   */
+  invitedBy: z.string().max(64).optional(),
   /** Whether it is spent, expired, or fine — the client says which, in words. */
   status: z.enum(['ok', 'expired', 'used_up', 'revoked']),
 });

@@ -343,10 +343,16 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
           ? 'used_up'
           : 'ok';
 
+    // The inviter's handle, and nothing else about them. `docs/18` asks for
+    // "who invited you" because it is the one thing here somebody can check
+    // against the message the link arrived in.
+    const inviter = await deps.store.getAccount(invite.createdBy).catch(() => null);
+
     return c.json({
       code: invite.code,
       space: invite.spaceId,
       members: (await deps.store.listSpaceMembers(invite.spaceId)).length,
+      ...(inviter?.handle ? { invitedBy: inviter.handle } : {}),
       status,
     });
   });

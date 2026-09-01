@@ -126,7 +126,13 @@ function join() {
         It was set to work a fixed number of times, and it has. Ask for another.
       </p>
     {:else}
-      <h1>You've been invited.</h1>
+      <h1>
+        {#if preview.invitedBy}
+          {preview.invitedBy} invited you.
+        {:else}
+          You've been invited.
+        {/if}
+      </h1>
       <p class="lede">
         {preview.members}
         {preview.members === 1 ? 'person is' : 'people are'} in this space.
