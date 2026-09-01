@@ -68,7 +68,7 @@ const MEASURE = () => {
     // identity build-specific — which is how this suite passed on localhost and
     // failed against revel.chat on nothing but a class name.
     const id = `${el.tagName.toLowerCase()}.${[...el.classList]
-      .filter((c) => !/^s(velte)?-[a-z0-9]+$/i.test(c))
+      .filter((c) => !/^s(velte)?-[\w-]+$/i.test(c))
       .join('.')}`;
 
     let clipped = false;
@@ -96,10 +96,12 @@ const MEASURE = () => {
     if (big) continue;
     if (hits(-reach, -reach) && hits(reach, -reach) && hits(-reach, reach) && hits(reach, reach))
       continue;
+    // Before the de-dupe key is claimed: an exempt inline run and a real
+    // finding could share one, and whichever came first would hide the other.
+    if (cs.display === 'inline') continue;
     const k = `t${id}${Math.round(r.width)}x${Math.round(r.height)}`;
     if (seen.has(k)) continue;
     seen.add(k);
-    if (cs.display === 'inline') continue;
     out.small.push({
       what: id,
       label: (el.getAttribute('aria-label') || el.title || el.textContent || '')
@@ -147,9 +149,24 @@ async function open(path) {
   });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errors.push(`${path}: ${String(e).split('\n')[0].slice(0, 160)}`));
-  await page.goto(`${APP}${path}`, { waitUntil: 'load' });
-  await page.waitForTimeout(700);
+  // `networkidle` and then a settle, matching the other suites here. A fixed
+  // short wait was enough on localhost and not enough over the network, which
+  // made this fail differently on each run against revel.chat — every
+  // assertion below is about hydrated state, so measuring before hydration
+  // finishes reports whatever the SSR'd markup happened to say.
+  await page.goto(`${APP}${path}`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
   return page;
+}
+
+/** Present within `ms`, or false. Distinguishes "slow" from "never arrives". */
+async function appears(page, selector, ms = 8000) {
+  return page
+    .locator(selector)
+    .first()
+    .waitFor({ state: 'attached', timeout: ms })
+    .then(() => true)
+    .catch(() => false);
 }
 
 const app = (q = '') => `/app?demo=1&touch=1${q}`;
@@ -157,10 +174,10 @@ const app = (q = '') => `/app?demo=1&touch=1${q}`;
 console.log('\nthe device layer, which decides every other answer here');
 {
   const page = await open(app());
-  ok('the shell knows it is narrow', (await page.locator('.shell.narrow').count()) === 1);
+  ok('the shell knows it is narrow', await appears(page, '.shell.narrow'));
   ok(
     'there is a visible way to the room list, not only a swipe',
-    (await page.locator('[aria-label="Spaces and rooms"]').count()) === 1,
+    await appears(page, '[aria-label="Spaces and rooms"]'),
   );
   ok(
     'the touch floor is 44px, not the mouse zero',
