@@ -71,6 +71,15 @@ async function openApp(page) {
     if (await page.evaluate(() => window.__revel?.live?.running ?? false)) break;
     await wait(1000);
   }
+  // Loudly, rather than leaving every later step to fail on a null stack.
+  // Against a real deployment the usual cause is the auth rate limit — which
+  // is per address, so a suite that signs up three accounts from one machine
+  // is one caller, and the limiter is doing its job.
+  if (!(await page.evaluate(() => window.__revel?.live?.running ?? false))) {
+    throw new Error(
+      `the core never started: ${await page.evaluate(() => window.__revel?.live?.error ?? 'no error reported')}`,
+    );
+  }
   await wait(2000);
 }
 
@@ -87,7 +96,20 @@ async function resync(page) {
 
 const A = `sa${stamp}`;
 const B = `sb${stamp}`;
+/**
+ * Space out the sign-ups when this is pointed at a real deployment.
+ *
+ * `REVEL_RATE_SCALE` is unset in production, as it must be, so three accounts
+ * inside a minute is throttled — and a throttled enrolment surfaces as a stack
+ * that never starts rather than as an error, which reads like a broken build.
+ */
+const REAL = !APP.includes('localhost');
+// The auth bucket is 10 tokens refilling at one per five seconds, and a
+// sign-up spends several. A minute buys back enough for the next one.
+const breathe = () => (REAL ? wait(60_000) : Promise.resolve());
+
 const alice = await signUp(A, 'Viola');
+await breathe();
 const bob = await signUp(B, 'Rae');
 
 // ---------------------------------------------------------------------------
@@ -290,6 +312,7 @@ ok(
 );
 
 const C = `sc${stamp}`;
+await breathe();
 const carol = await browser.newContext();
 const cp = await carol.newPage({ viewport: { width: 1280, height: 900 } });
 watch(cp, C);
@@ -339,7 +362,9 @@ await cp.getByRole('button', { name: 'Join', exact: true }).click();
 await wait(6000);
 ok('joining lands in the app', cp.url().includes('/app'), cp.url());
 // Reload with the test hook on. Also proves the join *stuck* rather than only
-// having happened in the tab that did it.
+// having happened in the tab that did it. A reload re-authenticates, and this
+// account has just spent most of the bucket signing up.
+await breathe();
 await openApp(cp);
 await cp.evaluate(async () => {
   const { live } = window.__revel;
