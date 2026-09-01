@@ -366,6 +366,30 @@ describe('invite links', () => {
     };
   }
 
+  it('carries a 32-byte seed in the fragment, not the PKCS#8 wrapper round it', async () => {
+    // The link is a string somebody pastes into a chat message, and WebCrypto's
+    // only export format wraps the seed in 16 bytes of ASN.1 that are the same
+    // every time. Stripping them is 43 base64 characters instead of 64.
+    const { mintInviteKey, signInviteRedemption, verifyInviteRedemption, toBase64 } =
+      await import('@revel/protocol');
+    const { pub, secret } = await mintInviteKey();
+    expect(secret.length).toBe(32);
+    expect(toBase64(secret).length).toBeLessThan(48);
+
+    // And it still signs, which is the only thing it is for.
+    const sig = await signInviteRedemption(secret, 'abcd-efgh-ijkl', ALICE);
+    expect(await verifyInviteRedemption(pub, 'abcd-efgh-ijkl', ALICE, sig)).toBe(true);
+
+    // A full PKCS#8 blob still works, so a link minted before the fragment was
+    // shortened does not stop opening.
+    const wrapped = new Uint8Array([
+      0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04,
+      0x20, ...secret,
+    ]);
+    const same = await signInviteRedemption(wrapped, 'abcd-efgh-ijkl', ALICE);
+    expect(await verifyInviteRedemption(pub, 'abcd-efgh-ijkl', ALICE, same)).toBe(true);
+  });
+
   it('needs INVITE to make one, and hands back no key material', async () => {
     const h = people();
     const space = await h.space();

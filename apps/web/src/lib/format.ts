@@ -70,6 +70,25 @@ export function ago(ms: number): string {
   return `${d} day${d === 1 ? '' : 's'} ago`;
 }
 
+/**
+ * The other direction. "in 7 days", for something that has not happened yet.
+ *
+ * `ago` is past tense all the way down, so feeding it an expiry gave every
+ * invite link "expires just now" — a sentence that is wrong in a way people
+ * act on, since it reads as a link that is already dead.
+ */
+export function until(ms: number): string {
+  const s = Math.round((ms - Date.now()) / 1000);
+  if (s <= 0) return 'now';
+  if (s < 60) return 'in under a minute';
+  const m = Math.round(s / 60);
+  if (m < 60) return `in ${m} minute${m === 1 ? '' : 's'}`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `in ${h} hour${h === 1 ? '' : 's'}`;
+  const d = Math.round(h / 24);
+  return `in ${d} day${d === 1 ? '' : 's'}`;
+}
+
 /** A natural-language list: "Rae", "Rae and June", "Rae, June and 3 others". */
 export function names(list: string[], max = 3): string {
   if (list.length <= 1) return list[0] ?? '';

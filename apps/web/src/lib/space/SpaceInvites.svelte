@@ -18,7 +18,7 @@
  */
 import Avatar from '$lib/Avatar.svelte';
 import { core } from '$lib/fake/core.svelte.js';
-import { ago } from '$lib/format.js';
+import { ago, until } from '$lib/format.js';
 import Icon from '$lib/Icon.svelte';
 import { whyNot } from '$lib/startErrors.js';
 import type { InviteInfo } from '@revel/protocol';
@@ -221,7 +221,7 @@ function status(i: { uses: number; maxUses?: number; expiresAt?: number }) {
           <code>{i.code}</code>
           <span class="meta">
             {i.uses}{i.maxUses ? ` of ${i.maxUses}` : ''} used
-            {#if dead.dead}· {dead.why}{:else if i.expiresAt}· expires {ago(i.expiresAt)}{/if}
+            {#if dead.dead}· {dead.why}{:else if i.expiresAt}· expires {until(i.expiresAt)}{/if}
           </span>
         </div>
         <button class="revoke" onclick={() => revoke(i.code)}>Revoke</button>

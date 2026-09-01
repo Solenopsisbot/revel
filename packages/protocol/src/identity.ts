@@ -238,6 +238,22 @@ function inviteChallenge(code: string, account: string): Uint8Array {
 }
 
 /**
+ * The fixed PKCS#8 wrapper around an Ed25519 private key.
+ *
+ * WebCrypto will not export an Ed25519 private key as raw bytes — only as
+ * PKCS#8, which is a 32-byte seed inside 16 bytes of ASN.1 that never varies:
+ * version 0, the Ed25519 OID, an OCTET STRING of an OCTET STRING of 32.
+ *
+ * Stripped on the way out and put back on the way in, so the URL fragment
+ * carries 32 bytes rather than 48. That is 43 base64 characters instead of 64,
+ * on a string whose whole job is being pasted into a chat message — and the 16
+ * bytes it saves are the same 16 bytes every time, carrying no information.
+ */
+const PKCS8_ED25519 = new Uint8Array([
+  0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
+]);
+
+/**
  * Mint an invite keypair.
  *
  * The public half goes to the Host; the private half goes in the URL fragment
@@ -252,11 +268,8 @@ export async function mintInviteKey(): Promise<{ pub: Uint8Array; secret: Uint8A
     'verify',
   ])) as unknown as { publicKey: CryptoKey; privateKey: CryptoKey };
   const pub = new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey));
-  // PKCS#8, because WebCrypto will not export an Ed25519 private key as raw —
-  // and it is what `importKey` wants back, so the fragment carries exactly the
-  // bytes that go straight back in.
-  const secret = new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey));
-  return { pub, secret };
+  const pkcs8 = new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey));
+  return { pub, secret: pkcs8.slice(PKCS8_ED25519.length) };
 }
 
 /** Sign a redemption with the key from the fragment. */
@@ -265,13 +278,13 @@ export async function signInviteRedemption(
   code: string,
   account: string,
 ): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    new Uint8Array(secret),
-    { name: 'Ed25519' },
-    false,
-    ['sign'],
-  );
+  // The seed, wrapped back up. A full PKCS#8 blob is accepted too, so a link
+  // minted before the fragment was shortened still opens.
+  const pkcs8 =
+    secret.length === 32
+      ? new Uint8Array([...PKCS8_ED25519, ...secret])
+      : new Uint8Array(secret);
+  const key = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, ['sign']);
   // `slice()` so the argument is backed by a plain `ArrayBuffer`, which is
   // what `BufferSource` means and what a `Uint8Array` over a `SharedArrayBuffer`
   // is not. Same copy the verify path makes, for the same reason.
