@@ -87,10 +87,15 @@ const OWNED = ['space', 'room', 'dm', 'm', 'settings'];
 export function urlFor(loc: Location): string {
   const q = new URLSearchParams(location.search);
   for (const k of OWNED) q.delete(k);
-  if (loc.scope === 'home') q.set('dm', loc.roomId);
-  else {
+  // Only write what there is. A signed-in account has no spaces and often no
+  // room open yet, and writing the ids anyway put `?space=solexsis&room=design`
+  // in the address bar of somebody who had never seen either — a fixture id,
+  // in a URL, ready to be copied and shared.
+  if (loc.scope === 'home') {
+    if (loc.roomId) q.set('dm', loc.roomId);
+  } else if (loc.spaceId) {
     q.set('space', loc.spaceId);
-    q.set('room', loc.roomId);
+    if (loc.roomId) q.set('room', loc.roomId);
   }
   if (loc.settings) q.set('settings', loc.settings);
   return `${location.pathname}?${q}`;

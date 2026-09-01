@@ -212,9 +212,25 @@ $effect(() => {
 });
 
 const demo = page.url.searchParams.has('demo');
+
+/**
+ * Whether it is safe to render the app at all.
+ *
+ * Until `session.restore()` answers, this client does not know whether anybody
+ * is signed in — and it used to render the whole fixture app in the meantime.
+ * Signed out, that meant opening `/app` showed a complete fake Solexsis with
+ * fake conversations before the redirect to `/signin` landed. Signed in, it
+ * meant a second of somebody else's spaces before your own arrived.
+ *
+ * Neither is a loading state. Both are the app confidently showing data that
+ * belongs to nobody, which is the single worst thing a chat client can do.
+ */
+let ready = $state(demo);
+
 if (!demo) {
   void session.restore().then((restored) => {
-    if (!restored) void goto('/signin');
+    if (restored) ready = true;
+    else void goto('/signin');
   });
 }
 
@@ -622,6 +638,11 @@ function toggleMembers() {
   onpointercancel={() => drawers.cancel()}
 />
 
+{#if !ready}
+  <!-- Deliberately almost nothing. A spinner would be a claim that something
+       is coming; this is the half-second before the app knows whose it is. -->
+  <div class="waiting" aria-busy="true"></div>
+{:else}
 <div
   class="shell"
   class:no-members={!core.membersOpen}
@@ -1023,8 +1044,10 @@ function toggleMembers() {
     </aside>
   {/if}
 </div>
+{/if}
 
 <style>
+  .waiting { height: 100dvh; background: var(--ground-0); }
   .shell {
     display: grid;
     grid-template-columns: 76px 250px 1fr 240px;

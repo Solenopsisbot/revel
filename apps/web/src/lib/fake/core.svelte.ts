@@ -11,6 +11,7 @@ import { newFaceId, resolveSetting } from '@revel/core';
 import { untoned } from '../emoji.js';
 import { myFaces } from '../faces.svelte.js';
 import { live } from '../live.svelte.js';
+import { session } from '../session.svelte.js';
 import { notifications as notificationSink } from '../notify.svelte.js';
 import { loadPrefs, savePrefs } from '../notifyPrefs.js';
 // A cycle — `conversation.svelte.ts` imports this module back. Safe because
@@ -66,6 +67,25 @@ class Core {
    * isn't: the mutation lands on the proxy but subscribers never fire. Every
    * other reactive thing in this file is a class field, so this one is too.
    */
+  /**
+   * Whether this client is the fixture-driven demo rather than an account.
+   *
+   * **Keyed on who you are, not on whether the core has started.** Every one of
+   * these branches used to ask `live.running`, which is false for a signed-in
+   * account until the crypto, the store and the socket are all up — a second or
+   * two during which the app rendered somebody else's spaces, somebody else's
+   * DMs and a fixture face, and then replaced them. It also meant that opening
+   * `/app` signed out showed the entire fake app before the redirect to
+   * `/signin` landed.
+   *
+   * A person who is signed in never wants fixtures, including in the moment
+   * before their own data is ready. Empty is the honest answer there, and it is
+   * also the one that stops flashing.
+   */
+  get demo(): boolean {
+    return !session.signedIn;
+  }
+
   facesSeed: Record<string, Face> = $state(seedFaces);
   /**
    * Every face this client can name, by id.
@@ -78,7 +98,7 @@ class Core {
    * on the roster. `faceCard` is the lookup that knows about both.
    */
   get faces(): Record<string, Face> {
-    if (!live.running) return this.facesSeed;
+    if (this.demo) return this.facesSeed;
     return Object.fromEntries(this.myFaces.map((f) => [f.id, f]));
   }
   spacesSeed = $state(spaces);
@@ -92,17 +112,39 @@ class Core {
    * never been in.
    */
   get spaces() {
-    return live.running ? [] : this.spacesSeed;
+    return this.demo ? this.spacesSeed : [];
   }
   dmsSeed = $state(structuredClone(dms));
-  currentSpaceId = $state('solexsis');
+  currentSpaceIdSeed = $state('solexsis');
+  /** No space for a signed-in account — there are none until phase 3. */
+  get currentSpaceId(): string {
+    return this.demo ? this.currentSpaceIdSeed : '';
+  }
+  set currentSpaceId(id: string) {
+    this.currentSpaceIdSeed = id;
+  }
   /**
    * What you are looking at. A DM's id sits here exactly like a room's does,
    * because a DM *is* a room (`docs/16`) — keeping one "current thing" id is
    * what lets the message list, composer, roster and member panel work in a
    * DM without knowing DMs exist.
    */
-  currentRoomId = $state('design');
+  currentRoomIdSeed = $state('design');
+  /**
+   * The open room.
+   *
+   * Empty for a signed-in account until it opens one. The fixture default
+   * reached the address bar — `?dm=design`, a room id from somebody else's
+   * demo, in a URL ready to be copied and shared.
+   */
+  get currentRoomId(): string {
+    return this.demo ? this.currentRoomIdSeed : this.currentRoomIdLive;
+  }
+  set currentRoomId(id: string) {
+    if (this.demo) this.currentRoomIdSeed = id;
+    else this.currentRoomIdLive = id;
+  }
+  currentRoomIdLive = $state('');
   /**
    * Home is where rooms-without-a-space live (`docs/05` §2). It is a peer of
    * the space rail rather than a space itself, because a DM belongs to no
@@ -119,7 +161,7 @@ class Core {
    * single face of its own.
    */
   get speakingAs(): string {
-    if (!live.running) return this.speakingAsSeed;
+    if (this.demo) return this.speakingAsSeed;
     return myFaces.book.primary ?? this.myFaces[0]?.id ?? '';
   }
   set speakingAs(id: string) {
@@ -466,7 +508,7 @@ class Core {
     // sees. The scope check used to be `=== 'home'`, and that left a window at
     // startup where the scope was still a space, the space had no rooms, and
     // every reader of `room.kind` got `undefined`.
-    if (!dm && live.running && !this.space.rooms.some((r) => r.id === this.currentRoomId)) {
+    if (!dm && !this.demo && !this.space.rooms.some((r) => r.id === this.currentRoomId)) {
       return EMPTY_ROOM;
     }
     if (dm) {
@@ -757,7 +799,8 @@ class Core {
    * from the IdP directory instead, which is what it is for.
    */
   get dms(): Dm[] {
-    if (!live.running) return this.dmsSeed;
+    if (this.demo) return this.dmsSeed;
+    if (!live.running) return [];
     return live.rooms
       .filter((r) => r.kind === 'dm' || r.kind === 'group')
       .map((r) => ({
