@@ -89,7 +89,8 @@ async function signUp(handle, face) {
 }
 
 async function openDm(page, handle) {
-  await page.getByTitle('Message someone').click();
+  await page.getByTitle('Start a conversation').click();
+  await page.getByRole('menuitem', { name: 'Message someone' }).click();
   await page.fill('input[aria-label="Who do you want to message?"]', handle);
   await page.getByRole('button', { name: 'Start', exact: true }).click();
   await wait(4000);
@@ -297,10 +298,7 @@ await wait(3500);
 ok(
   'history is still there',
   await bob.evaluate(
-    (r) =>
-      window.__revel.live.stack.rooms
-        .state(r)
-        .messages.some((m) => m.body === 'from alice'),
+    (r) => window.__revel.live.stack.rooms.state(r).messages.some((m) => m.body === 'from alice'),
     aliceRoom,
   ),
 );

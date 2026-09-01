@@ -1321,8 +1321,7 @@ class Core {
       return { room: room.id };
     } catch (err) {
       console.error('could not start a conversation', err);
-      const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
-      return { error: code || 'unreachable' };
+      return { error: reasonOf(err) };
     }
   }
 
@@ -1355,8 +1354,7 @@ class Core {
       return { room: room.id };
     } catch (err) {
       console.error('could not start a group conversation', err);
-      const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
-      return { error: code || 'unreachable' };
+      return { error: reasonOf(err) };
     }
   }
 
@@ -1605,5 +1603,22 @@ const EMPTY_SPACE: Space = {
   bans: [],
   purges: [],
 };
+
+/**
+ * The machine-readable half of a failure.
+ *
+ * `TransportError` carries `reason` — `not_a_member`, `cannot_dm_yourself` —
+ * and this used to look for `code`, which it has never had. So every refusal
+ * the server explained clearly came out as "could not reach your provider",
+ * including "that one is you", which is not a network problem and is entirely
+ * the user's to fix.
+ */
+function reasonOf(err: unknown): string {
+  if (err && typeof err === 'object') {
+    if ('reason' in err && err.reason) return String(err.reason);
+    if ('code' in err && err.code) return String(err.code);
+  }
+  return 'unreachable';
+}
 
 export const core = new Core();

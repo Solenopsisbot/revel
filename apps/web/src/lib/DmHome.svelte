@@ -17,6 +17,7 @@ import Avatar from './Avatar.svelte';
 import { core } from './fake/core.svelte.js';
 import Icon from './Icon.svelte';
 import { session } from './session.svelte.js';
+import { whyNot } from './startErrors.js';
 
 let mode = $state<'idle' | 'dm' | 'group'>('idle');
 let one = $state('');
@@ -27,16 +28,6 @@ let error = $state('');
 const dms = $derived(core.dms);
 const unread = $derived(dms.reduce((n, d) => n + (d.unread ?? 0), 0));
 
-/** `no_such_account:viola` reads as a sentence rather than as a code. */
-function say(code: string): string {
-  if (code.startsWith('no_such_account:')) return `No account called ${code.split(':')[1]}.`;
-  if (code === 'no_such_account') return "That account doesn't exist on this provider.";
-  if (code === 'cannot_dm_yourself') return 'That one is you.';
-  if (code === 'no_handle') return 'Type a name first.';
-  if (code === 'foreign_idp') return 'Another provider — not supported yet.';
-  return "That didn't work. The provider might be unreachable.";
-}
-
 async function start() {
   busy = true;
   error = '';
@@ -45,7 +36,7 @@ async function start() {
       ? await core.startGroup(many.split(',').map((s) => s.trim()))
       : await core.startDm(one);
   busy = false;
-  if (result.error) error = say(result.error);
+  if (result.error) error = whyNot(result.error);
   else {
     one = '';
     many = '';

@@ -20,6 +20,7 @@ import { core, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
 import type { NotifyLevel } from '$lib/fake/data.js';
 import Icon from '$lib/Icon.svelte';
 import { lastRoom } from '$lib/lastRoom.js';
+import { whyNot } from '$lib/startErrors.js';
 import { layout } from '$lib/layout.svelte.js';
 import { live } from '$lib/live.svelte.js';
 import MessageList from '$lib/MessageList.svelte';
@@ -117,6 +118,8 @@ if (page.url.searchParams.has('e2e')) {
 }
 
 let startingDm = $state(false);
+/** Which kind the form is collecting names for. */
+let startingKind = $state<'dm' | 'group'>('dm');
 let dmHandle = $state('');
 let dmError = $state('');
 let dmBusy = $state(false);
@@ -701,8 +704,23 @@ function toggleMembers() {
                be a promise the demo cannot keep. -->
           <button
             class="sh-add"
-            title="Message someone"
-            onclick={() => { startingDm = !startingDm; dmError = ''; }}
+            title="Start a conversation"
+            aria-haspopup="menu"
+            onclick={(e) => {
+              dmError = '';
+              contextMenu.open(
+                e,
+                [
+                  { id: 'dm', label: 'Message someone', icon: 'plus' },
+                  { id: 'group', label: 'New group', icon: 'people' },
+                ],
+                (picked) => {
+                  startingKind = picked === 'group' ? 'group' : 'dm';
+                  startingDm = true;
+                },
+                'Start a conversation',
+              );
+            }}
           >
             <Icon name="plus" size={16} />
           </button>
@@ -715,13 +733,13 @@ function toggleMembers() {
           onsubmit={async (e) => {
             e.preventDefault();
             dmBusy = true;
-            const result = await core.startDm(dmHandle);
+            const result =
+              startingKind === 'group'
+                ? await core.startGroup(dmHandle.split(','))
+                : await core.startDm(dmHandle);
             dmBusy = false;
             if (result.error) {
-              dmError =
-                result.error === 'no_such_account'
-                  ? "Nobody here goes by that."
-                  : 'Could not reach your provider.';
+              dmError = whyNot(result.error);
               return;
             }
             startingDm = false;
@@ -731,8 +749,10 @@ function toggleMembers() {
         >
           <input
             bind:value={dmHandle}
-            placeholder="handle"
-            aria-label="Who do you want to message?"
+            placeholder={startingKind === 'group' ? 'names, separated by commas' : 'handle'}
+            aria-label={startingKind === 'group'
+              ? 'Who is in the group?'
+              : 'Who do you want to message?'}
             autocomplete="off"
           />
           <button type="submit" disabled={dmBusy || !dmHandle.trim()}>
@@ -1116,31 +1136,30 @@ function toggleMembers() {
   /* Sits in the header rather than floating: "message someone" is a property
      of the list, and a button that hovers over rows is one people click by
      accident while scrolling. */
+  /*
+    The visible box **is** the button, so the shading and the glyph cannot
+    disagree — which they did twice: once as a rotated diamond behind a square
+    icon, and once as a pseudo-element centred on the button while the glyph
+    sat two pixels off its centre. Anything drawn separately from the thing it
+    is drawn around eventually drifts from it.
+
+    The 44px tap target `docs/24` asks for is a transparent `::after` instead.
+    A hit area is invisible by definition, so it is the half that can afford to
+    be a separate box.
+  */
   .sh-add {
-    margin-left: auto; display: grid; place-items: center; cursor: pointer;
-    position: relative; isolation: isolate;
-    width: 24px; height: 24px; min-width: var(--tap); min-height: var(--tap);
-    border: 0; background: transparent; color: var(--text-2); border-radius: var(--r-sm);
+    margin-left: auto; position: relative;
+    display: grid; place-items: center; cursor: pointer;
+    width: 30px; height: 30px;
+    border: 0; border-radius: var(--r-sm);
+    background: var(--ground-3); color: var(--text-2);
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  /*
-    The tap target stays 44px — `docs/24` is not negotiable about that — and the
-    *shading* does not. Painting the hover across the whole target put a box
-    nearly three times the width of the glyph behind a 16px plus, which reads as
-    misaligned even though it is centred.
-  */
-  /*
-    Visible at rest, not only on hover. This is the only way to start a
-    conversation from the sidebar, and at `--text-dim` against this background
-    it read as an absent button rather than a quiet one — somebody looked for
-    it and concluded it had been removed.
-  */
-  .sh-add::before {
-    content: ''; position: absolute; z-index: -1;
-    width: 30px; height: 30px; border-radius: var(--r-sm);
-    background: var(--ground-3); transition: background var(--t-fast) var(--ease);
+  .sh-add::after {
+    content: ''; position: absolute;
+    inset: calc((var(--tap) - 30px) / -2);
   }
-  .sh-add:hover { color: var(--text); }
-  .sh-add:hover::before { background: var(--ground-4); }
+  .sh-add:hover { background: var(--ground-4); color: var(--text); }
 
   .new-dm { display: flex; gap: 6px; padding: 6px 10px 8px; flex-wrap: wrap; }
   .new-dm input {

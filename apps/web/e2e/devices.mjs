@@ -102,7 +102,8 @@ const B = `db${stamp}`;
 const alice = await signUp(A, 'Viola');
 const bob = await signUp(B, 'Rae');
 
-await alice.page.getByTitle('Message someone').click();
+await alice.page.getByTitle('Start a conversation').click();
+await alice.page.getByRole('menuitem', { name: 'Message someone' }).click();
 await alice.page.fill('input[aria-label="Who do you want to message?"]', B);
 await alice.page.getByRole('button', { name: 'Start', exact: true }).click();
 await wait(5000);
