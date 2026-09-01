@@ -7,7 +7,7 @@
  * implementation should not touch a single component.
  */
 
-import { newFaceId, resolveSetting } from '@revel/core';
+import { type Face as CoreFace, newFaceId, resolveSetting } from '@revel/core';
 import { untoned } from '../emoji.js';
 import { myFaces } from '../faces.svelte.js';
 import { live } from '../live.svelte.js';
@@ -83,7 +83,11 @@ class Core {
    * also the one that stops flashing.
    */
   get demo(): boolean {
-    return !session.signedIn;
+    // Explicitly the demo, or known to be signed out. **Not** "we have not
+    // found out yet" — that is a third state, and treating it as demo is what
+    // put fixture spaces on screen and `?space=solexsis` in the address bar
+    // for the half-second before `restore()` answered.
+    return session.demo || (session.ready && !session.signedIn);
   }
 
   facesSeed: Record<string, Face> = $state(seedFaces);
@@ -408,9 +412,55 @@ class Core {
   // --- account, keys and devices -------------------------------------------
   // Wren reads all of this (`docs/12`), and so do the settings screens. One
   // source, so her notices can never contradict the panel next to them.
-  account = $state(structuredClone(account));
-  devices = $state(structuredClone(devices));
-  keyChanges = $state(structuredClone(keyChanges));
+  accountSeed = $state(structuredClone(account));
+  devicesSeed = $state(structuredClone(devices));
+  keyChangesSeed = $state(structuredClone(keyChanges));
+
+  /**
+   * What Wren is allowed to notice, and it is far less than the fixtures show.
+   *
+   * Her notices are *derived* from this state, which is the right design and
+   * was pointed at fake data: a brand new account was being told an iPad it
+   * had never owned was 94 days idle, and that somebody's encryption key had
+   * changed. Every one of those is a real notice about a real hazard, and
+   * every one of them was fiction.
+   *
+   * So for a signed-in account the inputs she does not actually have are
+   * empty, and the one she does — whether this device has ever confirmed
+   * saving a recovery code — is real. That notice is the most important thing
+   * she says, and it is the only one that is currently true.
+   */
+  get account() {
+    if (this.demo) return this.accountSeed;
+    return {
+      ...this.accountSeed,
+      recoveryCodeConfirmed: recoveryConfirmed(),
+      // Knowable in principle, not wired: whether a passkey wrap is registered
+      // is a question for the IdP. Claiming "no passkey" would nag somebody who
+      // has one, and claiming one exists would be worse.
+      passkeySupported: false,
+      passkeyEnrolled: false,
+    };
+  }
+  set account(next: typeof account) {
+    this.accountSeed = next;
+  }
+
+  /** The device list is not wired for a live account, so there is not one. */
+  get devices() {
+    return this.demo ? this.devicesSeed : [];
+  }
+  set devices(next: typeof devices) {
+    this.devicesSeed = next;
+  }
+
+  /** Nor is key-change history. An invented one is a false alarm about safety. */
+  get keyChanges() {
+    return this.demo ? this.keyChangesSeed : [];
+  }
+  set keyChanges(next: typeof keyChanges) {
+    this.keyChangesSeed = next;
+  }
   storage = $state(structuredClone(storage));
   notifications = $state(structuredClone(notifications));
 
@@ -1360,11 +1410,34 @@ class Core {
 
   /** Edit one of your own faces. Refuses other people's, which is not a
       security boundary here but is the shape the real core will need. */
+  /**
+   * Edit one of my faces.
+   *
+   * Live, this goes to the **book**, which is the thing that persists and the
+   * thing whose ids go on the wire. It used to mutate `this.faces[faceId]` —
+   * which for a signed-in account is a map derived from the book and rebuilt on
+   * the next read, so every edit was discarded the instant it was made. There
+   * was no save button because the screen saves as you type; it just wasn't
+   * saving anywhere.
+   */
   updateFace(
     faceId: string,
     patch: Partial<Pick<Face, 'name' | 'pronouns' | 'note' | 'bio' | 'colour' | 'status'>>,
   ) {
-    const face = this.faces[faceId];
+    if (!this.demo) {
+      const next: Record<string, unknown> = {};
+      // Trimmed the same way the fixture path trims, and empty means unset
+      // rather than an empty string — `docs/29` §1: a blank field in encrypted
+      // history is permanent, and `undefined` is not sent at all.
+      if (patch.name !== undefined && patch.name.trim()) next.name = patch.name.trim();
+      if (patch.pronouns !== undefined) next.pronouns = patch.pronouns.trim() || undefined;
+      if (patch.note !== undefined) next.note = patch.note.trim() || undefined;
+      if (patch.bio !== undefined) next.bio = patch.bio.trim() || undefined;
+      if (patch.colour) next.colour = patch.colour;
+      void myFaces.update(faceId, next as Partial<Omit<CoreFace, 'id'>>);
+      return;
+    }
+    const face = this.facesSeed[faceId];
     if (!face || face.accountId !== MY_ACCOUNT) return;
     if (patch.name !== undefined && patch.name.trim()) face.name = patch.name.trim();
     if (patch.pronouns !== undefined) face.pronouns = patch.pronouns.trim() || undefined;
@@ -1488,5 +1561,20 @@ const EMPTY_SPACE: Space = {
   bans: [],
   purges: [],
 };
+
+/**
+ * Whether this device has confirmed saving a recovery code.
+ *
+ * Local and per device on purpose: the question Wren is asking is "does the
+ * person holding *this* browser have a way back in", and an account-level flag
+ * would answer for a laptop she is not looking at.
+ */
+function recoveryConfirmed(): boolean {
+  try {
+    return globalThis.localStorage?.getItem('revel:recovery-saved') === '1';
+  } catch {
+    return false;
+  }
+}
 
 export const core = new Core();

@@ -227,6 +227,8 @@ const demo = page.url.searchParams.has('demo');
  */
 let ready = $state(demo);
 
+if (demo) session.demo = true;
+
 if (!demo) {
   void session.restore().then((restored) => {
     if (restored) ready = true;
@@ -477,12 +479,22 @@ let membersEl = $state<HTMLElement>();
  * matters to the back ladder.
  */
 $effect(() => {
-  syncUrl({
+  // Everything read *before* the guard, on purpose. An effect depends on what
+  // it actually read, so returning early on `ready` meant this never
+  // subscribed to `settingsOpen` — the URL kept `?settings=account` after the
+  // sheet had closed, because nothing told it to run again. Exactly the same
+  // trap as the "remember the open room" effect below.
+  const loc = {
     scope: core.scope,
     spaceId: core.currentSpaceId,
     roomId: core.currentRoomId,
     settings: settingsOpen ? settingsSection : undefined,
-  });
+  };
+  // Not before the app knows whose it is. This ran during the unknown window
+  // and wrote whatever `core` was defaulting to, which is how a fresh visit to
+  // `/app` flashed `?space=solexsis&room=design`.
+  if (!ready) return;
+  syncUrl(loc);
 });
 
 $effect(() => layout.watch());

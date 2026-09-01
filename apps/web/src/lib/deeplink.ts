@@ -1,3 +1,4 @@
+import { replaceState } from '$app/navigation';
 /**
  * Every meaningful thing has a URL (`docs/19` §The web app).
  *
@@ -125,5 +126,12 @@ export function syncUrl(loc: Location) {
   if (typeof history === 'undefined') return;
   const next = urlFor(loc);
   if (location.pathname + location.search === next) return;
-  history.replaceState(history.state, '', next);
+  // SvelteKit's `replaceState`, not the browser's. SvelteKit 2 owns the
+  // history entry — calling `history.replaceState` directly is ignored with a
+  // warning, which is why closing settings cleared the state, re-ran this, and
+  // left `?settings=account` in the address bar anyway.
+  //
+  // `history.state` is passed straight back through: `back.ts` keeps the layer
+  // count there and this must not be the thing that loses it.
+  replaceState(next, history.state ?? {});
 }

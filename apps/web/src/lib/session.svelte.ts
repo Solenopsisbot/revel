@@ -21,6 +21,16 @@ class DeviceSession {
   ready = $state(false);
 
   /**
+   * The fixture-driven reference app, opened with `?demo=1`.
+   *
+   * A separate flag rather than "signed out", because those are different
+   * states and conflating them is what let a moment of *not knowing* render as
+   * a moment of *demo* — fixture spaces on screen, and `?space=solexsis` in the
+   * address bar of somebody who had never seen it.
+   */
+  demo = $state(false);
+
+  /**
    * The identity provider this account lives on.
    *
    * Taken from where the app is being served, which is true for a normal
