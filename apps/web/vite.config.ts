@@ -23,7 +23,17 @@ export default defineConfig({
      */
     proxy: {
       ...Object.fromEntries(
-        ['/idp', '/auth', '/rooms', '/groups', '/welcomes', '/blobs', '/push', '/.well-known'].map(
+        [
+          '/idp',
+          '/auth',
+          '/rooms',
+          '/spaces',
+          '/groups',
+          '/welcomes',
+          '/blobs',
+          '/push',
+          '/.well-known',
+        ].map(
           (prefix) => [prefix, { target: 'http://localhost:8080', changeOrigin: true }],
         ),
       ),

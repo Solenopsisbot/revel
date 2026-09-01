@@ -19,6 +19,7 @@ import type { PushSender } from './push.js';
 import { mountPush, notify } from './push.js';
 import { rateLimit } from './ratelimit.js';
 import { mountRooms } from './rooms.js';
+import { mountSpaces } from './spaces.js';
 import type { Store } from './store/types.js';
 import type { SecurityContact } from './wellknown.js';
 import { mountWellKnown } from './wellknown.js';
@@ -232,6 +233,7 @@ export function createApp(deps: AppDeps) {
     ...(deps.maxBlobBytes === undefined ? {} : { maxBytes: deps.maxBlobBytes }),
   });
   mountRooms(app, { store: deps.store, ids: deps.ids, idp, authenticate: deps.authenticate });
+  mountSpaces(app, { store: deps.store, ids: deps.ids, authenticate: deps.authenticate });
 
   mountGroups(app, {
     store: deps.store,

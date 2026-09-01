@@ -50,6 +50,35 @@ export async function permissionsFor(store: Store, roomId: string, accountId: st
   return { room, bits };
 }
 
+/**
+ * What an account may do in a space, before any room's overrides.
+ *
+ * `@everyone` is added here rather than stored on the member: it applies to
+ * every member by definition, and storing it would mean every role change had
+ * to remember not to drop it. It shares the space's id (`docs/04` §4).
+ *
+ * `null` means not a member — distinct from "a member with no permissions",
+ * which is a real and different state.
+ */
+export async function spacePermissionsFor(
+  store: Store,
+  spaceId: string,
+  accountId: string,
+): Promise<bigint | null> {
+  const member = await store.getSpaceMember(spaceId, accountId);
+  if (!member) return null;
+
+  const [roles, owner] = await Promise.all([
+    store.getRoles(spaceId, [spaceId, ...member.roleIds]),
+    store.isOwner(spaceId, accountId),
+  ]);
+
+  return resolve({
+    roleBits: roles.map((r) => ({ roleId: r.id, bits: parse(r.bits) })),
+    isOwner: owner,
+  });
+}
+
 /** May this actor append this event to this room? */
 export async function canSend(
   store: Store,
