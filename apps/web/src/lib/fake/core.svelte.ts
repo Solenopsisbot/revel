@@ -564,8 +564,7 @@ class Core {
   /**
    * The space you are in.
    *
-   * A signed-in account has none — the server will not make one until
-   * `docs/06` phase 3 — and every caller here was written when there was
+   * A new account has none, and every caller here was written when there was
    * always at least one fixture. Rather than make forty call sites handle
    * `undefined`, an account with no spaces gets an empty one: it renders as
    * nothing, which is the truth, instead of crashing the layout on `.rooms`.
@@ -1263,7 +1262,10 @@ class Core {
     this.dmsSeed = this.dmsSeed.filter((d) => d.id !== id);
     if (this.currentRoomId === id) {
       if (this.dms.length) this.openHome(this.dms[0]!.id);
-      else this.openRoom(this.currentSpaceId, this.space.rooms[0]!.id);
+      // Stay in Home with nothing open. Falling through to the current space's
+      // first room assumed there was one — a real account can have no spaces
+      // at all, and one with a space can have no rooms in it.
+      else this.openHome();
     }
   }
 
@@ -1635,7 +1637,7 @@ class Core {
     const space = this.spaces.find((s) => s.id === spaceId);
     if (!space || space.rooms.length <= 1) return;
     space.rooms = space.rooms.filter((r) => r.id !== roomId);
-    if (this.currentRoomId === roomId) this.openRoom(spaceId, space.rooms[0]!.id);
+    if (this.currentRoomId === roomId) this.openRoom(spaceId, space.rooms[0]?.id ?? '');
   }
 
   /**

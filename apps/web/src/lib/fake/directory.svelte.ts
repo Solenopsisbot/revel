@@ -4,11 +4,10 @@
  * Thin, like `conversation.svelte.ts`: all the translation is in
  * `directoryShape.ts`, which reaches for nothing and is therefore testable.
  *
- * Spaces are only partly here, and honestly so. `DirectoryCore` describes rooms
- * a Host actually serves; `docs/06` puts spaces, roles and overrides in phase 3
- * and the server has none of it, so a space room maps to a `RoomInfo` with a
- * `space` id and an empty member list rather than pretending to know who is in
- * it. What is real today is DMs and group DMs.
+ * This is the *fixture* directory, so a space room here maps to a `RoomInfo`
+ * with a `space` id and an empty member list rather than pretending to know who
+ * is in it. Real spaces do not come through here at all — they come from the
+ * Host, through `live.svelte.ts` and `space/liveShape.ts`.
  */
 import type { RoomInfo } from '@revel/protocol';
 import { core } from './core.svelte.js';

@@ -39,6 +39,15 @@ function notifyRows(current: NotifyLevel, inherited: boolean, prefix: string): I
 export function roomMenu(
   room: Room,
   resolved: { level: NotifyLevel; from: 'room' | 'space' | 'global' },
+  /**
+   * Whether "leave" means anything here.
+   *
+   * In a *space* room it does not: membership is recomputed from the room's
+   * audience (`docs/03` §4), so leaving one you still match puts you straight
+   * back in. Leaving is a thing you do to a **space**, and the menu says so by
+   * not offering the version that would quietly undo itself.
+   */
+  canLeave = true,
 ): Item[] {
   return [
     ...notifyRows(resolved.level, resolved.from !== 'room', 'notify'),
@@ -51,7 +60,9 @@ export function roomMenu(
     },
     { id: 'room-settings', label: 'Room settings', icon: 'gear' },
     { id: 'copy-link', label: 'Copy link', icon: 'link' },
-    { id: 'leave-room', label: 'Leave room', icon: 'door', danger: true },
+    ...(canLeave
+      ? [{ id: 'leave-room', label: 'Leave room', icon: 'door', danger: true } as Item]
+      : []),
   ];
 }
 

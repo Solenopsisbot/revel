@@ -62,7 +62,9 @@ export function applyUrl(url: URL): { message?: string } {
     const room = space?.rooms.find((r) => r.id === roomId);
     // A room that isn't there is a link to somewhere you can't go — land on
     // the space if we know it and leave the rest to the banner.
-    if (space) core.openRoom(space.id, room ? room.id : space.rooms[0]!.id);
+    // `rooms[0]` may not exist: a space can have no rooms you can see, and
+    // landing on it with nothing open is a truer answer than a crash.
+    if (space) core.openRoom(space.id, room?.id ?? space.rooms[0]?.id ?? '');
   }
 
   const message = q.get('m') ?? undefined;

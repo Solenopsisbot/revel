@@ -330,7 +330,9 @@ function openRoomMenu(e: MouseEvent, roomId: string) {
   const resolved = core.notifyFor(core.currentSpaceId, roomId);
   contextMenu.open(
     e,
-    roomMenu(room, resolved),
+    // No "leave room" in a live space: membership is recomputed from the
+    // room's audience, so leaving one you still match puts you back in.
+    roomMenu(room, resolved, core.demo),
     (id) => {
       const [verb, arg] = id.split(':');
       if (verb === 'notify') {
@@ -843,6 +845,15 @@ function toggleMembers() {
       <Icon name="chevron" size={16} />
     </button>
     <div class="rooms">
+      {#if !core.space.rooms.length}
+        <!-- A space genuinely can have no rooms you can see: the last one can
+             be deleted, and a room whose audience you do not match is a room
+             you never learn exists. Saying so beats an empty column. -->
+        <div class="no-dms">
+          <b>No rooms here yet.</b>
+          <span>Make one from the space menu above.</span>
+        </div>
+      {/if}
       {#each Object.entries(categories) as [category, rooms] (category)}
         <div class="cat">{category}</div>
         {#each rooms as room (room.id)}

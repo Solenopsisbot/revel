@@ -7,11 +7,11 @@
  * no way to discover what it was a member of except its own local copy, which
  * is exactly the thing a reload is supposed to be able to lose.
  *
- * Spaces are not here. `docs/06` puts them in phase 3 with roles, overrides,
- * invites and bans, and half a space is worse than none: a room with a
- * `space_id` pointing at nothing would have permissions resolved against roles
- * that do not exist. What is here is the phase 2 set — DMs and group DMs,
- * `docs/03` §4's "rooms with no space and an explicit-list audience".
+ * Spaces are not here — they are in `spaces.ts`, and the split is deliberate.
+ * A room in a space is reached through its space, because that is where the
+ * permission check lives: everything in this file is a room with no space and
+ * an explicit-list audience (`docs/03` §4), where membership *is* the policy
+ * and there are no roles to resolve against.
  */
 import {
   CreateDm,

@@ -73,8 +73,14 @@ export function whatTheServerSees(): string {
   if (room.audience.kind === 'everyone') {
     parts.push('Everyone in this space holds the keys here.');
   } else if (room.audience.kind === 'roles') {
+    // By name. An audience is stored as role *ids* — the Host has never been
+    // told the names (`docs/04` §1) — and a sentence explaining who holds the
+    // keys is the last place to print a snowflake at somebody.
+    const named = room.audience.roles.map(
+      (ref) => core.space.roles.find((r) => r.id === ref || r.name === ref)?.name ?? ref,
+    );
     parts.push(
-      `Only people with ${room.audience.roles.join(' or ')} hold the keys here, so the group is smaller than the space.`,
+      `Only people with ${named.join(' or ')} hold the keys here, so the group is smaller than the space.`,
     );
   } else {
     parts.push(
@@ -120,7 +126,10 @@ export function buildCommands(ctx: Ctx): Command[] {
       icon: 'grid',
       group: 'Go to',
       keywords: 'server community space',
-      run: () => void core.openRoom(space.id, space.rooms[0]!.id),
+      // Empty id for a space with no rooms you can see. `rooms[0]!` crashes,
+      // and a space genuinely can be empty — the last room can be deleted, and
+      // a room whose audience you do not match is one you never learn exists.
+      run: () => void core.openRoom(space.id, space.rooms[0]?.id ?? ''),
     });
   }
 

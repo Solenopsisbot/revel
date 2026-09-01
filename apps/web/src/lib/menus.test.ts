@@ -77,3 +77,17 @@ describe('the notify rows', () => {
     expect(items.map((i) => i.id)).toContain('space-notify');
   });
 });
+
+describe('leaving a room', () => {
+  it('is offered when it means something, and left out when it does not', () => {
+    // A space room's membership is recomputed from its audience (`docs/03`
+    // §4), so a "leave" you would immediately undo is worse than no menu row.
+    const room = { id: 'r', name: 'design', kind: 'text' as const, category: 'General' };
+    const resolved = { level: 'everything' as const, from: 'room' as const };
+    const ids = (canLeave: boolean) => roomMenu(room, resolved, canLeave).map((i) => i.id);
+    expect(ids(true)).toContain('leave-room');
+    expect(ids(false)).not.toContain('leave-room');
+    // Everything else is unchanged, so the two menus differ by exactly one row.
+    expect(ids(true).filter((i) => i !== 'leave-room')).toEqual(ids(false));
+  });
+});
