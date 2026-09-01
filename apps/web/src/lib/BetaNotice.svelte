@@ -15,11 +15,27 @@
  */
 import Icon from './Icon.svelte';
 
+let {
+  /**
+   * Whether it can be put away.
+   *
+   * In the app, yes: somebody who has read it once does not need it on every
+   * load, and a warning that cannot be dismissed is one people learn to look
+   * past. On the landing page, no — it is the first thing anybody reads about
+   * what this is, and it is there for people who have not decided yet.
+   */
+  dismissible = true,
+}: { dismissible?: boolean } = $props();
+
 const KEY = 'revel:beta-notice-seen';
 
 let dismissed = $state(true);
 
 $effect(() => {
+  if (!dismissible) {
+    dismissed = false;
+    return;
+  }
   try {
     dismissed = globalThis.localStorage?.getItem(KEY) === '1';
   } catch {
@@ -47,9 +63,11 @@ function dismiss() {
       can't be read through means starting over. <b>Don't put anything here you'd
       be upset to lose.</b>
     </p>
-    <button onclick={dismiss} aria-label="Dismiss">
-      <Icon name="plus" size={15} />
-    </button>
+    {#if dismissible}
+      <button onclick={dismiss} aria-label="Dismiss">
+        <Icon name="plus" size={15} />
+      </button>
+    {/if}
   </div>
 {/if}
 

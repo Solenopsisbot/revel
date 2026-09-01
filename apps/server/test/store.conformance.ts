@@ -145,6 +145,112 @@ export function describeStore(name: string, harness: StoreHarness): void {
     });
 
     // -------------------------------------------------------------------------
+    describe('spaces', () => {
+      it('creates the space, its owner and its `@everyone` in one act', async () => {
+        // Three facts that are really one. A space with no owner cannot be
+        // administered; one with no `@everyone` gives its members no
+        // permissions at all. Either half alone is unusable and undeletable.
+        const id = uniq('space');
+        const space = await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });
+
+        expect(space.id).toBe(id);
+        expect(await store.isOwner(id, 'acct-a')).toBe(true);
+        expect(await store.getSpaceMember(id, 'acct-a')).toMatchObject({ roleIds: [] });
+
+        // `@everyone` shares the space's id (`docs/04` §4), so an override
+        // table needs no special case for it.
+        const roles = await store.listRoles(id);
+        expect(roles.map((r) => r.id)).toEqual([id]);
+        expect(roles[0]?.bits).toBe('3');
+      });
+
+      it('is idempotent, so a retried create is not a second space', async () => {
+        const id = uniq('space');
+        await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });
+        await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });
+        expect((await store.listRoles(id)).length).toBe(1);
+        expect((await store.listSpaceMembers(id)).length).toBe(1);
+      });
+
+      it('lists the spaces an account is in, and only those', async () => {
+        const mine = uniq('space');
+        const theirs = uniq('space');
+        await store.createSpace({ id: mine, owner: 'acct-a', everyoneBits: '3' });
+        await store.createSpace({ id: theirs, owner: 'acct-b', everyoneBits: '3' });
+
+        const ids = (await store.listAccountSpaces('acct-a')).map((s) => s.id);
+        expect(ids).toContain(mine);
+        expect(ids).not.toContain(theirs);
+      });
+
+      it('joins, re-roles and leaves', async () => {
+        const id = uniq('space');
+        await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });
+
+        await store.putSpaceMember(id, 'acct-b', ['role-mod']);
+        expect(await store.getSpaceMember(id, 'acct-b')).toMatchObject({ roleIds: ['role-mod'] });
+
+        // The same call updates, so nothing has to know whether they were
+        // already in — which is the state a retried invite is in.
+        await store.putSpaceMember(id, 'acct-b', []);
+        expect(await store.getSpaceMember(id, 'acct-b')).toMatchObject({ roleIds: [] });
+
+        await store.removeSpaceMember(id, 'acct-b');
+        expect(await store.getSpaceMember(id, 'acct-b')).toBeNull();
+      });
+
+      it('takes a deleted role off everybody who held it', async () => {
+        // Otherwise a member keeps an id that resolves to nothing, and the
+        // permission check silently drops it — which looks like the role still
+        // existing and doing nothing.
+        const id = uniq('space');
+        await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });
+        const role = { id: uniq('role'), spaceId: id, bits: '7', position: 1 };
+        await store.putRole(role);
+        await store.putSpaceMember(id, 'acct-b', [role.id]);
+
+        await store.deleteRole(id, role.id);
+        expect((await store.listRoles(id)).map((r) => r.id)).toEqual([id]);
+        expect(await store.getSpaceMember(id, 'acct-b')).toMatchObject({ roleIds: [] });
+      });
+
+      it('refuses to delete `@everyone`', async () => {
+        const id = uniq('space');
+        await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });
+        await store.deleteRole(id, id);
+        expect((await store.listRoles(id)).map((r) => r.id)).toEqual([id]);
+      });
+
+      it('hands the same group to the same audience, and a new one to a new audience', async () => {
+        // The reason a twelve-room space is one commit rather than twelve
+        // (`docs/03` §4). Keyed on the audience *rule*, never on who currently
+        // matches it — two rooms keyed on the resulting set could silently
+        // merge and then diverge as roles change, and encrypted history cannot
+        // be un-merged.
+        const id = uniq('space');
+        await store.createSpace({ id, owner: 'acct-a', everyoneBits: '3' });
+
+        // Unique ids: `group_id` is a primary key, so fixed ones collide with
+        // whatever a previous run of this suite left behind.
+        const first = uniq('group');
+        const second = uniq('group');
+        const third = uniq('group');
+
+        expect(await store.groupForAudience(id, 'everyone')).toBeNull();
+        await store.bindAudience(id, 'everyone', first);
+        expect(await store.groupForAudience(id, 'everyone')).toBe(first);
+
+        await store.bindAudience(id, 'roles:role-mod', second);
+        expect(await store.groupForAudience(id, 'roles:role-mod')).toBe(second);
+
+        // Binding again does not steal the audience from the group that holds
+        // it. Re-pointing would orphan a group that already has encrypted
+        // history in it, and there is no re-encrypting that.
+        await store.bindAudience(id, 'everyone', third);
+        expect(await store.groupForAudience(id, 'everyone')).toBe(first);
+      });
+    });
+
     describe('accounts and handles', () => {
       const account = (id: string, handle: string) => ({
         id,

@@ -20,6 +20,8 @@ import type {
   Role,
   Room,
   Session,
+  Space,
+  SpaceMember,
   Store,
   StoredPushSubscription,
   StoredWelcome,
@@ -140,6 +142,87 @@ export class MemoryStore implements Store {
   }
   async isOwner(spaceId: string, accountId: string) {
     return this.owners.has(`${spaceId}:${accountId}`);
+  }
+
+  // -- spaces ----------------------------------------------------------------
+
+  spaces = new Map<string, Space>();
+  spaceMembers = new Map<string, SpaceMember>();
+  audiences = new Map<string, string>();
+
+  async createSpace(input: { id: string; owner: string; everyoneBits: string }) {
+    const space: Space = { id: input.id, visibility: 'invite' };
+    this.spaces.set(space.id, space);
+    this.owners.add(`${space.id}:${input.owner}`);
+    // `@everyone` shares the space's id (`docs/04` §4), so a role override
+    // table needs no special case for it.
+    this.roles.set(space.id, {
+      id: space.id,
+      spaceId: space.id,
+      bits: input.everyoneBits,
+      position: 0,
+    });
+    await this.putSpaceMember(space.id, input.owner, []);
+    return space;
+  }
+  async getSpace(spaceId: string) {
+    return this.spaces.get(spaceId) ?? null;
+  }
+  async listAccountSpaces(accountId: string) {
+    const out: Space[] = [];
+    for (const m of this.spaceMembers.values()) {
+      if (m.accountId !== accountId) continue;
+      const space = this.spaces.get(m.spaceId);
+      if (space) out.push(space);
+    }
+    return out;
+  }
+  async listSpaceRooms(spaceId: string) {
+    return [...this.rooms.values()].filter((r) => r.spaceId === spaceId);
+  }
+  async putSpaceMember(spaceId: string, accountId: string, roleIds: string[]) {
+    this.spaceMembers.set(`${spaceId}:${accountId}`, { spaceId, accountId, roleIds });
+  }
+  async removeSpaceMember(spaceId: string, accountId: string) {
+    this.spaceMembers.delete(`${spaceId}:${accountId}`);
+  }
+  async getSpaceMember(spaceId: string, accountId: string) {
+    return this.spaceMembers.get(`${spaceId}:${accountId}`) ?? null;
+  }
+  async listSpaceMembers(spaceId: string) {
+    return [...this.spaceMembers.values()].filter((m) => m.spaceId === spaceId);
+  }
+  async listRoles(spaceId: string) {
+    return [...this.roles.values()]
+      .filter((r) => r.spaceId === spaceId)
+      .sort((a, b) => a.position - b.position);
+  }
+  async putRole(role: Role) {
+    this.roles.set(role.id, role);
+  }
+  async deleteRole(spaceId: string, roleId: string) {
+    // Never `@everyone`: it shares the space id, and a space without it gives
+    // its members no permissions at all.
+    if (roleId === spaceId) return;
+    this.roles.delete(roleId);
+    this.overrides = this.overrides.filter((o) => o.roleId !== roleId);
+    for (const [key, m] of this.spaceMembers) {
+      if (m.spaceId !== spaceId) continue;
+      this.spaceMembers.set(key, { ...m, roleIds: m.roleIds.filter((r) => r !== roleId) });
+    }
+  }
+  async groupForAudience(spaceId: string, audience: string) {
+    return this.audiences.get(`${spaceId}:${audience}`) ?? null;
+  }
+  async bindAudience(spaceId: string, audience: string, groupId: string) {
+    // First binding wins. Re-pointing an audience at a different group would
+    // orphan the one that already holds this room's encrypted history — every
+    // message in it stays encrypted for members of a group nothing references
+    // any more. Postgres enforces this with a unique index; the reference
+    // implementation has to agree or the suite is worthless.
+    const key = `${spaceId}:${audience}`;
+    if (this.audiences.has(key)) return;
+    this.audiences.set(key, groupId);
   }
   async getDevice(pub: string) {
     return this.devices.get(pub) ?? null;

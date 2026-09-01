@@ -59,6 +59,8 @@ import type {
   Role,
   Room,
   Session,
+  Space,
+  SpaceMember,
   Store,
   StoredPushSubscription,
   StoredWelcome,
@@ -258,6 +260,133 @@ export class PostgresStore implements Store {
     const [row] = await this.sql`
       SELECT 1 FROM space_owners WHERE space_id = ${spaceId} AND account_id = ${accountId}`;
     return !!row;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Spaces
+  // ---------------------------------------------------------------------------
+
+  async createSpace(input: { id: string; owner: string; everyoneBits: string }): Promise<Space> {
+    // One transaction because they are one fact: a space with no owner cannot
+    // be administered, and one with no `@everyone` gives its members no
+    // permissions at all. Either half alone is something nobody can use and
+    // nobody can delete.
+    await this.sql.begin(async (tx) => {
+      await tx`INSERT INTO spaces (id) VALUES (${input.id}) ON CONFLICT DO NOTHING`;
+      await tx`
+        INSERT INTO space_owners (space_id, account_id) VALUES (${input.id}, ${input.owner})
+        ON CONFLICT DO NOTHING`;
+      // `@everyone` shares the space's id (`docs/04` §4).
+      await tx`
+        INSERT INTO roles (id, space_id, bits, position)
+        VALUES (${input.id}, ${input.id}, ${input.everyoneBits}, 0)
+        ON CONFLICT (id) DO UPDATE SET bits = EXCLUDED.bits`;
+      await tx`
+        INSERT INTO space_members (space_id, account_id, role_ids)
+        VALUES (${input.id}, ${input.owner}, '{}')
+        ON CONFLICT DO NOTHING`;
+    });
+    return { id: input.id, visibility: 'invite' };
+  }
+
+  async getSpace(spaceId: string): Promise<Space | null> {
+    const [row] = await this.sql`SELECT id, visibility FROM spaces WHERE id = ${spaceId}`;
+    return row ? { id: row.id as string, visibility: row.visibility as string } : null;
+  }
+
+  async listAccountSpaces(accountId: string): Promise<Space[]> {
+    const rows = await this.sql`
+      SELECT s.id, s.visibility FROM spaces s
+      JOIN space_members m ON m.space_id = s.id
+      WHERE m.account_id = ${accountId}
+      ORDER BY m.joined_at`;
+    return rows.map((r) => ({ id: r.id as string, visibility: r.visibility as string }));
+  }
+
+  async listSpaceRooms(spaceId: string): Promise<Room[]> {
+    const rows = await this.sql`SELECT * FROM rooms WHERE space_id = ${spaceId} ORDER BY id`;
+    return rows.map((r) => this.#room(r));
+  }
+
+  async putSpaceMember(spaceId: string, accountId: string, roleIds: string[]): Promise<void> {
+    await this.sql`
+      INSERT INTO space_members (space_id, account_id, role_ids)
+      VALUES (${spaceId}, ${accountId}, ${this.sql.array(roleIds)})
+      ON CONFLICT (space_id, account_id) DO UPDATE SET role_ids = EXCLUDED.role_ids`;
+  }
+
+  async removeSpaceMember(spaceId: string, accountId: string): Promise<void> {
+    await this.sql`
+      DELETE FROM space_members WHERE space_id = ${spaceId} AND account_id = ${accountId}`;
+  }
+
+  async getSpaceMember(spaceId: string, accountId: string): Promise<SpaceMember | null> {
+    const [row] = await this.sql`
+      SELECT space_id, account_id, role_ids FROM space_members
+      WHERE space_id = ${spaceId} AND account_id = ${accountId}`;
+    return row
+      ? {
+          spaceId: row.space_id as string,
+          accountId: row.account_id as string,
+          roleIds: (row.role_ids as string[]) ?? [],
+        }
+      : null;
+  }
+
+  async listSpaceMembers(spaceId: string): Promise<SpaceMember[]> {
+    const rows = await this.sql`
+      SELECT space_id, account_id, role_ids FROM space_members WHERE space_id = ${spaceId}`;
+    return rows.map((r) => ({
+      spaceId: r.space_id as string,
+      accountId: r.account_id as string,
+      roleIds: (r.role_ids as string[]) ?? [],
+    }));
+  }
+
+  async listRoles(spaceId: string): Promise<Role[]> {
+    const rows = await this.sql`
+      SELECT id, space_id, bits, position FROM roles WHERE space_id = ${spaceId}
+      ORDER BY position, id`;
+    return rows.map((r) => ({
+      id: r.id as string,
+      spaceId: r.space_id as string,
+      bits: r.bits as string,
+      position: r.position as number,
+    }));
+  }
+
+  async putRole(role: Role): Promise<void> {
+    await this.sql`
+      INSERT INTO roles (id, space_id, bits, position)
+      VALUES (${role.id}, ${role.spaceId}, ${role.bits}, ${role.position})
+      ON CONFLICT (id) DO UPDATE SET bits = EXCLUDED.bits, position = EXCLUDED.position`;
+  }
+
+  async deleteRole(spaceId: string, roleId: string): Promise<void> {
+    // Never `@everyone`, which shares the space id. A space without it gives
+    // its members no permissions at all.
+    if (roleId === spaceId) return;
+    await this.sql.begin(async (tx) => {
+      await tx`DELETE FROM roles WHERE id = ${roleId} AND space_id = ${spaceId}`;
+      await tx`DELETE FROM overrides WHERE role_id = ${roleId}`;
+      await tx`
+        UPDATE space_members SET role_ids = array_remove(role_ids, ${roleId})
+        WHERE space_id = ${spaceId}`;
+    });
+  }
+
+  async groupForAudience(spaceId: string, audience: string): Promise<string | null> {
+    const [row] = await this.sql`
+      SELECT group_id FROM group_audiences
+      WHERE space_id = ${spaceId} AND audience = ${audience}`;
+    return row ? (row.group_id as string) : null;
+  }
+
+  async bindAudience(spaceId: string, audience: string, groupId: string): Promise<void> {
+    await this.sql`
+      INSERT INTO group_audiences (group_id, space_id, audience)
+      VALUES (${groupId}, ${spaceId}, ${audience})
+      ON CONFLICT (space_id, audience) DO NOTHING`;
   }
 
   // ---------------------------------------------------------------------------

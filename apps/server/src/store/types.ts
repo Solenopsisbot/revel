@@ -46,6 +46,19 @@ export interface Membership {
   roleIds: string[];
 }
 
+export interface Space {
+  id: string;
+  /** `invite` / `link` / `public` (`docs/18`). */
+  visibility: string;
+}
+
+export interface SpaceMember {
+  spaceId: string;
+  accountId: string;
+  /** `@everyone` is not listed — it applies to every member by definition. */
+  roleIds: string[];
+}
+
 export interface Role {
   id: string;
   spaceId: string;
@@ -190,6 +203,48 @@ export interface Store {
   getRoles(spaceId: string, roleIds: string[]): Promise<Role[]>;
   getOverrides(roomId: string): Promise<Override[]>;
   isOwner(spaceId: string, accountId: string): Promise<boolean>;
+
+  // -- spaces ----------------------------------------------------------------
+  //
+  // The tables under the permission model, which shipped in 001 and had
+  // nothing above it that could create a space to use it.
+
+  /**
+   * Make a space, its owner, and its `@everyone` role, in one go.
+   *
+   * One call because they are one fact. A space with no owner cannot be
+   * administered and a space with no `@everyone` gives its members no
+   * permissions at all, so a partial failure leaves something nobody can use
+   * and nobody can delete.
+   */
+  createSpace(input: {
+    id: string;
+    owner: string;
+    /** `@everyone`'s permission bits, base-10. */
+    everyoneBits: string;
+  }): Promise<Space>;
+  getSpace(spaceId: string): Promise<Space | null>;
+  /** Spaces this account is a member of. */
+  listAccountSpaces(accountId: string): Promise<Space[]>;
+  listSpaceRooms(spaceId: string): Promise<Room[]>;
+
+  /** Join, or update the roles of somebody already in. */
+  putSpaceMember(spaceId: string, accountId: string, roleIds: string[]): Promise<void>;
+  removeSpaceMember(spaceId: string, accountId: string): Promise<void>;
+  getSpaceMember(spaceId: string, accountId: string): Promise<SpaceMember | null>;
+  listSpaceMembers(spaceId: string): Promise<SpaceMember[]>;
+
+  /** Every role in a space, for the editor. `getRoles` fetches a named few. */
+  listRoles(spaceId: string): Promise<Role[]>;
+  putRole(role: Role): Promise<void>;
+  deleteRole(spaceId: string, roleId: string): Promise<void>;
+
+  /**
+   * The group serving an audience, created if this is the first room to want
+   * it. Keyed on the audience *rule* — see `group_audiences` in migration 006.
+   */
+  groupForAudience(spaceId: string, audience: string): Promise<string | null>;
+  bindAudience(spaceId: string, audience: string, groupId: string): Promise<void>;
 
   getDevice(pub: string): Promise<Device | null>;
 

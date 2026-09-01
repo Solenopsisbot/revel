@@ -1,5 +1,6 @@
 <script lang="ts">
 import { goto } from '$app/navigation';
+import BetaNotice from '$lib/BetaNotice.svelte';
 import Mark from '$lib/Mark.svelte';
 import Button from '$lib/moment/Button.svelte';
 import Reveal from '$lib/Reveal.svelte';
@@ -46,6 +47,10 @@ const costs: [string, string][] = [
 <svelte:head><title>Revel — somewhere to actually talk</title></svelte:head>
 
 <div class="page">
+  <!-- Before the pitch, not after it. Somebody deciding whether to put their
+       conversations here is owed the caveat while they are still deciding. -->
+  <BetaNotice dismissible={false} />
+
   <header class="nav">
     <a class="brand" href="/"><Mark size={26} stroke="var(--ground-0)" /><span>Revel</span></a>
     <nav>
