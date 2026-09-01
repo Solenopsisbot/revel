@@ -401,7 +401,9 @@ class LiveDirectory implements DirectoryCore {
    */
   async createSpace(name: string, colour?: string): Promise<SpaceInfo> {
     const space = await this.#transport.createSpace();
-    const general = await this.createSpaceRoom(space.id);
+    // Named here, not left to the caller: `docs/18` promises the room arrives
+    // *as* `#general`, and a room with no `room.name` renders as "untitled".
+    const general = await this.createSpaceRoom(space.id, { name: 'general' });
     await this.#rooms.send(general.id, {
       type: 'space.name',
       space: space.id,
@@ -414,11 +416,7 @@ class LiveDirectory implements DirectoryCore {
 
   /** Rename a space. Same event, same room, last writer wins. */
   async nameSpace(spaceId: string, name: string, colour?: string): Promise<void> {
-    const rooms = await this.#transport.spaceRooms(spaceId);
-    // The `everyone` room, because a name carried by a moderators-only room is
-    // a name most of the space cannot read.
-    const target = rooms.find((r) => r.audience === 'everyone') ?? rooms[0];
-    if (!target) throw new Error('a space with no rooms has nowhere to put its name');
+    const target = await this.#everyoneRoom(spaceId);
     await this.#rooms.send(target.id, {
       type: 'space.name',
       space: spaceId,
@@ -439,11 +437,27 @@ class LiveDirectory implements DirectoryCore {
    * one commit and not twelve (`docs/03` §4). If it does not, this is the
    * client that creates it, and everybody the audience covers is invited.
    */
-  async createSpaceRoom(spaceId: string, input: CreateSpaceRoom = {}): Promise<RoomInfo> {
-    const room = await this.#transport.createSpaceRoom(spaceId, input);
+  async createSpaceRoom(
+    spaceId: string,
+    input: CreateSpaceRoom & { name?: string; topic?: string } = {},
+  ): Promise<RoomInfo> {
+    const { name, topic, ...wire } = input;
+    const room = await this.#transport.createSpaceRoom(spaceId, wire);
     const started = await this.#start(room, room.members ?? []);
+    // After `#start`, never before: the name is an encrypted event and there is
+    // no group to encrypt it to until the room has been bound to one.
+    if (name) await this.nameRoom(started.id, name, topic);
     await this.refresh();
     return started;
+  }
+
+  /** Name a room. `room.name` carries the topic too, so both move together. */
+  async nameRoom(roomId: string, name: string, topic?: string): Promise<void> {
+    await this.#rooms.send(roomId, {
+      type: 'room.name',
+      name,
+      ...(topic ? { topic } : {}),
+    });
   }
 
   spaceMembers(spaceId: string): Promise<SpaceMemberInfo[]> {
@@ -472,23 +486,42 @@ class LiveDirectory implements DirectoryCore {
       await this.#groups.invite(groupId, accounts);
     }
 
-    // Say the space's name again, *after* the commit.
-    //
-    // MLS keys move forward, so somebody who has just joined cannot read a
-    // word sent before their leaf existed — including the `space.name` event
-    // from the day it was made. Without this they arrive in a space with no
-    // name, and no way to ever learn one. `room.faces` has the same shape for
-    // the same reason.
-    //
-    // Read from local state rather than passed in: whoever is inviting already
-    // knows what the space is called, and asking the caller to supply it would
-    // make forgetting it the default.
+    await this.#reannounce(spaceId);
+    await this.refresh();
+  }
+
+  /**
+   * Say everything a space is *called*, again, after a commit.
+   *
+   * MLS keys move forward, so somebody who has just joined cannot read a word
+   * sent before their leaf existed — including the `space.name` from the day
+   * the space was made. Without this they arrive in a space with no name, no
+   * named rooms and no named roles, and no way to ever learn any of them.
+   * `room.faces` has the same shape for the same reason.
+   *
+   * Read from local state rather than passed in: whoever is inviting already
+   * knows what things are called, and asking the caller to supply it all would
+   * make forgetting it the default.
+   */
+  async #reannounce(spaceId: string): Promise<void> {
     const known = this.#knownSpaceName(spaceId);
-    if (known) {
-      await this.nameSpace(spaceId, known.name, known.colour).catch(() => {});
+    if (known) await this.nameSpace(spaceId, known.name, known.colour);
+
+    const named = this.#knownRoleNames(spaceId);
+    if (named.size) {
+      await this.nameRoles(
+        spaceId,
+        [...named].map(([id, r]) => ({ id, ...r })),
+      );
     }
 
-    await this.refresh();
+    // Room names are per room, and a room the newcomer cannot see is a room
+    // this send would fail on — so only the ones they are actually in.
+    for (const room of await this.#transport.spaceRooms(spaceId)) {
+      const state = this.#rooms.state(room.id);
+      if (!state.name) continue;
+      await this.nameRoom(room.id, state.name, state.topic);
+    }
   }
 
   /** What this client currently believes a space is called. */
@@ -507,21 +540,143 @@ class LiveDirectory implements DirectoryCore {
   }
 
   async leaveSpace(spaceId: string): Promise<void> {
-    await this.#transport.leaveSpace(spaceId, this.#account);
+    await this.removeFromSpace(spaceId, this.#account);
+  }
+
+  /**
+   * Take someone out of a space — a kick, or your own exit.
+   *
+   * The membership row is delivery and the MLS Remove is access, and only the
+   * second one takes the keys away (`docs/03` §5). Removing the row alone means
+   * a kicked member keeps reading every message their client is still handed,
+   * which is the whole reason this does both.
+   *
+   * Every group the space uses, and every leaf that account holds — a person is
+   * as many leaves as they have devices, and removing three of four removes
+   * nothing.
+   */
+  async removeFromSpace(spaceId: string, account: string): Promise<void> {
+    const rooms = await this.#transport.spaceRooms(spaceId);
+    await this.#transport.leaveSpace(spaceId, account);
+
+    const mine = account === this.#account;
+    const groups = new Set<string>();
+    for (const room of rooms) if (room.group) groups.add(room.group);
+
+    for (const groupId of groups) {
+      if (mine) {
+        // Leaving my own space: drop the local group state rather than trying
+        // to commit a Remove against keys I am about to stop holding.
+        await this.#groups.leave(groupId).catch((err) => {
+          console.error(`revel: could not leave group ${groupId}`, err);
+        });
+        continue;
+      }
+      const leaves = (await this.#crypto.members(groupId).catch(() => []))
+        .filter((m) => toAccountId(m.account) === account)
+        .map((m) => m.leaf);
+      if (leaves.length) await this.#groups.remove(groupId, leaves);
+    }
     await this.refresh();
   }
 
   spaceRoles(spaceId: string): Promise<RoleInfo[]> {
     return this.#transport.spaceRoles(spaceId);
   }
-  createRole(spaceId: string, input: RoleInput): Promise<RoleInfo> {
-    return this.#transport.createRole(spaceId, input);
+
+  /**
+   * Make a role, and say what it is called.
+   *
+   * Two writes because they go to two different places: the bits are policy
+   * and the Host enforces them, the name is a word about a community and the
+   * Host never sees it (`space.roles`). Doing both here rather than asking
+   * every caller to remember the second one is what stops a role existing
+   * without a name.
+   */
+  async createRole(
+    spaceId: string,
+    input: RoleInput & { name: string; colour?: string },
+  ): Promise<RoleInfo> {
+    const { name, colour, ...wire } = input;
+    const role = await this.#transport.createRole(spaceId, wire);
+    await this.#renameRoles(spaceId, (named) => {
+      named.set(role.id, { name, ...(colour ? { colour } : {}) });
+    });
+    return role;
   }
-  updateRole(spaceId: string, roleId: string, input: RoleInput): Promise<RoleInfo> {
-    return this.#transport.updateRole(spaceId, roleId, input);
+
+  async updateRole(
+    spaceId: string,
+    roleId: string,
+    input: RoleInput & { name?: string; colour?: string },
+  ): Promise<RoleInfo> {
+    const { name, colour, ...wire } = input;
+    const role = await this.#transport.updateRole(spaceId, roleId, wire);
+    if (name !== undefined || colour !== undefined) {
+      await this.#renameRoles(spaceId, (named) => {
+        const was = named.get(roleId);
+        named.set(roleId, {
+          name: name ?? was?.name ?? roleId,
+          ...(colour ?? was?.colour ? { colour: colour ?? was?.colour } : {}),
+        });
+      });
+    }
+    return role;
   }
-  deleteRole(spaceId: string, roleId: string): Promise<void> {
-    return this.#transport.deleteRole(spaceId, roleId);
+
+  async deleteRole(spaceId: string, roleId: string): Promise<void> {
+    await this.#transport.deleteRole(spaceId, roleId);
+    // Drop the name in the same breath. A `space.roles` list that still names a
+    // role nobody holds is a name that outlives its role forever — the event is
+    // whole-list last-writer-wins precisely so this is one send, not a tombstone.
+    await this.#renameRoles(spaceId, (named) => {
+      named.delete(roleId);
+    });
+  }
+
+  /** Say what every role in a space is called. Whole list, last writer wins. */
+  async nameRoles(
+    spaceId: string,
+    roles: { id: string; name: string; colour?: string }[],
+  ): Promise<void> {
+    const target = await this.#everyoneRoom(spaceId);
+    await this.#rooms.send(target.id, { type: 'space.roles', space: spaceId, roles });
+  }
+
+  /** Read the current names, apply an edit, send the whole list back. */
+  async #renameRoles(
+    spaceId: string,
+    edit: (named: Map<string, { name: string; colour?: string }>) => void,
+  ): Promise<void> {
+    const named = this.#knownRoleNames(spaceId);
+    edit(named);
+    await this.nameRoles(
+      spaceId,
+      [...named].map(([id, r]) => ({ id, ...r })),
+    );
+  }
+
+  /** What this client currently believes the roles in a space are called. */
+  #knownRoleNames(spaceId: string): Map<string, { name: string; colour?: string }> {
+    for (const room of this.#known) {
+      if (room.space !== spaceId) continue;
+      const state = this.#rooms.state(room.id);
+      if (state.spaceRoles.size) return new Map(state.spaceRoles);
+    }
+    return new Map();
+  }
+
+  /**
+   * The room a space's shared facts go in.
+   *
+   * The `everyone` audience is the only group every member of the space is in,
+   * so it is the only room where a name reaches all of them (`docs/03` §4).
+   */
+  async #everyoneRoom(spaceId: string): Promise<RoomInfo> {
+    const rooms = await this.#transport.spaceRooms(spaceId);
+    const target = rooms.find((r) => r.audience === 'everyone') ?? rooms[0];
+    if (!target) throw new Error('a space with no rooms has nowhere to put its name');
+    return target;
   }
   setMemberRoles(spaceId: string, account: string, roles: string[]): Promise<void> {
     return this.#transport.setMemberRoles(spaceId, account, roles);

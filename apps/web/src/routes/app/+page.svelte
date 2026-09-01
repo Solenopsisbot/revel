@@ -127,14 +127,12 @@ let dmBusy = $state(false);
 /**
  * A signed-in account starts in Home.
  *
- * Spaces are still fixtures — `packages/core` has no `SpaceCore` — so a real
- * account has no real space to be in, and landing in Solexsis would put
- * somebody in a room that does not exist for them. Home is the part that *is*
- * real, so that is where the app opens.
+ * Direct messages are the part everybody has — a new account has no spaces at
+ * all — so that is where the app opens rather than in whichever space happens
+ * to sort first. `docs/19` treats Home as a peer of the rail, not a fallback.
  *
  * Runs once, when the core starts, rather than on every change: somebody who
- * has deliberately clicked into a fixture space to look at it should stay
- * there.
+ * has deliberately clicked into a space should stay there.
  */
 let homed = false;
 $effect(() => {
@@ -350,10 +348,44 @@ function openRoomMenu(e: MouseEvent, roomId: string) {
   );
 }
 
+/**
+ * Go to a space, landing on whichever room it has.
+ *
+ * A real space can have no rooms at all — the last one can be deleted, and a
+ * room you have no audience for is a room you never see — so `rooms[0]!` is a
+ * crash waiting for the first person it happens to. `openRoom` with an empty id
+ * puts you in the space with nothing open, which is the truth.
+ */
+function openSpace(spaceId: string) {
+  const space = core.spaces.find((s) => s.id === spaceId);
+  core.openRoom(spaceId, space?.rooms[0]?.id ?? '');
+}
+
+/** The make-a-space sheet. */
+let makingSpace = $state(false);
+let newSpaceName = $state('');
+let newSpaceBusy = $state(false);
+let newSpaceError = $state('');
+
+async function makeSpace(e: SubmitEvent) {
+  e.preventDefault();
+  newSpaceBusy = true;
+  newSpaceError = '';
+  const result = await core.createSpace(newSpaceName);
+  newSpaceBusy = false;
+  if (result.error) {
+    newSpaceError = whyNot(result.error);
+    return;
+  }
+  makingSpace = false;
+  newSpaceName = '';
+  navigated();
+}
+
 function openSpaceMenu(e: MouseEvent, spaceId = core.currentSpaceId) {
   const space = core.spaces.find((s) => s.id === spaceId);
   if (!space) return;
-  if (spaceId !== core.currentSpaceId) core.openRoom(spaceId, space.rooms[0]!.id);
+  if (spaceId !== core.currentSpaceId) openSpace(spaceId);
   contextMenu.open(
     e,
     spaceMenu(space),
@@ -672,26 +704,29 @@ function toggleMembers() {
     </button>
     <hr class="rail-sep" />
 
-    <!-- Fixture spaces are hidden once there is a real account, because there
-         is no such thing as a real space yet: `packages/core` has no
-         `SpaceCore`, and `apps/server` leaves them to phase 3 on the grounds
-         that "half a space is worse than none". Showing Solexsis to somebody
-         who signed up an hour ago would let them click into a stranger's
-         conversation and read it as their own. -->
-    {#each live.running ? [] : core.spaces as space (space.id)}
+    <!-- `core.spaces` is the fixtures in the demo and the real ones otherwise,
+         never both. It used to be fixtures-or-nothing, because there was no
+         such thing as a real space — showing Solexsis to somebody who signed
+         up an hour ago let them click into a stranger's conversation and read
+         it as their own. -->
+    {#each core.spaces as space (space.id)}
       <button
         class="space"
         class:active={core.scope === 'space' && space.id === core.currentSpaceId}
         style="--from: var(--face-{space.from}); --to: var(--face-{space.to})"
-        onclick={() => { core.openRoom(space.id, space.rooms[0]!.id); navigated(); }}
+        onclick={() => { openSpace(space.id); navigated(); }}
         oncontextmenu={(e) => openSpaceMenu(e, space.id)}
         use:longpress={(e) => openSpaceMenu(e, space.id)}
         title={space.name}
       >{space.initial}</button>
     {/each}
-    {#if !live.running}
-      <button class="space add" title="Add a space"><Icon name="plus" size={20} /></button>
-    {/if}
+    <button
+      class="space add"
+      title={live.running ? 'Make a space' : 'Sign in to make a space'}
+      aria-label="Make a space"
+      disabled={!live.running}
+      onclick={() => (makingSpace = true)}
+    ><Icon name="plus" size={20} /></button>
   </nav>
 
   <aside class="sidebar">
@@ -1021,6 +1056,43 @@ function toggleMembers() {
     {/if}
   </main>
 
+  {#if makingSpace}
+    <!-- `docs/18`: "A new space arrives with `#general`, an `@everyone` role,
+         one audience, and you in it. No wizard." So: one field. Everything
+         else is a setting you change afterwards, in a screen built for it. -->
+    <div
+      class="sheet-scrim"
+      role="button"
+      tabindex="-1"
+      aria-label="Close"
+      onclick={() => (makingSpace = false)}
+      onkeydown={(e) => e.key === 'Escape' && (makingSpace = false)}
+    ></div>
+    <form class="make-space" onsubmit={makeSpace}>
+      <h2>Make a space</h2>
+      <p>
+        It arrives with a <b>#general</b>, an <b>@everyone</b> role, and you in
+        it. Nobody else can see it until you invite them.
+      </p>
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        bind:value={newSpaceName}
+        placeholder="What's it called?"
+        aria-label="Space name"
+        autocomplete="off"
+        autofocus
+        maxlength="200"
+      />
+      {#if newSpaceError}<p class="err">{newSpaceError}</p>{/if}
+      <div class="acts">
+        <button type="submit" class="go" disabled={newSpaceBusy || !newSpaceName.trim()}>
+          {newSpaceBusy ? 'Making it…' : 'Make it'}
+        </button>
+        <button type="button" class="cancel" onclick={() => (makingSpace = false)}>Cancel</button>
+      </div>
+    </form>
+  {/if}
+
   <SettingsOverlay bind:open={settingsOpen} bind:section={settingsSection} bind:face={editingFace} />
   <SpaceSettings bind:open={spaceOpen} bind:tab={spaceTab} bind:room={spaceRoom} />
   <CommandBar bind:open={commandOpen} ctx={cmdCtx} />
@@ -1179,6 +1251,40 @@ function toggleMembers() {
   .new-dm-err {
     flex-basis: 100%; margin: 2px 0 0; font-size: var(--text-xs);
     color: color-mix(in oklab, var(--text) 66%, transparent);
+  }
+
+  .sheet-scrim {
+    position: fixed; inset: 0; z-index: 60; border: 0; padding: 0;
+    background: color-mix(in oklab, var(--ground-0) 62%, transparent);
+    backdrop-filter: blur(2px);
+  }
+  .make-space {
+    position: fixed; z-index: 61; top: 50%; left: 50%; translate: -50% -50%;
+    width: min(380px, calc(100vw - 32px));
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 20px; border-radius: var(--r-lg);
+    border: 1px solid var(--line); background: var(--ground-1);
+    box-shadow: var(--shadow-lg);
+  }
+  .make-space h2 { margin: 0; font-size: var(--text-lg); }
+  .make-space p { margin: 0; font-size: var(--text-sm); color: var(--text-mute); }
+  .make-space input {
+    font: inherit; padding: 9px 11px; min-height: var(--tap);
+    border-radius: var(--r-sm); border: 1px solid var(--line);
+    background: var(--ground-0); color: var(--text);
+  }
+  .make-space .err { color: var(--text); font-size: var(--text-xs); }
+  .make-space .acts { display: flex; gap: 8px; }
+  .make-space .go {
+    font: inherit; font-weight: 600; cursor: pointer; flex: 1;
+    padding: 0 14px; min-height: var(--tap); border: 0; border-radius: var(--r-sm);
+    background: var(--accent); color: var(--on-accent);
+  }
+  .make-space .go:disabled { opacity: .5; cursor: default; }
+  .make-space .cancel {
+    font: inherit; cursor: pointer; padding: 0 14px; min-height: var(--tap);
+    border: 1px solid var(--line); border-radius: var(--r-sm);
+    background: transparent; color: var(--text);
   }
 
   .rooms { overflow-y: auto; padding: 10px 8px; flex: 1; }

@@ -127,10 +127,24 @@ export const PERM_GROUPS: PermGroup[] = [
 export const VIEW_LIVES_IN_AUDIENCES = true;
 
 /** Everything a set of roles adds up to. Owner is handled by the caller. */
+/**
+ * Does a member's role list include this role?
+ *
+ * By id **or** by name, because the two sources disagree and both are right.
+ * A live membership comes off the Host as role ids — the only identifier it
+ * has, since it was never told the names (`docs/04` §1) — while the fixtures
+ * and every audience picker in `docs/18` are written in terms of names, which
+ * is what a person actually types. Accepting either is one line here instead of
+ * a translation table that would have to be correct in eight places.
+ */
+export function holds(held: string[], role: { id: string; name: string }): boolean {
+  return held.includes(role.id) || held.includes(role.name);
+}
+
 export function resolve(space: Space, roleNames: string[]): Set<Perm> {
   const out = new Set<Perm>();
   for (const r of space.roles) {
-    if (!roleNames.includes(r.name)) continue;
+    if (!holds(roleNames, r)) continue;
     for (const p of r.perms) out.add(p);
   }
   if (out.has('ADMINISTRATOR')) for (const g of PERM_GROUPS) for (const p of g.perms) out.add(p.id);
@@ -139,10 +153,7 @@ export function resolve(space: Space, roleNames: string[]): Set<Perm> {
 
 /** The highest rank among a set of roles. Nobody is rank 0. */
 export function rankOf(space: Space, roleNames: string[]): number {
-  return space.roles.reduce(
-    (max, r) => (roleNames.includes(r.name) ? Math.max(max, r.rank) : max),
-    0,
-  );
+  return space.roles.reduce((max, r) => (holds(roleNames, r) ? Math.max(max, r.rank) : max), 0);
 }
 
 export type Refusal = { ok: true } | { ok: false; why: string };

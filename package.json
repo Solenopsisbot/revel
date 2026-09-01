@@ -22,6 +22,7 @@
     "test:unread": "node apps/web/e2e/unread.mjs",
     "test:offline": "node apps/web/e2e/offline.mjs",
     "test:devices": "node apps/web/e2e/devices.mjs",
+    "test:spaces": "node apps/web/e2e/spaces.mjs",
     "test:wasm": "cargo test -p revel-crypto --target wasm32-unknown-unknown --test wasm",
     "typecheck": "tsc --build --force",
     "lint": "biome check ."

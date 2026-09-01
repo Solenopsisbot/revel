@@ -177,17 +177,48 @@ export interface DirectoryCore {
   createSpace(name: string, colour?: string): Promise<SpaceInfo>;
   nameSpace(spaceId: string, name: string, colour?: string): Promise<void>;
   spaceRooms(spaceId: string): Promise<RoomInfo[]>;
-  /** Makes the room, and its group if this audience does not have one yet. */
-  createSpaceRoom(spaceId: string, input?: CreateSpaceRoom): Promise<RoomInfo>;
+  /**
+   * Makes the room, and its group if this audience does not have one yet.
+   *
+   * `name` is not part of `CreateSpaceRoom` and never will be: it is an
+   * encrypted event, so it cannot be sent until the room has a group to encrypt
+   * it to. Accepting it here means one call rather than two and one fewer way
+   * to end up with an unnamed room.
+   */
+  createSpaceRoom(
+    spaceId: string,
+    input?: CreateSpaceRoom & { name?: string; topic?: string },
+  ): Promise<RoomInfo>;
+  /** Name a room, and set its topic. Both ride one `room.name` event. */
+  nameRoom(roomId: string, name: string, topic?: string): Promise<void>;
   spaceMembers(spaceId: string): Promise<SpaceMemberInfo[]>;
   /** Adds them to the space *and* commits them into the groups its rooms use. */
   inviteToSpace(spaceId: string, accounts: string[]): Promise<void>;
   leaveSpace(spaceId: string): Promise<void>;
+  /** A kick. Drops the membership row *and* removes their leaves from the groups. */
+  removeFromSpace(spaceId: string, account: string): Promise<void>;
 
   spaceRoles(spaceId: string): Promise<RoleInfo[]>;
-  createRole(spaceId: string, input: RoleInput): Promise<RoleInfo>;
-  updateRole(spaceId: string, roleId: string, input: RoleInput): Promise<RoleInfo>;
+  /**
+   * Make a role.
+   *
+   * `name` and `colour` are not `RoleInput` because they are not the Host's:
+   * it holds the bits it enforces and has never been told what the role is
+   * called (`space.roles`). Taking both here is what stops a role existing
+   * without a name.
+   */
+  createRole(
+    spaceId: string,
+    input: RoleInput & { name: string; colour?: string },
+  ): Promise<RoleInfo>;
+  updateRole(
+    spaceId: string,
+    roleId: string,
+    input: RoleInput & { name?: string; colour?: string },
+  ): Promise<RoleInfo>;
   deleteRole(spaceId: string, roleId: string): Promise<void>;
+  /** Say what every role in a space is called. Whole list, last writer wins. */
+  nameRoles(spaceId: string, roles: { id: string; name: string; colour?: string }[]): Promise<void>;
   setMemberRoles(spaceId: string, account: string, roles: string[]): Promise<void>;
   /** Yourself only. Does not take your keys back — a member must commit that. */
   leave(roomId: string): Promise<void>;

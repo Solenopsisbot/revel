@@ -54,6 +54,21 @@ function remove(r: Report) {
   There is no view of this space that sees more than you do, including ours.
 </p>
 
+{#if !core.demo}
+  <!-- Reports, bans and purges are three separate Host features (`docs/03` §9
+       — message franking, and a purge route) and none of them exist yet. The
+       queues below would render empty and read as "nothing has been reported",
+       which is a claim this screen cannot currently make. -->
+  <p class="soon">
+    <Icon name="lock" size={15} />
+    <span>
+      Reporting, bans and purges aren’t built yet. Removing somebody from the
+      space works today — it’s under <b>People</b>, and it takes their keys
+      away as well as their membership.
+    </span>
+  </p>
+{:else}
+
 <section>
   <h3>Reports</h3>
   {#each space.reports as r (r.id)}
@@ -148,7 +163,15 @@ function remove(r: Report) {
   </p>
 </section>
 
+{/if}
+
 <style>
+  .soon {
+    display: flex; gap: 10px; align-items: flex-start; max-width: 62ch;
+    margin: 0; padding: 12px 14px; border-radius: var(--r-md);
+    border: 1px solid var(--line); background: var(--ground-2);
+    font-size: var(--text-sm); color: var(--text-mute); line-height: 1.55;
+  }
   h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }
   .lede { color: var(--text-mute); margin: 0 0 24px; font-size: var(--text-sm); max-width: 62ch; line-height: 1.6; }
   section { margin-bottom: 30px; }

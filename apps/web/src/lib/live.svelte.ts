@@ -17,7 +17,23 @@
  */
 
 import type { RoomState, Session } from '@revel/core';
+import type { RoleInfo, RoomInfo, SpaceInfo, SpaceMemberInfo } from '@revel/protocol';
 import type { LiveStack } from './live.js';
+
+/**
+ * A space, assembled from the two halves that describe it.
+ *
+ * The Host knows who is in it, what roles exist and which rooms belong to it;
+ * it does not know what any of those are *called* (`docs/04` §1). The names
+ * arrive as encrypted events and are read off `RoomState`, so this holds the
+ * Host's half and the UI joins them.
+ */
+export interface LiveSpace {
+  info: SpaceInfo;
+  rooms: RoomInfo[];
+  members: SpaceMemberInfo[];
+  roles: RoleInfo[];
+}
 
 class Live {
   /** The stack, once a signed-in device has started one. */
@@ -51,6 +67,7 @@ class Live {
       this.stack = stack;
       this.#poll();
       await this.refreshRooms();
+      await this.refreshSpaces();
     } catch (err) {
       console.error('could not start the real core', err);
       this.error = String((err as Error)?.message ?? err);
@@ -64,6 +81,7 @@ class Live {
     this.#watchingTyping.clear();
     this.#typing.clear();
     this.#rooms.clear();
+    this.spaces = [];
     await this.stack?.close().catch(() => {});
     this.stack = null;
     this.version++;
@@ -135,6 +153,48 @@ class Live {
   /** account key → handle, once asked. See `nameOf`. */
   #names = new Map<string, string>();
   #asking = new Set<string>();
+
+  /**
+   * Spaces this account is in, with their rooms, members and roles.
+   *
+   * Four requests per space, refreshed together rather than lazily per screen:
+   * the rail needs the name (which needs a room), the sidebar needs the rooms,
+   * and the settings screens need the rest. Fetching them separately meant
+   * every screen owned a loading state for the same data.
+   */
+  spaces = $state<LiveSpace[]>([]);
+
+  async refreshSpaces(): Promise<void> {
+    const stack = this.stack;
+    if (!stack) return;
+    const dir = stack.core.directory;
+    // Logged, not swallowed, and per space rather than for the whole list: one
+    // space the Host is unhappy about should cost you that space, not the rail.
+    const orNone = <T>(what: string, p: Promise<T[]>): Promise<T[]> =>
+      p.catch((err) => {
+        console.error(`revel: could not load ${what}`, err);
+        return [];
+      });
+
+    const infos = await orNone('your spaces', dir.spaces());
+    const loaded = await Promise.all(
+      infos.map(async (info): Promise<LiveSpace> => {
+        const [rooms, members, roles] = await Promise.all([
+          orNone(`rooms in ${info.id}`, dir.spaceRooms(info.id)),
+          orNone(`members of ${info.id}`, dir.spaceMembers(info.id)),
+          orNone(`roles in ${info.id}`, dir.spaceRoles(info.id)),
+        ]);
+        // Subscribe every room now. The rail shows a space's *name*, which
+        // lives in an event inside one of its rooms — so a rail that only
+        // subscribed the open room would render every other space unnamed
+        // until you clicked it.
+        for (const room of rooms) this.#subscribe(room.id);
+        return { info, rooms, members, roles };
+      }),
+    );
+    this.spaces = loaded;
+    this.version++;
+  }
 
   async refreshRooms(): Promise<void> {
     const stack = this.stack;

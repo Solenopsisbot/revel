@@ -76,6 +76,15 @@ export const RichText: z.ZodType<unknown> = z.lazy(() =>
   z.union([z.string(), z.array(z.union([z.string(), z.object({ t: z.string() }).passthrough()]))]),
 );
 
+/** One role's name and colour, as carried by `space.roles`. */
+export const RoleName = z.object({
+  id: Id,
+  name: z.string().max(100),
+  /** A face colour token from `docs/07`, not a hex value. */
+  colour: z.string().max(32).optional(),
+});
+export type RoleName = z.infer<typeof RoleName>;
+
 const base = { v: z.literal(1) };
 
 /**
@@ -216,6 +225,28 @@ export const EncryptedEvent = z.discriminatedUnion('type', [
     name: z.string().max(200),
     /** A face colour token from `docs/07`, not a hex value. */
     colour: z.string().max(32).optional(),
+  }),
+  /**
+   * What the roles in a space are called.
+   *
+   * The Host holds a role's **bits and position and nothing else** (`docs/04`
+   * §1 — "bitfield per role"), because a permission is something it has to
+   * enforce and a name is not. "Mods", "Trusted", "The people who broke prod
+   * in June" — those describe a community, so they go where the community's
+   * other words go.
+   *
+   * Sent whole rather than per role: a role list is short, last-writer-wins on
+   * the whole list is one comparison instead of one per role, and it means a
+   * deleted role stops being named without needing a tombstone event.
+   *
+   * Same room as `space.name`, for the same reason — the `everyone` audience
+   * is the only one every member is guaranteed to be in.
+   */
+  evt({
+    ...base,
+    type: z.literal('space.roles'),
+    space: Id,
+    roles: z.array(RoleName).max(250),
   }),
 ]);
 export type EncryptedEvent = z.infer<typeof EncryptedEvent>;

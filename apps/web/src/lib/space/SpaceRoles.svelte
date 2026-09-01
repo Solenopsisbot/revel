@@ -18,7 +18,8 @@
 
 import { core } from '$lib/fake/core.svelte.js';
 import Icon from '$lib/Icon.svelte';
-import { canEditRole, canGrant, PERM_GROUPS, rankOf, resolve } from './perms.js';
+import { whyNot } from '$lib/startErrors.js';
+import { canEditRole, canGrant, holds, PERM_GROUPS, rankOf, resolve } from './perms.js';
 
 const space = $derived(core.space);
 const mine = $derived(core.myMembership);
@@ -36,9 +37,60 @@ const gate = $derived(
 );
 
 /** Everyone carrying this role, for the "who does this affect" line. */
-const holders = $derived(role ? space.members.filter((m) => m.roles.includes(role.name)) : []);
+const holders = $derived(role ? space.members.filter((m) => holds(m.roles, role)) : []);
 
 const isAdmin = $derived(!!role?.perms.includes('ADMINISTRATOR'));
+
+/** Whether you may make a role at all — the same check the Host will run. */
+const mayManage = $derived(me.owner || me.perms.has('MANAGE_ROLES'));
+
+let adding = $state(false);
+let newName = $state('');
+let busy = $state(false);
+let failed = $state('');
+/** The rename box, seeded per role rather than bound to it: a live rename is
+    a send, and sending on every keystroke would be one event per character. */
+let renaming = $state('');
+
+$effect(() => {
+  // Re-seed when the selection changes, so the box always shows the role you
+  // are looking at rather than the last one you typed in.
+  renaming = role?.name ?? '';
+});
+
+async function add() {
+  const name = newName.trim();
+  if (!name) return;
+  busy = true;
+  failed = '';
+  const result = await core.addRole(name);
+  busy = false;
+  if (result.error) {
+    failed = whyNot(result.error);
+    return;
+  }
+  adding = false;
+  newName = '';
+}
+
+async function rename() {
+  if (!role || role.everyone) return;
+  const name = renaming.trim();
+  if (!name || name === role.name) return;
+  const result = await core.saveRole(space.id, role, { name });
+  if (result.error) failed = whyNot(result.error);
+}
+
+async function remove() {
+  if (!role || role.everyone) return;
+  const gone = role.id;
+  const result = await core.removeRole(space.id, gone);
+  if (result.error) {
+    failed = whyNot(result.error);
+    return;
+  }
+  if (selected === gone) selected = null;
+}
 </script>
 
 <h2>Roles</h2>
@@ -60,14 +112,55 @@ const isAdmin = $derived(!!role?.perms.includes('ADMINISTRATOR'));
       {r.name}
     </button>
   {/each}
+  {#if mayManage}
+    <button class="new-role" onclick={() => (adding = !adding)} aria-expanded={adding}>
+      <Icon name="plus" size={14} /> New role
+    </button>
+  {/if}
 </div>
+
+{#if adding}
+  <form class="adding" onsubmit={(e) => { e.preventDefault(); add(); }}>
+    <input bind:value={newName} placeholder="Mods, Trusted, …" aria-label="Role name" maxlength="100" />
+    <button type="submit" disabled={busy || !newName.trim()}>{busy ? '…' : 'Add'}</button>
+    <button type="button" class="cancel" onclick={() => (adding = false)}>Cancel</button>
+    <!-- It starts with nothing. `docs/18`'s escalation guard says you cannot
+         grant what you do not hold, and zero is the only starting point that
+         is never a guess at what somebody meant. -->
+    <p class="hint">It starts with no permissions. Turn on what it needs below.</p>
+  </form>
+{/if}
+{#if failed}<p class="failed" role="status">{failed}</p>{/if}
 
 {#if role}
   <p class="who">
     {holders.length}
     {holders.length === 1 ? 'person has' : 'people have'} this role{#if holders.length}:
-      {holders.map((m) => core.faces[m.faceId]?.name ?? m.accountId).join(', ')}{/if}.
+      {holders.map((m) => core.memberName(m.accountId)).join(', ')}{/if}.
   </p>
+
+  {#if gate.ok && !role.everyone}
+    <div class="ident">
+      <label class="rn">
+        <span>Name</span>
+        <input
+          bind:value={renaming}
+          onblur={rename}
+          onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+          maxlength="100"
+          aria-label="Role name"
+        />
+      </label>
+      <button class="del" onclick={remove}>
+        <Icon name="trash" size={15} /> Delete role
+      </button>
+    </div>
+  {:else if role.everyone}
+    <p class="note">
+      <b>@everyone</b> is every member of {space.name}, so it cannot be given
+      out or deleted — what you turn on here is the floor for the whole space.
+    </p>
+  {/if}
 
   {#if !gate.ok}
     <p class="locked" role="status">
@@ -148,6 +241,43 @@ const isAdmin = $derived(!!role?.perms.includes('ADMINISTRATOR'));
   h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }
   .lede { color: var(--text-mute); margin: 0 0 18px; font-size: var(--text-sm); max-width: 60ch; line-height: 1.55; }
   section { margin-bottom: 26px; }
+  .new-role {
+    display: inline-flex; align-items: center; gap: 5px;
+    font: inherit; font-size: var(--text-sm); cursor: pointer;
+    padding: 6px 11px; border-radius: 999px;
+    border: 1px dashed var(--line); background: transparent; color: var(--text-mute);
+  }
+  .new-role:hover { color: var(--text); border-color: var(--text-mute); }
+  .adding { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+  .adding input {
+    flex: 1; min-width: 140px; font: inherit; font-size: var(--text-sm);
+    padding: 7px 10px; border-radius: var(--r-sm);
+    border: 1px solid var(--line); background: var(--ground-0); color: var(--text);
+  }
+  .adding button {
+    font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer;
+    padding: 0 12px; min-height: 34px; border: 0; border-radius: var(--r-sm);
+    background: var(--accent); color: var(--on-accent);
+  }
+  .adding button:disabled { opacity: .5; cursor: default; }
+  .adding .cancel { background: transparent; color: var(--text-mute); border: 1px solid var(--line); font-weight: 400; }
+  .adding .hint { flex-basis: 100%; margin: 0; font-size: var(--text-xs); color: var(--text-mute); }
+  .failed { margin: 0 0 14px; font-size: var(--text-sm); color: var(--text); }
+  .ident { display: flex; align-items: flex-end; gap: 10px; margin: 0 0 16px; flex-wrap: wrap; }
+  .rn { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 160px; }
+  .rn span { font-size: var(--text-xs); color: var(--text-mute); }
+  .rn input {
+    font: inherit; font-size: var(--text-sm); padding: 7px 10px;
+    border-radius: var(--r-sm); border: 1px solid var(--line);
+    background: var(--ground-0); color: var(--text);
+  }
+  .del {
+    display: inline-flex; align-items: center; gap: 6px;
+    font: inherit; font-size: var(--text-sm); cursor: pointer;
+    padding: 0 12px; min-height: 34px; border-radius: var(--r-sm);
+    border: 1px solid var(--line); background: transparent; color: var(--danger);
+  }
+  .del:hover { background: color-mix(in oklab, var(--danger) 10%, transparent); }
   h3 { font-size: var(--text-base); font-weight: 700; margin: 0 0 4px; }
   .sub { color: var(--text-mute); font-size: var(--text-sm); margin: 0 0 10px; line-height: 1.5; }
 

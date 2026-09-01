@@ -20,11 +20,33 @@ import Avatar from '$lib/Avatar.svelte';
 import { core } from '$lib/fake/core.svelte.js';
 import { ago } from '$lib/format.js';
 import Icon from '$lib/Icon.svelte';
+import { whyNot } from '$lib/startErrors.js';
 import { resolve } from './perms.js';
 
 const space = $derived(core.space);
 const mine = $derived(core.myMembership);
 const mayInvite = $derived(!!mine?.owner || resolve(space, mine?.roles ?? []).has('INVITE'));
+
+let who = $state('');
+let busy = $state(false);
+let failed = $state('');
+let invited = $state('');
+
+async function invite() {
+  const handle = who.trim();
+  if (!handle) return;
+  busy = true;
+  failed = '';
+  invited = '';
+  const result = await core.inviteToSpace(space.id, handle);
+  busy = false;
+  if (result.error) {
+    failed = whyNot(result.error);
+    return;
+  }
+  invited = handle.replace(/^@/, '');
+  who = '';
+}
 
 let uses = $state<'1' | '10' | '∞'>('10');
 let days = $state<'1' | '7' | '30' | 'never'>('7');
@@ -59,6 +81,49 @@ function status(i: { uses: number; maxUses?: number; expiresAt?: number }) {
 </script>
 
 <h2>Invites</h2>
+
+{#if !core.demo}
+  <!-- Invite *links* are `docs/03` §4's Wormhole trick and the Host has no
+       route for them yet, so the screen below is a reference rather than a
+       control. What does work is adding somebody by name — and it does the
+       whole job: the row, and the MLS commit that actually hands over keys. -->
+  <p class="lede">
+    Add somebody to {space.name} by name. They get the rooms they have an
+    audience for, and the keys to read them — the second half is the one that
+    matters, and it happens here rather than the next time anyone opens a room.
+  </p>
+
+  <form class="by-name" onsubmit={(e) => { e.preventDefault(); invite(); }}>
+    <input
+      bind:value={who}
+      placeholder="handle"
+      aria-label="Who do you want to invite?"
+      autocomplete="off"
+      disabled={!mayInvite}
+    />
+    <button type="submit" disabled={!mayInvite || busy || !who.trim()}>
+      {busy ? 'Inviting…' : 'Invite'}
+    </button>
+    {#if !mayInvite}
+      <p class="note" role="status">
+        You can’t invite people here because you don’t have Create invites.
+      </p>
+    {:else if failed}
+      <p class="note">{failed}</p>
+    {:else if invited}
+      <p class="note">{invited} is in.</p>
+    {/if}
+  </form>
+
+  <section>
+    <h3>Links</h3>
+    <p class="soon">
+      Invite links aren’t built yet. When they are, the half after the
+      <code>#</code> will be key material your browser keeps and the server
+      never sees — which is why they can expire and be counted.
+    </p>
+  </section>
+{:else}
 <p class="lede">
   A link is the only way in — {space.name} is
   {space.visibility === 'public' ? 'listed in the directory as well' : 'not listed anywhere'}.
@@ -160,7 +225,25 @@ function status(i: { uses: number; maxUses?: number; expiresAt?: number }) {
   </p>
 </section>
 
+{/if}
+
 <style>
+  .by-name { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 24px; }
+  .by-name input {
+    flex: 1; min-width: 160px; font: inherit; font-size: var(--text-sm);
+    padding: 8px 11px; min-height: var(--tap); border-radius: var(--r-sm);
+    border: 1px solid var(--line); background: var(--ground-0); color: var(--text);
+  }
+  .by-name button {
+    font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer;
+    padding: 0 14px; min-height: var(--tap); border: 0; border-radius: var(--r-sm);
+    background: var(--accent); color: var(--on-accent);
+  }
+  .by-name button:disabled { opacity: .5; cursor: default; }
+  .by-name .note {
+    flex-basis: 100%; margin: 0; font-size: var(--text-xs); color: var(--text-mute);
+  }
+  .soon { margin: 0; font-size: var(--text-sm); color: var(--text-mute); line-height: 1.55; max-width: 60ch; }
   h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }
   .lede { color: var(--text-mute); margin: 0 0 24px; font-size: var(--text-sm); max-width: 62ch; line-height: 1.6; }
   .lede code { font-family: var(--font-mono); color: var(--text-dim); }

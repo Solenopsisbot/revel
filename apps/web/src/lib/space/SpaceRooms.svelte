@@ -16,6 +16,7 @@
 import { core } from '$lib/fake/core.svelte.js';
 import type { Audience, Room } from '$lib/fake/data.js';
 import Icon from '$lib/Icon.svelte';
+import { whyNot } from '$lib/startErrors.js';
 
 let { initialRoom }: { initialRoom?: string } = $props();
 
@@ -35,9 +36,22 @@ let newAudience = $state<Audience>({ kind: 'everyone' });
 
 const room = $derived(space.rooms.find((r) => r.id === editing));
 
+/**
+ * Roles you can build an audience from.
+ *
+ * `@everyone` is not one of them: an audience of "people with @everyone" is
+ * the `everyone` audience with extra steps, and it would make a second key
+ * group holding exactly the same people (`docs/03` §4).
+ */
+const pickableRoles = $derived(space.roles.filter((r) => !r.everyone));
+
+/** A role, by whichever identifier the audience happens to be written in. */
+const nameRole = (ref: string) =>
+  space.roles.find((r) => r.id === ref || r.name === ref)?.name ?? ref;
+
 function describe(a: Audience): string {
   if (a.kind === 'everyone') return 'Everyone in this space';
-  if (a.kind === 'roles') return `People with ${a.roles.join(' or ')}`;
+  if (a.kind === 'roles') return `People with ${a.roles.map(nameRole).join(' or ')}`;
   return `${a.faceIds.length} people, picked`;
 }
 
@@ -45,18 +59,36 @@ function describe(a: Audience): string {
       second key group with a real cost (`docs/18`). */
 function matches(a: Audience): string | null {
   if (a.kind !== 'roles') return null;
+  const key = [...a.roles].sort().join();
   const twin = space.rooms.find(
-    (r) => r.audience.kind === 'roles' && r.audience.roles.join() === a.roles.join(),
+    (r) => r.audience.kind === 'roles' && [...r.audience.roles].sort().join() === key,
   );
   return twin ? `#${twin.name}` : null;
 }
 
-function create() {
+let failed = $state('');
+
+/**
+ * Make the room.
+ *
+ * The audience goes *in* rather than being set on the room afterwards. It is
+ * the crypto boundary, chosen once and never again (`docs/03` §4) — assigning
+ * it after the fact worked on a fixture and would have made a live room whose
+ * group did not match the audience its own settings claimed.
+ */
+async function create() {
   const name = newName.trim();
   if (!name) return;
-  core.createRoom(space.id, name, newKind);
-  const made = space.rooms[space.rooms.length - 1];
-  if (made) made.audience = newAudience;
+  failed = '';
+  const audience =
+    newAudience.kind === 'roles'
+      ? ({ kind: 'roles', roles: newAudience.roles } as const)
+      : ({ kind: 'everyone' } as const);
+  const result = await core.createRoom(space.id, name, audience);
+  if (result.error) {
+    failed = result.error;
+    return;
+  }
   creating = false;
   newName = '';
   newKind = 'text';
@@ -218,20 +250,21 @@ function toggleRole(a: Audience, role: string): Audience {
           <input
             type="radio"
             checked={newAudience.kind === 'roles'}
-            onchange={() => (newAudience = { kind: 'roles', roles: [space.roles[0]!.name] })}
+            onchange={() => (newAudience = { kind: 'roles', roles: pickableRoles.slice(0, 1).map((r) => r.id) })}
           />
           <span>People with a role</span>
         </label>
         {#if newAudience.kind === 'roles'}
           <div class="roles">
-            <!-- Audiences name roles rather than holding ids, because the
-                 name is what the picker shows and what a room's "who can see
-                 this" sentence has to read back. -->
-            {#each space.roles as role (role.id)}
+            <!-- Ids, not names. The Host resolves an audience from role ids
+                 and has never been told the names (`docs/04` §1), so a picker
+                 that collected names would build a room nobody matched.
+                 `nameRole` puts the words back for the sentence underneath. -->
+            {#each pickableRoles as role (role.id)}
               <button
                 class="role"
-                class:on={newAudience.kind === 'roles' && newAudience.roles.includes(role.name)}
-                onclick={() => (newAudience = toggleRole(newAudience, role.name))}
+                class:on={newAudience.kind === 'roles' && newAudience.roles.includes(role.id)}
+                onclick={() => (newAudience = toggleRole(newAudience, role.id))}
               >{role.name}</button>
             {/each}
           </div>
@@ -249,6 +282,10 @@ function toggleRole(a: Audience, role: string): Audience {
           once the room exists.
         </p>
       </div>
+
+      {#if failed}
+        <p class="failed">{whyNot(failed)}</p>
+      {/if}
 
       <div class="new-actions">
         <button class="go" disabled={!newName.trim()} onclick={create}>Create room</button>
@@ -325,6 +362,7 @@ function toggleRole(a: Audience, role: string): Audience {
   .opt input { accent-color: var(--brand); cursor: pointer; }
 
   .roles { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 0 26px; }
+  .failed { margin: 8px 0 0; font-size: 13px; color: var(--danger); }
   .role {
     border: 1px solid var(--line); background: transparent; cursor: pointer;
     font: inherit; font-size: 12px; font-weight: 600; color: var(--text-mute);

@@ -47,7 +47,7 @@ scenarios('a space', () => {
 
     const space = await alice.core.directory.createSpace('Solexsis');
     const open = await alice.core.directory.createSpaceRoom(space.id);
-    const role = await alice.core.directory.createRole(space.id, { bits: '2' });
+    const role = await alice.core.directory.createRole(space.id, { name: 'Mods', bits: '2' });
     const shut = await alice.core.directory.createSpaceRoom(space.id, {
       audience: { kind: 'roles', roles: [role.id] },
     });
@@ -106,6 +106,85 @@ scenarios('a space', () => {
     await world.settle();
 
     expect(bob.texts(room.id)).toEqual(['can you read this']);
+    await world.close();
+  });
+
+  it('names its rooms and its roles in the ciphertext, never on the Host', async () => {
+    // Same argument as the space's own name, one level down. The Host holds a
+    // role's bits because it enforces them (`docs/04` §1 — "bitfield per
+    // role") and has no business knowing that the bundle is called "Mods".
+    const { world, alice, bob } = await two();
+
+    // The `#general` a space arrives with — the one every member is in, and
+    // therefore the one that carries what the space is called.
+    const space = await alice.core.directory.createSpace('Solexsis');
+    const general = (await alice.core.directory.spaceRooms(space.id))[0]!;
+    await alice.core.directory.createRole(space.id, { name: 'Mods', colour: 'rose', bits: '2' });
+    await world.settle();
+
+    await alice.core.directory.inviteToSpace(space.id, [bob.account]);
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+
+    await bob.core.conversation.open(general.id);
+    const seen = bob.rooms.state(general.id);
+    expect(seen.name).toBe('general');
+    expect([...seen.spaceRoles.values()]).toEqual([{ name: 'Mods', colour: 'rose' }]);
+
+    // The role exists on the Host with its bits, and with no name anywhere.
+    const roles = await bob.core.directory.spaceRoles(space.id);
+    expect(roles.map((r) => r.bits)).toContain('2');
+    expect(JSON.stringify(world.store.events.get(general.id) ?? [])).not.toContain('Mods');
+    await world.close();
+  });
+
+  it('stops naming a role once it is deleted', async () => {
+    // `space.roles` is whole-list last-writer-wins precisely so this needs no
+    // tombstone: the newest list simply does not mention it.
+    const { world, alice } = await two();
+
+    const space = await alice.core.directory.createSpace('Solexsis');
+    const general = (await alice.core.directory.spaceRooms(space.id))[0]!;
+    const role = await alice.core.directory.createRole(space.id, { name: 'Mods', bits: '2' });
+    await world.settle();
+    expect(alice.rooms.state(general.id).spaceRoles.get(role.id)?.name).toBe('Mods');
+
+    await alice.core.directory.deleteRole(space.id, role.id);
+    await world.settle();
+    expect(alice.rooms.state(general.id).spaceRoles.has(role.id)).toBe(false);
+    await world.close();
+  });
+
+  it('takes the keys back when somebody is removed, not just the membership row', async () => {
+    // The half the server cannot do (`docs/03` §5). A kick that only deletes a
+    // row leaves somebody reading every message their client is still handed.
+    const { world, alice, bob } = await two();
+
+    const space = await alice.core.directory.createSpace('Solexsis');
+    const room = (await alice.core.directory.spaceRooms(space.id))[0]!;
+    await world.settle();
+    await alice.core.directory.inviteToSpace(space.id, [bob.account]);
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+
+    await alice.core.conversation.send(room.id, 'before');
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+    expect(bob.texts(room.id)).toEqual(['before']);
+
+    await alice.core.directory.removeFromSpace(space.id, bob.account);
+    await world.settle();
+    await alice.core.conversation.send(room.id, 'after');
+    await world.settle();
+    await bob.sync();
+    await world.settle();
+
+    // Still 'before'. The epoch moved past him, so 'after' is bytes he holds
+    // no key for — which is the point, and is not something a row could do.
+    expect(bob.texts(room.id)).toEqual(['before']);
     await world.close();
   });
 

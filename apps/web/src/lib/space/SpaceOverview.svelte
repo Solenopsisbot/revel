@@ -29,6 +29,27 @@ const VISIBILITY = [
 ] as const;
 
 let showHost = $state(false);
+
+/**
+ * The name box, held locally and committed on blur.
+ *
+ * Live, a rename is an encrypted event sent to every member — `oninput` meant
+ * one event per keystroke, so typing "Solexsis" sent eight. The fixture did not
+ * care because it was assigning a string.
+ */
+let draft = $state('');
+$effect(() => {
+  draft = space.name;
+});
+
+function commit() {
+  const name = draft.trim();
+  if (!name || name === space.name) return;
+  core.updateSpace(space.id, { name });
+}
+
+/** `docs/07`'s face colours, which is what a space's icon is tinted from. */
+const COLOURS = ['gold', 'rose', 'violet', 'sky', 'mint', 'coral', 'lilac', 'aqua'] as const;
 </script>
 
 <h2>Overview</h2>
@@ -39,20 +60,30 @@ let showHost = $state(false);
     <span class="lbl">Name</span>
     <input
       type="text"
-      value={space.name}
-      oninput={(e) => core.updateSpace(space.id, { name: e.currentTarget.value })}
+      bind:value={draft}
+      onblur={commit}
+      onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+      maxlength="200"
     />
+    {#if !core.demo}
+      <span class="hint">
+        The name is encrypted and sent to everyone here — it saves when you
+        click away, not as you type.
+      </span>
+    {/if}
   </label>
 
-  <label class="field">
-    <span class="lbl">Description</span>
-    <textarea
-      rows="2"
-      placeholder="What is this space for?"
-      value={space.description ?? ''}
-      oninput={(e) => core.updateSpace(space.id, { description: e.currentTarget.value })}
-    ></textarea>
-  </label>
+  {#if core.demo}
+    <label class="field">
+      <span class="lbl">Description</span>
+      <textarea
+        rows="2"
+        placeholder="What is this space for?"
+        value={space.description ?? ''}
+        oninput={(e) => core.updateSpace(space.id, { description: e.currentTarget.value })}
+      ></textarea>
+    </label>
+  {/if}
 
   <div class="field">
     <span class="lbl">Icon</span>
@@ -65,12 +96,35 @@ let showHost = $state(false);
         encrypted to the space like everything else.
       </span>
     </div>
+    {#if !core.demo}
+      <!-- The colour rides the same `space.name` event as the name, which is
+           why it is here and not in a theme screen: it is a fact about the
+           space that every member has to be told. -->
+      <div class="swatches">
+        {#each COLOURS as c (c)}
+          <button
+            class="sw"
+            class:sel={space.from === c}
+            style="background: var(--face-{c})"
+            title={c}
+            aria-label={c}
+            onclick={() => core.renameSpace(space.id, space.name, c)}
+          ></button>
+        {/each}
+      </div>
+    {/if}
   </div>
 </section>
 
 <section>
   <h3>Who's it for</h3>
-  {#each VISIBILITY as v (v.id)}
+  {#if !core.demo}
+    <p class="hint">
+      Every space is invite-only for now — there is no directory to be listed in
+      yet. Invite people under <b>Invites</b>.
+    </p>
+  {/if}
+  {#each core.demo ? VISIBILITY : [] as v (v.id)}
     <label class="radio" class:sel={space.visibility === v.id}>
       <input
         type="radio"
@@ -109,6 +163,12 @@ let showHost = $state(false);
 </section>
 
 <style>
+  .swatches { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .sw {
+    width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+    border: 2px solid transparent; box-shadow: 0 0 0 1px var(--line) inset;
+  }
+  .sw.sel { border-color: var(--text); }
   h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }
   .lede { color: var(--text-mute); margin: 0 0 28px; font-size: var(--text-sm); }
   section { margin-bottom: 32px; }

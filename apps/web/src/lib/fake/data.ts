@@ -240,6 +240,15 @@ export interface Role {
    */
   rank: number;
   perms: Perm[];
+  /**
+   * `@everyone` — the role every member has by definition.
+   *
+   * It shares the space's id on the Host (`docs/04` §1) and is never listed in
+   * a member's roles, because listing it would be listing every member twice.
+   * Flagged rather than matched by name so the screens that must treat it
+   * differently — no delete, no assign, not an audience — can say why.
+   */
+  everyone?: boolean;
 }
 
 /**

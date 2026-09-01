@@ -177,6 +177,15 @@ export interface RoomState {
   spaceName?: string;
   spaceColour?: string;
   spaceNameAt?: string;
+  /**
+   * role id → what it is called, from `space.roles`.
+   *
+   * The Host has the bits; this has the words. Empty for a space whose roles
+   * have never been named, which renders as the role's id rather than as
+   * nothing — a permission you cannot see the name of is still worth showing.
+   */
+  spaceRoles: Map<string, { name: string; colour?: string }>;
+  spaceRolesAt?: string;
 
   /**
    * face id → the face, from `room.faces`.
@@ -230,6 +239,7 @@ export function emptyRoom(roomId: string): RoomState {
     threadNamesAt: new Map(),
     faces: new Map(),
     facesAt: new Map(),
+    spaceRoles: new Map(),
     threads: new Map(),
     applied: new Set(),
     deferred: new Map(),

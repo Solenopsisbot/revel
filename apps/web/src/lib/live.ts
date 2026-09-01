@@ -44,7 +44,14 @@ import {
 } from '@revel/core';
 import { type CryptoEngine, spawnCryptoEngine } from '@revel/crypto';
 import cryptoWasmUrl from '@revel/crypto-wasm/revel_crypto_bg.wasm?url';
+import { has, parse, Permission } from '@revel/protocol';
 import { myFaces } from './faces.svelte.js';
+// A cycle on paper and not in practice: `live.svelte.ts` reaches this module
+// through a dynamic `import()` inside `start`, so it is always evaluated first
+// and its export exists by the time anything here reads it. Worth it — the
+// notification rules need to know a space's roles, and the alternative is a
+// second copy of the space list that would drift from the one the UI renders.
+import { live } from './live.svelte.js';
 import { notifications } from './notify.svelte.js';
 
 /** Where the Host lives. Same origin in dev, behind the vite proxy. */
@@ -253,11 +260,47 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
         const now = new Date();
         return now.getHours() * 60 + now.getMinutes();
       },
-      // `roles` and `mayBroadcast` are deliberately absent until spaces exist
-      // (`docs/06` phase 3). Absent means "no roles" and "nobody may", which
-      // makes `@everyone` inert rather than exploitable — the safe direction,
-      // since the failure is a missed ping rather than one nobody was entitled
-      // to send.
+      /**
+       * Role ids I hold in this room's space, for `@role` pings.
+       *
+       * Read from the space list rather than fetched: this runs inside the
+       * decrypt path for every arriving event, and a request per message would
+       * be a request per message. Absent means "no roles", which suppresses the
+       * ping — the safe direction, since the failure is a missed ping.
+       */
+      roles: (roomId) => {
+        const spaceId = directory?.rooms().find((r) => r.id === roomId)?.space;
+        if (!spaceId) return [];
+        const space = live.spaces.find((s) => s.info.id === spaceId);
+        return space?.members.find((m) => m.account === account)?.roles ?? [];
+      },
+      /**
+       * Whether the sender may address the whole room.
+       *
+       * **A check only the reader can do.** `mentionsEveryone` is inside the
+       * ciphertext, so a member without `MENTION_EVERYONE` can set it and the
+       * Host will never know — `docs/04` §4 puts enforcement here, "on
+       * rendering the ping", and `docs/35` rule 8 is the rule.
+       *
+       * Resolved from the same numbers the server would use: `@everyone` plus
+       * their roles, which is `permissions.ts`'s `resolve` and not a second
+       * implementation of it. A room whose space we have not loaded resolves to
+       * nobody, which is quiet rather than exploitable.
+       */
+      mayBroadcast: (roomId, sender) => {
+        const spaceId = directory?.rooms().find((r) => r.id === roomId)?.space;
+        if (!spaceId) return false;
+        const space = live.spaces.find((s) => s.info.id === spaceId);
+        if (!space) return false;
+        const held = new Set(space.members.find((m) => m.account === sender)?.roles ?? []);
+        // `@everyone` shares the space's id, and applies whether or not it is
+        // listed — leaving it out was the bug that made every member resolve
+        // to zero permissions at room level.
+        const bits = space.roles
+          .filter((r) => r.id === spaceId || held.has(r.id))
+          .reduce((acc, r) => acc | parse(r.bits), 0n);
+        return has(bits, Permission.MENTION_EVERYONE);
+      },
       deliver: (roomId, event, decision) => notifications.deliver(roomId, event, decision),
     },
   });

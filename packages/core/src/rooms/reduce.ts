@@ -23,6 +23,7 @@
  * else has a reference to yet, and `reduce` is the single-event case of it.
  * The contract callers see is unchanged.
  */
+import type { RoleName } from '@revel/protocol';
 import type { Annotation, LocalEvent, Message, Reaction, RoomState } from './state.js';
 import { compareIds, emptyRoom } from './state.js';
 
@@ -128,6 +129,7 @@ function clone(state: RoomState): RoomState {
     threadNamesAt: new Map(state.threadNamesAt),
     faces: new Map(state.faces),
     facesAt: new Map(state.facesAt),
+    spaceRoles: new Map(state.spaceRoles),
     threads: new Map(state.threads),
     applied: new Set(state.applied),
     deferred: new Map(state.deferred),
@@ -236,6 +238,18 @@ function apply(draft: RoomState, event: LocalEvent, options: ReduceOptions): voi
         draft.spaceName = payload.name;
         draft.spaceColour = payload.colour;
         draft.spaceNameAt = event.id;
+      }
+      return;
+    case 'space.roles':
+      // Whole list, last writer wins — see the event's own comment. Replacing
+      // the map rather than merging into it is the point: a role that is gone
+      // from the newest list is a role that was deleted, and merging would keep
+      // naming it forever.
+      if (!draft.spaceRolesAt || compareIds(event.id, draft.spaceRolesAt) > 0) {
+        draft.spaceRoles = new Map(
+          payload.roles.map((role: RoleName) => [role.id, { name: role.name, colour: role.colour }]),
+        );
+        draft.spaceRolesAt = event.id;
       }
       return;
     case 'room.faces':

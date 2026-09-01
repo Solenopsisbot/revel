@@ -39,6 +39,7 @@ import {
   notifications,
   type Perm,
   privacy,
+  type Role,
   type Room,
   rosters,
   type Space,
@@ -47,6 +48,8 @@ import {
   storage,
 } from './data.js';
 import { facesIn, facesSpokenIn, participantsIn, revealsLink, speakerIn } from './faceShape.js';
+import { bitsOf, shapeSpace } from '../space/liveShape.js';
+import { holds } from '../space/perms.js';
 
 /** The account these faces belong to. Exported because 'is this face one of
     mine' is a question components ask too, and routing it through a named
@@ -107,25 +110,50 @@ class Core {
   }
   spacesSeed = $state(spaces);
   /**
-   * Spaces. **Empty for a signed-in account**, because there are none yet.
+   * Spaces.
    *
-   * `docs/06` puts spaces in phase 3 and the server refuses to make one, so a
-   * real account has exactly zero — and every screen that read this map was
-   * showing it somebody else's. The rail was fixed by hiding them; the command
-   * palette was not, and offered to take you to `#design` in a space you have
-   * never been in.
+   * Fixtures in the demo, the real ones otherwise — never both. Mixing them was
+   * the bug behind "going to /app inserts all of the example spaces": every
+   * screen that read this was showing a signed-in account somebody else's
+   * community, and the command palette offered to take you to `#design` in a
+   * space you had never been in.
+   *
+   * The live half is a *join*, not a fetch: the Host's spaces carry ids and
+   * bits, and what they are called comes out of each room's decrypted state
+   * (`shapeSpace`). Reading `live.version` is what makes it re-run when a
+   * `space.name` finally decrypts.
    */
-  get spaces() {
-    return this.demo ? this.spacesSeed : [];
+  get spaces(): Space[] {
+    if (this.demo) return this.spacesSeed;
+    void live.version;
+    return live.spaces.map((s) =>
+      shapeSpace(s, {
+        stateOf: (roomId) => live.room(roomId),
+        unreadOf: (roomId) => live.unread(roomId),
+        // Everyone renders as their own account for now: a face is announced
+        // per room by `room.faces`, and picking one for a member list that
+        // spans rooms would mean picking which room's answer is the real one.
+        faceFor: (accountId) => accountId,
+        me: live.stack?.account ?? '',
+      }),
+    );
   }
   dmsSeed = $state(structuredClone(dms));
   currentSpaceIdSeed = $state('solexsis');
-  /** No space for a signed-in account — there are none until phase 3. */
+  currentSpaceIdLive = $state('');
+  /**
+   * The open space.
+   *
+   * Two fields rather than one, for the same reason `currentRoomId` has two:
+   * the fixture default is a real space id from somebody else's demo, and it
+   * reached the address bar of accounts that had never seen it.
+   */
   get currentSpaceId(): string {
-    return this.demo ? this.currentSpaceIdSeed : '';
+    return this.demo ? this.currentSpaceIdSeed : this.currentSpaceIdLive;
   }
   set currentSpaceId(id: string) {
-    this.currentSpaceIdSeed = id;
+    if (this.demo) this.currentSpaceIdSeed = id;
+    else this.currentSpaceIdLive = id;
   }
   /**
    * What you are looking at. A DM's id sits here exactly like a room's does,
@@ -631,9 +659,38 @@ class Core {
   }
   // ── membership, roles and moderation ──────────────────────────────────────
 
+  /**
+   * The account these screens are speaking for.
+   *
+   * `MY_ACCOUNT` is a fixture id, and every space screen that compared against
+   * it directly was asking "am I Viola from the demo" rather than "am I me" —
+   * which for a signed-in account is always no, so nobody was ever a member of
+   * their own space.
+   */
+  get myAccountId(): string {
+    return this.demo ? MY_ACCOUNT : (live.stack?.account ?? '');
+  }
+
+  /**
+   * What to call a member of a space.
+   *
+   * A space's membership is a list of *accounts* — permissions live on the
+   * account, authorship on the face (`docs/01`) — so there is no face to read a
+   * name off. The handle is what the IdP knows and what a person typed to be
+   * invited, which makes it the right label here.
+   */
+  memberName(accountId: string): string {
+    if (this.demo) return this.faces[accountId]?.name ?? accountId;
+    if (accountId === this.myAccountId) {
+      return session.address || session.current?.handle || live.nameOf(accountId);
+    }
+    return live.nameOf(accountId);
+  }
+
   /** Your membership of the open space, if you have one. */
   get myMembership() {
-    return this.space.members.find((m) => m.accountId === MY_ACCOUNT);
+    const me = this.myAccountId;
+    return this.space.members.find((m) => m.accountId === me);
   }
 
   /**
@@ -644,30 +701,143 @@ class Core {
    * matter which of their faces you happened to click on.
    */
   rolesOf(accountId: string) {
-    const names = this.space.members.find((m) => m.accountId === accountId)?.roles ?? [];
-    return this.space.roles.filter((r) => names.includes(r.name)).sort((a, b) => b.rank - a.rank);
+    const held = this.space.members.find((m) => m.accountId === accountId)?.roles ?? [];
+    return this.space.roles.filter((r) => holds(held, r)).sort((a, b) => b.rank - a.rank);
   }
 
   /** Add or remove a permission from a role. */
   toggleRolePerm(roleId: string, perm: Perm) {
     const role = this.space.roles.find((r) => r.id === roleId);
     if (!role) return;
-    role.perms = role.perms.includes(perm)
+    const perms = role.perms.includes(perm)
       ? role.perms.filter((p) => p !== perm)
       : [...role.perms, perm];
+    if (!this.demo) {
+      // The Host re-checks this against what *you* hold (`canGrant`), so a
+      // refusal here is a real refusal and not a UI opinion — which is why it
+      // is awaited into a refresh rather than applied optimistically.
+      void this.saveRole(this.currentSpaceId, role, { perms });
+      return;
+    }
+    role.perms = perms;
   }
 
-  /** Give or take a role from a member. */
+  /**
+   * Make a role.
+   *
+   * The bits go to the Host, which enforces them; the name goes into the
+   * ciphertext, which it never reads (`space.roles`). One call, because a role
+   * that exists without a name is a row nobody can point at.
+   */
+  async addRole(name: string, colour: FaceColour = 'sky'): Promise<{ error?: string }> {
+    const trimmed = name.trim();
+    if (!trimmed) return { error: 'no_name' };
+    if (this.demo) {
+      this.space.roles = [
+        { id: `role-${Date.now()}`, name: trimmed, colour, rank: 1, perms: ['VIEW', 'SEND'] },
+        ...this.space.roles,
+      ];
+      return {};
+    }
+    try {
+      await live.stack!.core.directory.createRole(this.currentSpaceId, {
+        name: trimmed,
+        colour,
+        // A new role starts at nothing. `docs/18`'s escalation guard says you
+        // cannot grant what you do not hold, and the least surprising place to
+        // start from is zero rather than a guess at what somebody meant.
+        bits: bitsOf([]),
+        position: 1,
+      });
+      await live.refreshSpaces();
+      return {};
+    } catch (err) {
+      console.error('could not make the role', err);
+      return { error: reasonOf(err) };
+    }
+  }
+
+  /** Change a role's permissions, name, colour or rank. */
+  async saveRole(
+    spaceId: string,
+    role: Role,
+    patch: { name?: string; colour?: FaceColour; perms?: Perm[]; rank?: number },
+  ): Promise<{ error?: string }> {
+    if (this.demo) {
+      if (patch.name?.trim()) role.name = patch.name.trim();
+      if (patch.colour) role.colour = patch.colour;
+      if (patch.perms) role.perms = patch.perms;
+      if (patch.rank !== undefined) role.rank = patch.rank;
+      return {};
+    }
+    try {
+      await live.stack!.core.directory.updateRole(spaceId, role.id, {
+        bits: bitsOf(patch.perms ?? role.perms),
+        position: patch.rank ?? role.rank,
+        ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+        ...(patch.colour !== undefined ? { colour: patch.colour } : {}),
+      });
+      await live.refreshSpaces();
+      return {};
+    } catch (err) {
+      console.error('could not save the role', err);
+      return { error: reasonOf(err) };
+    }
+  }
+
+  async removeRole(spaceId: string, roleId: string): Promise<{ error?: string }> {
+    if (this.demo) {
+      this.space.roles = this.space.roles.filter((r) => r.id !== roleId);
+      return {};
+    }
+    try {
+      await live.stack!.core.directory.deleteRole(spaceId, roleId);
+      await live.refreshSpaces();
+      return {};
+    } catch (err) {
+      console.error('could not delete the role', err);
+      return { error: reasonOf(err) };
+    }
+  }
+
+  /**
+   * Give or take a role from a member.
+   *
+   * Takes a role *name* because that is what the picker has, and resolves it to
+   * an id for the wire — the Host has never been told the names (`docs/04` §1),
+   * so a `PUT …/roles` carrying "Mods" would set nothing and report success.
+   */
   toggleMemberRole(accountId: string, roleName: string) {
     const m = this.space.members.find((x) => x.accountId === accountId);
     if (!m) return;
-    m.roles = m.roles.includes(roleName)
-      ? m.roles.filter((r) => r !== roleName)
-      : [...m.roles, roleName];
+    const role = this.space.roles.find((r) => r.name === roleName || r.id === roleName);
+    if (!role) return;
+
+    const held = holds(m.roles, role);
+    if (!this.demo) {
+      const ids = this.space.members
+        .find((x) => x.accountId === accountId)!
+        .roles.map((r) => this.space.roles.find((x) => x.name === r || x.id === r)?.id)
+        .filter((id): id is string => !!id);
+      const next = held ? ids.filter((id) => id !== role.id) : [...new Set([...ids, role.id])];
+      void live
+        .stack!.core.directory.setMemberRoles(this.currentSpaceId, accountId, next)
+        .then(() => live.refreshSpaces())
+        .catch((err) => console.error('could not change their roles', err));
+      return;
+    }
+    m.roles = held ? m.roles.filter((r) => r !== roleName) : [...m.roles, roleName];
   }
 
   /** Remove a member. They can come back through a new invite. */
   kick(accountId: string) {
+    if (!this.demo) {
+      void live
+        .stack!.core.directory.removeFromSpace(this.currentSpaceId, accountId)
+        .then(() => live.refreshSpaces())
+        .catch((err) => console.error('could not remove them', err));
+      return;
+    }
     this.space.members = this.space.members.filter((m) => m.accountId !== accountId);
   }
 
@@ -1358,6 +1528,79 @@ class Core {
     }
   }
 
+  // -- spaces, for real ------------------------------------------------------
+  //
+  // Every one of these is a no-op in the demo. The fixture screens are a
+  // *reference* — `docs/33` calls them the thing the real build is measured
+  // against — and letting them write would mean a demo that quietly diverges
+  // from the design it exists to show.
+
+  /**
+   * Make a space, and go there.
+   *
+   * `docs/18`: "A new space arrives with `#general`, an `@everyone` role, one
+   * audience, and you in it. No wizard." All four are the core's job; this
+   * asks for it and then opens the room it made.
+   */
+  async createSpace(name: string, colour?: string): Promise<{ space?: string; error?: string }> {
+    if (!live.running) return { error: 'not_signed_in' };
+    const trimmed = name.trim();
+    if (!trimmed) return { error: 'no_name' };
+    try {
+      const space = await live.stack!.core.directory.createSpace(trimmed, colour);
+      await live.refreshSpaces();
+      await live.refreshRooms();
+      const made = live.spaces.find((s) => s.info.id === space.id);
+      const first = made?.rooms[0];
+      if (first) this.openRoom(space.id, first.id);
+      return { space: space.id };
+    } catch (err) {
+      console.error('could not make a space', err);
+      return { error: reasonOf(err) };
+    }
+  }
+
+  /** Rename a space, or recolour it. Both ride the same encrypted event. */
+  async renameSpace(spaceId: string, name: string, colour?: string): Promise<void> {
+    if (!live.running) return;
+    try {
+      await live.stack!.core.directory.nameSpace(spaceId, name.trim(), colour);
+    } catch (err) {
+      console.error('could not rename the space', err);
+    }
+  }
+
+  /** Invite somebody to a space, by handle. */
+  async inviteToSpace(spaceId: string, address: string): Promise<{ error?: string }> {
+    if (!live.running) return { error: 'not_signed_in' };
+    const handle = address.trim().replace(/^@/, '');
+    if (!handle) return { error: 'no_handle' };
+    try {
+      const who = await live.stack!.core.identity.resolve(handle);
+      await live.stack!.core.directory.inviteToSpace(spaceId, [who.id]);
+      await live.refreshSpaces();
+      return {};
+    } catch (err) {
+      console.error('could not invite them', err);
+      return { error: reasonOf(err) };
+    }
+  }
+
+  /** Leave a space. The membership row goes; so does this device's group state. */
+  async leaveSpace(spaceId: string): Promise<{ error?: string }> {
+    if (!live.running) return { error: 'not_signed_in' };
+    try {
+      await live.stack!.core.directory.leaveSpace(spaceId);
+      await live.refreshSpaces();
+      await live.refreshRooms();
+      this.openHome();
+      return {};
+    } catch (err) {
+      console.error('could not leave the space', err);
+      return { error: reasonOf(err) };
+    }
+  }
+
   /**
    * Set or clear a room's override. `undefined` returns it to inheriting.
    *
@@ -1395,25 +1638,77 @@ class Core {
     if (this.currentRoomId === roomId) this.openRoom(spaceId, space.rooms[0]!.id);
   }
 
-  createRoom(spaceId: string, name: string, kind: 'text' | 'voice' = 'text', category = 'General') {
-    const space = this.spaces.find((s) => s.id === spaceId);
-    if (!space) return;
-    const id = name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
-    if (!id || space.rooms.some((r) => r.id === id)) return;
-    space.rooms.push({ id, name: id, kind, category, audience: { kind: 'everyone' } });
-    this.messages[id] ??= [];
-    this.openRoom(spaceId, id);
+  /**
+   * Make a room.
+   *
+   * `audience` is the crypto boundary (`docs/03` §4) and is chosen **once**:
+   * `everyone` binds to the group the space already has, so a twelve-room space
+   * is one commit, and anything narrower gets a group of its own. It cannot be
+   * changed afterwards — there is no un-merging encrypted history — which is
+   * why the picker is at creation time and nowhere else.
+   */
+  async createRoom(
+    spaceId: string,
+    name: string,
+    audience: { kind: 'everyone' } | { kind: 'roles'; roles: string[] } = { kind: 'everyone' },
+  ): Promise<{ room?: string; error?: string }> {
+    const trimmed = name.trim();
+    if (!trimmed) return { error: 'no_name' };
+
+    if (this.demo) {
+      const space = this.spaces.find((s) => s.id === spaceId);
+      if (!space) return { error: 'no_such_space' };
+      const id = trimmed
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+      if (!id || space.rooms.some((r) => r.id === id)) return { error: 'no_name' };
+      space.rooms.push({ id, name: id, kind: 'text', category: 'General', audience });
+      this.messages[id] ??= [];
+      this.openRoom(spaceId, id);
+      return { room: id };
+    }
+
+    try {
+      const room = await live.stack!.core.directory.createSpaceRoom(spaceId, {
+        name: trimmed,
+        ...(audience.kind === 'roles' ? { audience } : {}),
+      });
+      await live.refreshSpaces();
+      await live.refreshRooms();
+      this.openRoom(spaceId, room.id);
+      return { room: room.id };
+    } catch (err) {
+      console.error('could not make a room', err);
+      return { error: reasonOf(err) };
+    }
   }
 
   deleteRoom(spaceId: string, roomId: string) {
+    if (!this.demo) {
+      void live
+        .stack!.core.directory.leave(roomId)
+        .then(() => live.refreshSpaces())
+        .catch((err) => console.error('could not delete the room', err));
+      if (this.currentRoomId === roomId) {
+        const next = this.space.rooms.find((r) => r.id !== roomId);
+        if (next) this.openRoom(spaceId, next.id);
+        else this.openHome();
+      }
+      return;
+    }
     this.leaveRoom(spaceId, roomId);
   }
 
   renameRoom(spaceId: string, roomId: string, name: string, topic?: string) {
+    if (!this.demo) {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      void live
+        .stack!.core.directory.nameRoom(roomId, trimmed, topic?.trim() || undefined)
+        .catch((err) => console.error('could not rename the room', err));
+      return;
+    }
     const room = this.spaces.find((s) => s.id === spaceId)?.rooms.find((r) => r.id === roomId);
     if (!room) return;
     const trimmed = name.trim();
@@ -1421,10 +1716,22 @@ class Core {
     room.topic = topic?.trim() || undefined;
   }
 
+  /**
+   * Edit a space's name, description or visibility.
+   *
+   * Only the name is live: it is an encrypted event and there is one. A
+   * description and a listing are Host columns (`docs/04` §1 — `listing`) that
+   * nothing sets yet, and writing them into the fixture for a signed-in account
+   * would be a setting that appears to save and does not.
+   */
   updateSpace(
     spaceId: string,
     patch: { name?: string; description?: string; visibility?: 'invite' | 'link' | 'public' },
   ) {
+    if (!this.demo) {
+      if (patch.name?.trim()) void this.renameSpace(spaceId, patch.name);
+      return;
+    }
     const space = this.spaces.find((s) => s.id === spaceId);
     if (!space) return;
     if (patch.name?.trim()) {
@@ -1438,9 +1745,13 @@ class Core {
   /** A space is a row and a key group, not a machine (`docs/18`), so deleting
       one is an ordinary — if irreversible — operation rather than a teardown. */
   deleteSpace(spaceId: string) {
-    // Fixtures only. A signed-in account has no spaces to delete — the server
-    // will not make one until `docs/06` phase 3 — so this writes to the seed
-    // rather than to the live-aware getter.
+    if (!this.demo) {
+      // Leaving, not deleting. `docs/18` treats a space as a row and a key
+      // group rather than a machine, and the Host has no delete route — so this
+      // is the honest version of the button until it does.
+      void this.leaveSpace(spaceId);
+      return;
+    }
     if (this.spacesSeed.length <= 1) return;
     this.spacesSeed = this.spacesSeed.filter((s) => s.id !== spaceId);
     const first = this.spacesSeed[0]!;

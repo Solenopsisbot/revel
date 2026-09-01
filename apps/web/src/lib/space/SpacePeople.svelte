@@ -18,7 +18,7 @@ import type { Member } from '$lib/fake/data.js';
 import { ago } from '$lib/format.js';
 import Icon from '$lib/Icon.svelte';
 import { wren } from '$lib/wren/wren.svelte.js';
-import { rankOf, resolve } from './perms.js';
+import { holds, rankOf, resolve } from './perms.js';
 
 let query = $state('');
 let editing = $state<string | null>(null);
@@ -39,7 +39,8 @@ const shown = $derived(
     if (!q) return true;
     return (
       (f?.name.toLowerCase().includes(q) ?? false) ||
-      m.roles.some((r) => r.toLowerCase().includes(q))
+      m.roles.some((r) => r.toLowerCase().includes(q)) ||
+      core.memberName(m.accountId).toLowerCase().includes(q)
     );
   }),
 );
@@ -93,6 +94,7 @@ function ban(m: Member) {
 
 {#each shown as m (m.accountId)}
   {@const face = core.faces[m.faceId]}
+  {@const label = core.memberName(m.accountId)}
   {@const roles = core.rolesOf(m.accountId)}
   {@const kickWhy = refuse(m, 'KICK')}
   {@const banWhy = refuse(m, 'BAN')}
@@ -101,7 +103,7 @@ function ban(m: Member) {
       {#if face}<Avatar {face} size={34} />{/if}
       <div class="meta">
         <div class="nm">
-          <span style="color: var(--face-{face?.colour ?? 'violet'})">{face?.name ?? m.accountId}</span>
+          <span style="color: var(--face-{face?.colour ?? 'violet'})">{face?.name ?? label}</span>
           {#if m.owner}<span class="tag owner">owner</span>{/if}
           {#if face?.agent}
             <!-- The same sentence the roster uses. An agent's badge is a
@@ -119,7 +121,9 @@ function ban(m: Member) {
           {:else}
             <span class="none">No roles</span>
           {/if}
-          <span class="joined">joined {ago(m.joinedAt)}</span>
+          <!-- Only when there is one to show. The Host does not send a join
+               time, and "joined 56 years ago" is worse than saying nothing. -->
+          {#if m.joinedAt}<span class="joined">joined {ago(m.joinedAt)}</span>{/if}
         </div>
       </div>
       <button class="more" onclick={() => (editing = editing === m.accountId ? null : m.accountId)} aria-expanded={editing === m.accountId}>
@@ -131,8 +135,11 @@ function ban(m: Member) {
       <div class="edit">
         <p class="lbl">Roles</p>
         <div class="picker">
-          {#each space.roles as r (r.id)}
-            {@const held = m.roles.includes(r.name)}
+          <!-- `@everyone` is skipped: every member already has it by
+               definition, so a toggle for it would be a switch that is always
+               on and does nothing. -->
+          {#each space.roles.filter((r) => !r.everyone) as r (r.id)}
+            {@const held = holds(m.roles, r)}
             {@const blocked = !me.owner && (r.rank >= me.rank || !me.perms.has('MANAGE_ROLES'))}
             <button
               class="role"
