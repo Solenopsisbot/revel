@@ -440,6 +440,10 @@ function grow(el: HTMLTextAreaElement) {
     border: 1px solid color-mix(in oklab, var(--fc) 42%, transparent);
     color: var(--fc); border-radius: var(--r-pill); padding: 3px 8px 3px 3px;
     font-size: var(--text-sm); font-weight: 700; margin-bottom: 3px;
+    /* The one control in the composer that isn't the text field or the send
+       button, and the only way to change who you are speaking as — so it takes
+       the floor rather than staying the 32px a mouse is happy with. */
+    min-height: var(--tap);
     /* The colour change IS the feedback that you're about to speak as
        someone else (docs/32). */
     transition: background var(--t-base) var(--ease), border-color var(--t-base) var(--ease),

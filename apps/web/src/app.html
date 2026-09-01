@@ -2,7 +2,20 @@
 <html lang="en" data-theme="dusk" data-density="cozy" data-personality="full">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!--
+      `viewport-fit=cover` so the app reaches under the notch and the home
+      indicator, with `env(safe-area-inset-*)` doing the actual keeping-out.
+
+      `interactive-widget=resizes-content` is the Chrome-on-Android half of the
+      keyboard problem: without it the layout viewport stays full height when
+      the keyboard opens and the composer ends up behind it. Safari ignores the
+      key, which is why `layout.svelte.ts` also tracks `visualViewport` — the
+      two together cover both.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <!-- The mark (`docs/15-mark.md`), not Wren: she is the guide, not the
          product, and `docs/09` is explicit that she does not belong on chrome.
          SVG so it is sharp at every size the mark was designed for — 48 down

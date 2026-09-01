@@ -8,6 +8,7 @@
  */
 
 import { contextMenu } from './contextmenu.svelte.js';
+import { layout } from './layout.svelte.js';
 import Menu from './Menu.svelte';
 
 let panel = $state<HTMLElement>();
@@ -17,6 +18,9 @@ let pos = $state({ x: -9999, y: -9999 });
       re-runs this when a second menu opens at a different point. */
 $effect(() => {
   const c = contextMenu.current;
+  // A sheet is positioned by CSS, and running the cursor placement over it
+  // would fight the animation for the same two properties.
+  if (layout.coarse) return;
   if (!c || !panel) {
     pos = { x: -9999, y: -9999 };
     return;
@@ -54,11 +58,27 @@ function outside(e: MouseEvent) {
 <svelte:window onkeydown={onKey} onpointerdown={outside} onresize={() => contextMenu.close()} />
 
 {#if contextMenu.current}
+  <!--
+    A card at the pointer on a mouse, a bottom sheet on a finger (`docs/24`),
+    which is the same split the face switcher already makes.
+
+    Not a style preference. A long-press menu near the top of the screen used
+    to open *upward over the chrome it was launched from* — its title, which
+    has no background of its own, landed on top of the space rail and was
+    unreadable — and every row of it sat under the hand that opened it. A
+    sheet is anchored to the bottom edge, so neither can happen, and it is
+    within reach of a thumb on a phone that the top of the screen is not.
+  -->
+  {#if layout.coarse}
+    <div class="sheet-scrim" onclick={() => contextMenu.close()} role="presentation"></div>
+  {/if}
   <div
     class="ctx"
+    class:sheet={layout.coarse}
     bind:this={panel}
-    style="left: {pos.x}px; top: {pos.y}px"
-    style:visibility={pos.x === -9999 ? 'hidden' : 'visible'}
+    style:left={layout.coarse ? undefined : `${pos.x}px`}
+    style:top={layout.coarse ? undefined : `${pos.y}px`}
+    style:visibility={layout.coarse || pos.x !== -9999 ? 'visible' : 'hidden'}
   >
     {#if contextMenu.current.title}
       <div class="title">{contextMenu.current.title}</div>
@@ -86,5 +106,29 @@ function outside(e: MouseEvent) {
   .title {
     font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
     color: var(--text-mute); padding: 0 4px 5px;
+  }
+
+  /* ── bottom sheet (coarse pointers only) ─────────────────────────────── */
+  .sheet-scrim { position: fixed; inset: 0; z-index: 79; background: var(--scrim); }
+  .ctx.sheet {
+    left: 0; right: 0; bottom: 0; top: auto;
+    padding: 6px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: var(--ground-2); border-top: 1px solid var(--line);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    box-shadow: var(--shadow-panel);
+    animation: sheet-up var(--t-base) var(--ease);
+  }
+  @keyframes sheet-up { from { translate: 0 100%; } to { translate: 0 0; } }
+  /* The card inside stops being a card: it is the sheet now, and two stacked
+     borders with two radii read as a panel inside a panel. */
+  .ctx.sheet :global(.menu) {
+    background: transparent; border: 0; box-shadow: none; padding: 0; min-width: 0;
+  }
+  .ctx.sheet .title { padding: 6px 10px 8px; }
+
+  /* A sheet arrives from the bottom edge every time, so there is nothing for
+     the reduced-motion reading of "rise" to preserve. */
+  @media (prefers-reduced-motion: reduce) {
+    .ctx, .ctx.sheet { animation: none; }
   }
 </style>

@@ -135,6 +135,20 @@ function onKey(e: KeyboardEvent) {
     background: var(--brand); color: #fff; display: grid; place-items: center;
     transition: transform var(--t-fast) var(--ease-toy), filter var(--t-fast) var(--ease);
   }
+  /* The filled circle stays 32px — growing it would make the play button the
+     loudest thing in a row of quiet controls — so the *target* grows instead,
+     as an invisible pseudo-element centred on it. Painting nothing means the
+     hover brightness and the press scale still apply to the circle alone.
+     `position: relative` is already implied by the button being a grid box, so
+     only the child needs positioning. */
+  .pp { position: relative; }
+  @media (pointer: coarse) {
+    .pp::after {
+      content: ''; position: absolute; left: 50%; top: 50%;
+      width: var(--tap); height: var(--tap);
+      translate: -50% -50%;
+    }
+  }
   .pp:hover { filter: brightness(1.1); }
   .pp:active { transform: scale(0.9); }
 
@@ -159,6 +173,7 @@ function onKey(e: KeyboardEvent) {
     flex: none; border: 1px solid var(--line); background: transparent; cursor: pointer;
     color: var(--text-mute); font-size: 11px; font-weight: 700; padding: 2px 6px;
     border-radius: var(--r-xs);
+    min-height: var(--tap); min-width: 34px;
     transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
   }
   .rate:hover { color: var(--text); }

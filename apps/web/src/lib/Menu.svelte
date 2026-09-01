@@ -76,6 +76,11 @@ const checkable = $derived(items.some((i) => i.checked !== undefined));
     font-family: var(--font-mono); font-size: 10px; color: var(--text-mute);
     border: 1px solid var(--line); border-radius: var(--r-xs); padding: 1px 5px;
   }
+  /* A menu that hides its keyboard equivalents trains people to keep using the
+     menu — but only where there is a keyboard to hide them from. On a phone
+     `⌘,` is a label for a key that does not exist, taking width from the one
+     that does. Pointer, not width: a tablet with a keyboard keeps them. */
+  @media (pointer: coarse) { kbd { display: none; } }
   .header {
     font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
     color: var(--text-mute); padding: 8px 9px 3px;

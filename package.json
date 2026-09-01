@@ -19,6 +19,7 @@
     "test:budgets": "node apps/web/e2e/budgets.mjs",
     "test:faces": "node apps/web/e2e/faces.mjs",
     "test:livechat": "node apps/web/e2e/livechat.mjs",
+    "test:mobile": "node apps/web/e2e/mobile.mjs",
     "test:unread": "node apps/web/e2e/unread.mjs",
     "test:offline": "node apps/web/e2e/offline.mjs",
     "test:devices": "node apps/web/e2e/devices.mjs",

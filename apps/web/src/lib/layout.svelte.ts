@@ -42,6 +42,52 @@ class Layout {
   ios = $state(false);
 
   /**
+   * Track the height the on-screen keyboard actually leaves us.
+   *
+   * `100dvh` is the *layout* viewport, and no mobile browser shrinks that when
+   * the keyboard opens — Safari scrolls the page instead and Chrome only
+   * resizes if the viewport meta asks it to. In a chat app that is the worst
+   * possible failure: the composer, the one thing you are looking at while
+   * typing, goes under the keyboard.
+   *
+   * `visualViewport` is the part you can actually see, so the shell keys off
+   * that and falls back to `100dvh` wherever it is missing. Written straight to
+   * a custom property rather than through `$state`, because this fires on every
+   * frame of the keyboard animation and none of those frames need Svelte to
+   * re-render anything.
+   *
+   * Two things it deliberately does *not* react to:
+   * - **Pinch zoom** (`scale !== 1`), which also shrinks the visual viewport.
+   *   Shrinking the app to match would fight the person zooming in.
+   * - **Fine pointers.** A desktop window has no keyboard inset, and the
+   *   property would just be a slower spelling of `100dvh`.
+   */
+  #keyboard(): () => void {
+    const vv = window.visualViewport;
+    if (!vv) return () => {};
+    const el = document.documentElement;
+    const apply = () => {
+      if (!this.coarse || vv.scale !== 1) {
+        el.style.removeProperty('--app-h');
+        return;
+      }
+      // `offsetTop` is how far the visual viewport has been scrolled down
+      // inside the layout viewport — on iOS the keyboard does that rather than
+      // resizing, and without subtracting it the shell runs off the bottom by
+      // exactly the amount it scrolled.
+      el.style.setProperty('--app-h', `${Math.round(vv.height + vv.offsetTop)}px`);
+    };
+    apply();
+    vv.addEventListener('resize', apply);
+    vv.addEventListener('scroll', apply);
+    return () => {
+      vv.removeEventListener('resize', apply);
+      vv.removeEventListener('scroll', apply);
+      el.style.removeProperty('--app-h');
+    };
+  }
+
+  /**
    * Subscribe to the media queries. Called once from the root layout; returns
    * a teardown so `$effect` can clean up in development's hot reload.
    */
@@ -82,7 +128,14 @@ class Layout {
       /iPad|iPhone|iPod/.test(ua) ||
       (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
 
-    return () => offs.forEach((off) => off());
+    // After the pointer check above, so the first `apply()` already knows
+    // whether this is a device with an on-screen keyboard at all.
+    const offKeyboard = this.#keyboard();
+
+    return () => {
+      for (const off of offs) off();
+      offKeyboard();
+    };
   }
 }
 

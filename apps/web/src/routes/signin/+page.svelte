@@ -366,5 +366,11 @@ async function verify() {
     display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline;
   }
   .alt a { color: var(--text); }
+  /* Standalone ways out of this screen, not words inside a sentence. On a
+     finger they get the target floor; `inline-flex` so `min-height` applies at
+     all, which it does not to a plain inline box. */
+  @media (pointer: coarse) {
+    .alt a { display: inline-flex; align-items: center; min-height: var(--tap); }
+  }
   .fine { margin-top: 24px; font-size: var(--text-sm); line-height: 1.7; color: color-mix(in oklab, var(--text) 58%, transparent); }
 </style>

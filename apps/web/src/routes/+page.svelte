@@ -240,6 +240,17 @@ const costs: [string, string][] = [
     color: var(--text-dim); text-decoration: none; font-size: var(--text-sm); font-weight: 600;
     transition: color var(--t-fast) var(--ease);
   }
+  /* Standalone navigation, not words in a sentence — so on a finger these take
+     the same floor as everything else that is its own control. `align-items`
+     keeps the row centred once the links are taller than their text. */
+  @media (pointer: coarse) {
+    .brand, .nav nav a {
+      min-height: var(--tap); display: flex; align-items: center; justify-content: center;
+    }
+    /* Both dimensions, not just height. "Sign in" is 40px of word, and a target
+       is a box — being tall enough does not help a thumb that lands 3px wide. */
+    .nav nav a { min-width: var(--tap); }
+  }
   .nav nav a:hover { color: var(--text); }
 
   .hero {

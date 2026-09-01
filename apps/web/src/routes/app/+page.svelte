@@ -1,6 +1,6 @@
 <script lang="ts">
 import { untrack } from 'svelte';
-import { goto } from '$app/navigation';
+import { afterNavigate, goto } from '$app/navigation';
 import { page } from '$app/state';
 import Avatar from '$lib/Avatar.svelte';
 import BetaNotice from '$lib/BetaNotice.svelte';
@@ -215,6 +215,16 @@ const demo = page.url.searchParams.has('demo');
  * belongs to nobody, which is the single worst thing a chat client can do.
  */
 let ready = $state(demo);
+
+/**
+ * Has SvelteKit's client router finished starting?
+ *
+ * `afterNavigate` fires once for the hydration navigation itself, which is the
+ * documented signal that `goto`/`replaceState` are safe to call. `onMount` is
+ * not — it runs *during* hydration, before the router marks itself started.
+ */
+let routed = $state(false);
+afterNavigate(() => (routed = true));
 
 if (demo) session.demo = true;
 
@@ -562,10 +572,15 @@ $effect(() => {
   // and wrote whatever `core` was defaulting to, which is how a fresh visit to
   // `/app` flashed `?space=solexsis&room=design`.
   if (!ready) return;
+  // Not before SvelteKit's router has started. `replaceState` *throws* when it
+  // has not, and an effect that throws aborts the rest of the flush along with
+  // it — which is how the touch layer used to die on mobile, several effects
+  // further down. `?demo=1` hit it every single load, because `ready` is true
+  // at init there rather than after an await.
+  if (!routed) return;
   syncUrl(loc);
 });
 
-$effect(() => layout.watch());
 // Indexing starts with the app, not with the first search: the state worth
 // showing is "still catching up", and you only see it if it began earlier.
 $effect(() => untrack(() => search.start()));
@@ -988,12 +1003,16 @@ function toggleMembers() {
           <span class="me-sub">{myAddress}</span>
         </span>
       </button>
+      <!-- A gear, not a chevron. It was a chevron, which reads as "expand
+           this" — and on a phone this button is the *only* way into settings,
+           because the keyboard shortcut isn't there and neither is anything
+           else in the chrome. -->
       <button
         class="me-btn"
         onclick={() => (settingsOpen = true)}
         title="Settings"
         aria-label="Settings"
-      ><Icon name="chevron" size={17} /></button>
+      ><Icon name="gear" size={18} /></button>
     </div>
   </aside>
   </div>
@@ -1224,11 +1243,15 @@ function toggleMembers() {
 {/if}
 
 <style>
-  .waiting { height: 100dvh; background: var(--ground-0); }
+  .waiting { height: var(--app-h, 100dvh); background: var(--ground-0); }
   .shell {
     display: grid;
     grid-template-columns: 76px 250px 1fr 240px;
-    height: 100dvh;
+    /* `--app-h` is the visible viewport, which on a phone is the screen minus
+       the on-screen keyboard (`layout.svelte.ts`). `100dvh` is the fallback and
+       what every desktop uses — dvh handles a collapsing URL bar but nothing
+       handles the keyboard, and without this the composer types underneath it. */
+    height: var(--app-h, 100dvh);
     transition: grid-template-columns var(--t-base) var(--ease);
   }
   .shell.no-members { grid-template-columns: 76px 250px 1fr 0px; }
@@ -1385,6 +1408,7 @@ function toggleMembers() {
     display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0;
     background: transparent; border: 0; cursor: pointer; color: var(--text);
     padding: 4px 6px; border-radius: var(--r-sm); text-align: left;
+    min-height: var(--tap);
     transition: background var(--t-fast) var(--ease);
   }
   .me-id:hover { background: var(--ground-3); }
@@ -1470,6 +1494,10 @@ function toggleMembers() {
     padding: 3px 7px; border: 0; background: none; border-radius: var(--r-xs);
     color: var(--text-mute); font: inherit; font-size: var(--text-xs);
     cursor: pointer; text-align: left; width: 100%;
+    /* A thread is a room you can be in, listed among rooms — it should be no
+       harder to hit than the room above it. It stays visually smaller; only
+       the box grows. */
+    min-height: var(--tap);
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .thread:hover { background: var(--ground-3); color: var(--text); }

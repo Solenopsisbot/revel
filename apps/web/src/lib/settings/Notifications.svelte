@@ -323,12 +323,32 @@ const noPush = $derived(layout.ios && !layout.standalone);
     padding: 11px 0; border-bottom: 1px solid var(--line);
   }
   .meta { flex: 1; min-width: 0; }
+
+  /*
+   * Narrow, the label and its control stack.
+   *
+   * Side by side they were both losing: three pill buttons will not go under
+   * 260px, so the label got whatever was left — about 110px, enough to break
+   * `#ci-noise` across two lines and "Nothing · set on this room" across four,
+   * while the control still overflowed the row. Stacked, each gets the full
+   * width and the pills stay one line.
+   */
+  @media (max-width: 560px) {
+    .row { flex-direction: column; align-items: stretch; gap: 8px; }
+    .row .seg { align-self: flex-start; }
+    /* The clear button was the third column; on its own row it reads as an
+       action for the group above it, which is what it is. */
+    .row .clear { align-self: flex-end; margin-top: -40px; }
+  }
   .nm { font-size: var(--text-sm); font-weight: 600; display: flex; align-items: baseline; gap: 8px; }
   .in { font-weight: 400; font-size: 11px; color: var(--text-mute); }
   .bl { font-size: 12px; color: var(--text-mute); margin-top: 1px; }
   .clear {
     border: 0; background: transparent; cursor: pointer; color: var(--text-mute);
     padding: 6px; border-radius: var(--r-sm); display: flex; flex: none;
+    /* The sheet-wide rule gives it the height; an icon-only button needs the
+       width said separately or it stays a 26px sliver. */
+    min-width: var(--tap); justify-content: center;
   }
   .clear:hover { color: var(--text); background: var(--ground-2); }
 

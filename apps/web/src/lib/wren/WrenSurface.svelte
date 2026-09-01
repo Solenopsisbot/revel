@@ -70,6 +70,10 @@ function act(n: Notice, actionId: string, dismissive: boolean) {
   .wren {
     position: relative; display: grid; place-items: center; flex: none;
     width: 34px; height: 34px; border-radius: var(--r-sm);
+    /* The same floor the `.icon-btn`s either side of it take. Without this it
+       was the one 34px target in a row of 44px ones — under the touch minimum,
+       and visibly the odd one out once the others grew. */
+    min-width: var(--tap); min-height: var(--tap);
     border: 0; background: transparent; cursor: pointer; padding: 0;
     transition: background var(--t-fast) var(--ease);
   }

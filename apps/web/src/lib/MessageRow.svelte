@@ -302,6 +302,30 @@ function swipeEnd(e: PointerEvent) {
   tapActions.toggle(m.id);
 }
 
+/**
+ * Which side of the row the tapped action bar hangs off.
+ *
+ * On touch the bar sits *above* the row so it stops covering the message it
+ * acts on — but a row near the top of the list has nothing above it except the
+ * chat header, and the bar went under that and out of reach. Measured rather
+ * than guessed, because "near the top" depends on where the list is scrolled
+ * to, which no media query knows.
+ *
+ * Only runs for the one row that is currently tapped; every other row reads
+ * `tapActions.id` and returns.
+ */
+let rowEl = $state<HTMLElement>();
+let actionsBelow = $state(false);
+$effect(() => {
+  if (tapActions.id !== m.id || !rowEl) return;
+  const list = rowEl.closest('.msgs');
+  if (!list) return;
+  const room = rowEl.getBoundingClientRect().top - list.getBoundingClientRect().top;
+  // The bar's own height plus the overlap it keeps. Below that there is not
+  // enough clear list above the row to hang it in.
+  actionsBelow = room < 56;
+});
+
 /** "Rae, June and 2 others reacted with 🔥" — the tooltip does the work. */
 function who(by: string[], key: string) {
   return `${names(by.map((f) => core.faces[f]?.name ?? f))} reacted with ${key}`;
@@ -326,6 +350,8 @@ function who(by: string[], key: string) {
   class:flash={core.jumpTo === m.id}
   class:swiping
   class:tapped={tapActions.id === m.id}
+  class:acts-below={actionsBelow}
+  bind:this={rowEl}
   style="--fc: var(--face-{faceColour(face)}); --dx: {dx}px; --sw: {Math.min(1, dx / REPLY_AT)}"
   oncontextmenu={onContext}
   onpointerdown={swipeDown}
@@ -639,6 +665,16 @@ function who(by: string[], key: string) {
     padding-top: 2px;
   }
   .avatar-btn { border: 0; background: none; padding: 0; cursor: pointer; border-radius: 50%; }
+  /* 40px of drawn avatar, 44px of reachable button. Growing the avatar itself
+     would widen the gutter every message hangs off, which is the one
+     measurement in the row that everything else is aligned to. */
+  @media (pointer: coarse) {
+    .avatar-btn { position: relative; }
+    .avatar-btn::after {
+      content: ''; position: absolute; left: 50%; top: 50%;
+      width: var(--tap); height: var(--tap); translate: -50% -50%;
+    }
+  }
   .stamp {
     font-size: 10px; color: var(--text-mute); line-height: var(--line-h);
     font-variant-numeric: tabular-nums; opacity: 0;
@@ -835,6 +871,29 @@ function who(by: string[], key: string) {
   .row.tapped .actions,
   .row:has(.actions button:focus-visible) .actions,
   .row:has(.actions button.on) .actions { opacity: 1; pointer-events: auto; transform: none; }
+  /*
+   * On a finger the bar is *toggled* rather than hovered (`docs/24`), so it
+   * stays put until something else is tapped — and at the hover position it
+   * stayed put directly on top of the author line of the message it belongs
+   * to. What is transient and forgivable under a cursor is a panel parked over
+   * the thing you are trying to act on.
+   *
+   * `bottom: 100%` hangs it off the row's top edge whatever height its 44px
+   * buttons come to, and the negative margin keeps the tucked-in overlap the
+   * hover version has. It now covers the message *above*, which is the trade
+   * the desktop bar already makes — and the row it belongs to is highlighted,
+   * so which one it means is never in doubt.
+   */
+  @media (pointer: coarse) {
+    .actions { top: auto; bottom: 100%; margin-bottom: -6px; }
+    /* Nothing above to hang it in — see `actionsBelow`. */
+    .row.acts-below .actions { bottom: auto; top: 100%; margin: -6px 0 0; }
+  }
+  /* Hover's job on a mouse; there is no hover to do it on a finger, and an
+     action bar floating between two messages has to say which one is its
+     own. */
+  .row.tapped { background: var(--ground-2); }
+  .row.tapped::before { opacity: .55; }
   .actions button { min-width: var(--tap); min-height: var(--tap); }
   .actions button {
     border: 0; background: transparent; color: var(--text-dim); cursor: pointer;

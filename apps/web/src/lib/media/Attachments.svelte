@@ -15,6 +15,7 @@
 import type { Attachment } from '$lib/fake/data.js';
 import { bytes, duration } from '$lib/format.js';
 import Icon from '$lib/Icon.svelte';
+import { layout } from '$lib/layout.svelte.js';
 import AudioPlayer from './AudioPlayer.svelte';
 import { lightbox } from './lightbox.svelte.js';
 
@@ -66,7 +67,7 @@ function fit(a: Attachment) {
           <button class="spoiler" onclick={() => (revealed[a.id] = true)}>
             <Icon name="eye" size={19} />
             <span>Marked sensitive</span>
-            <small>Click to show</small>
+            <small>{layout.coarse ? 'Tap' : 'Click'} to show</small>
           </button>
         {:else}
           <button
@@ -200,6 +201,18 @@ function fit(a: Attachment) {
   .tag.alt:hover, .tag.hidebtn:hover { background: rgba(12, 6, 26, .92); }
   .tag.alt.on { background: var(--face-aqua); color: var(--ground-0); }
   .tag.hidebtn { left: 7px; bottom: 7px; display: grid; place-items: center; padding: 3px; }
+  /* The badges are deliberately small — they sit on somebody's picture and are
+     not the point of it — so on a finger the reachable area grows outward
+     rather than the label. The pseudo-element is centred and unpainted, which
+     keeps the corner inset looking the same as it does on a mouse. */
+  @media (pointer: coarse) {
+    .tag.alt, .tag.hidebtn { position: absolute; }
+    .tag.alt::after, .tag.hidebtn::after {
+      content: ''; position: absolute; left: 50%; top: 50%;
+      min-width: var(--tap); min-height: var(--tap);
+      width: 100%; height: 100%; translate: -50% -50%;
+    }
+  }
 
   .altbox {
     margin: 5px 0 0; max-width: min(400px, 100%); font-size: var(--text-xs); color: var(--text-dim);

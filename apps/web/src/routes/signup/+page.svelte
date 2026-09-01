@@ -308,6 +308,12 @@ async function copy() {
     color: color-mix(in oklab, var(--text) 62%, transparent);
   }
   .alt a { color: var(--text); }
+  /* Standalone ways out of this screen, not words inside a sentence. On a
+     finger they get the target floor; `inline-flex` so `min-height` applies at
+     all, which it does not to a plain inline box. */
+  @media (pointer: coarse) {
+    .alt a { display: inline-flex; align-items: center; min-height: var(--tap); }
+  }
   .lede.dim { color: color-mix(in oklab, var(--text) 62%, transparent); font-size: var(--text-sm); }
 
   .code {
@@ -345,6 +351,7 @@ async function copy() {
     transition: color var(--t-fast) var(--ease);
   }
   .provider:hover { color: var(--text); }
+  @media (pointer: coarse) { .provider { min-height: var(--tap); } }
   .provider b { font-weight: 700; }
   .provider-note {
     font-size: var(--text-sm); color: color-mix(in oklab, var(--text) 76%, transparent);

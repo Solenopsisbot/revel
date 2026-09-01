@@ -26,6 +26,26 @@ let {
 
 const meta = $derived(SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]!);
 let panel = $state<HTMLElement>();
+let tabs = $state<HTMLElement>();
+
+/**
+ * Keep the current section visible in the mobile tab strip.
+ *
+ * Narrow, the section list is a row that scrolls sideways, and it starts at
+ * the left. Opening straight into a later pane — `?settings=notifications`,
+ * or the profile card's "Edit this face" — left the tab that says where you
+ * are somewhere off the right edge, so the strip looked like it was on
+ * Account while the pane below it wasn't.
+ *
+ * `nearest` rather than `center`, so picking a tab that is already fully
+ * visible doesn't slide the strip out from under the finger that just tapped
+ * it.
+ */
+$effect(() => {
+  if (!open || !tabs) return;
+  const sel = tabs.querySelector<HTMLElement>('.item.sel');
+  sel?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+});
 
 function onKey(e: KeyboardEvent) {
   if (!open) return;
@@ -54,7 +74,7 @@ $effect(() => {
   ></div>
 
   <div class="sheet" role="dialog" aria-modal="true" aria-label="Settings" bind:this={panel} tabindex="-1">
-    <nav aria-label="Settings sections">
+    <nav aria-label="Settings sections" bind:this={tabs}>
       {#each SECTIONS as s (s.id)}
         <button
           class="item"
@@ -181,7 +201,12 @@ $effect(() => {
 
   main { overflow-y: auto; padding: 34px clamp(24px, 4vw, 56px) 70px; position: relative; }
   .close {
-    position: absolute; right: 20px; top: 18px; display: flex; align-items: center; gap: 7px;
+    /* `fixed`, not `absolute`. Absolute put it in `main`'s scroll flow, so it
+       rode up out of sight on the first flick — survivable on a desktop where
+       Escape and the scrim are both right there, and a dead end on a phone
+       where neither is. */
+    position: fixed; z-index: 62; right: calc(3vw + 20px); top: calc(3vh + 18px);
+    display: flex; align-items: center; gap: 7px;
     background: transparent; border: 0; cursor: pointer; color: var(--text-mute);
     padding: 7px; border-radius: var(--r-sm);
     transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
@@ -194,6 +219,26 @@ $effect(() => {
   .close .esc { display: none; }
 
   .pane { max-width: 720px; animation: fade var(--t-fast) var(--ease); }
+
+  /*
+   * The touch floor for the whole settings surface, in one place.
+   *
+   * Ten panes, each with its own segmented controls, pills and link-shaped
+   * buttons, every one of them sized for a mouse at 32–38px. Adding
+   * `min-height: var(--tap)` to each was the alternative, and the problem with
+   * that is the eleventh pane: whoever writes it will style its buttons like
+   * the ten already there and inherit the same miss.
+   *
+   * `:global` because these live in child components. Buttons only — an
+   * anchor inside a sentence is an inline box, `min-height` does nothing to
+   * it, and forcing one to 44px would put a gap in the middle of a paragraph.
+   * Anything that genuinely wants to stay small says so locally, which still
+   * wins on specificity.
+   */
+  @media (pointer: coarse) {
+    .pane :global(button) { min-height: var(--tap); }
+    .item { min-height: var(--tap); }
+  }
   h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }
   .lede { color: var(--text-mute); margin: 0 0 28px; font-size: var(--text-sm); }
   .stub { background: var(--ground-2); border-radius: var(--r-md); padding: 20px; }
@@ -202,16 +247,45 @@ $effect(() => {
   code { font-family: var(--font-mono); font-size: .9em; }
 
   @media (max-width: 820px) {
-    .sheet { inset: 0; border-radius: 0; grid-template-columns: 1fr; }
+    .sheet {
+      inset: 0; border-radius: 0;
+      /* Rows, not columns: the tab strip is a fixed-height header and the pane
+         takes the rest. `1fr` for the strip too would let a long section list
+         claim half the screen. */
+      grid-template-columns: 1fr; grid-template-rows: auto 1fr;
+    }
     /* A tab strip that scrolls sideways wants no bar under it — the row of
        half-visible tabs is already the affordance. Local rule, so it beats
        the global one in app.css. */
     nav {
       display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none;
       border-right: 0; border-bottom: 1px solid var(--line); padding: 8px;
+      /* Room for the close button, which is parked on top of this row's right
+         end. Without it the last tab slides under the × and can't be tapped.
+         `scroll-padding-right` is the other half: `scrollIntoView` aligns to
+         the edge of the *scrollport*, which is underneath the ×, so without it
+         the tab it just scrolled to arrives half-covered. */
+      padding-right: 52px;
+      scroll-padding-right: 52px;
     }
     nav::-webkit-scrollbar { display: none; }
     .item { width: auto; flex: none; }
     .bl, .soon-tag { display: none; }
+
+    /* Full-bleed sheet, so the inset offsets no longer apply. Sat over the
+       first paragraph of every pane before this, which on Account meant it
+       overlapped the preview warning. */
+    .close {
+      top: 0; right: 0; height: 53px; width: 48px;
+      justify-content: center; padding: 0;
+      background: var(--ground-1);
+    }
+    /* The strip is what it hangs over; a translucent edge says the tabs
+       continue underneath rather than stopping. */
+    .close::before {
+      content: ''; position: absolute; left: -20px; top: 0; bottom: 0; width: 20px;
+      background: linear-gradient(to right, transparent, var(--ground-1));
+    }
+    main { padding: 22px 18px 60px; }
   }
 </style>

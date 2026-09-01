@@ -139,6 +139,10 @@ const CONTACT = 'security@revel.chat';
     text-decoration: none;
     font-weight: 700;
   }
+  /* The one standalone link in this page's chrome. The contact address further
+     down is deliberately left alone — it sits inside a sentence, and a 44px
+     inline box would put a hole in the paragraph. */
+  @media (pointer: coarse) { .brand { min-height: var(--tap); } }
   main {
     max-width: 68ch;
     margin: 0 auto;
