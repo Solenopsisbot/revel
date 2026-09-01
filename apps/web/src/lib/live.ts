@@ -7,7 +7,8 @@
  *
  * ## The pieces, and why each is here
  *
- * - **`LocalCryptoEngine`** holds the device's MLS state. Opened with the
+ * - **`WorkerCryptoEngine`** holds the device's MLS state, in a Worker so a
+ *   commit cannot stop the thread that paints. Opened with the
  *   account seed *and* the stored device secret — without the second, coming
  *   back is not a reload but a new device, with a fresh leaf in every group and
  *   the old one still sitting there (`docs/03` §1).
@@ -41,17 +42,17 @@ import {
   toAccountId,
   WebSocketStream,
 } from '@revel/core';
-import { LocalCryptoEngine } from '@revel/crypto';
+import { type CryptoEngine, spawnCryptoEngine } from '@revel/crypto';
+import cryptoWasmUrl from '@revel/crypto-wasm/revel_crypto_bg.wasm?url';
 import { myFaces } from './faces.svelte.js';
 import { notifications } from './notify.svelte.js';
-import { cryptoWasm } from './wasm.js';
 
 /** Where the Host lives. Same origin in dev, behind the vite proxy. */
 const HOST = import.meta.env.VITE_HOST_URL ?? '';
 
 export interface LiveStack {
   core: LiveCore;
-  crypto: LocalCryptoEngine;
+  crypto: CryptoEngine;
   rooms: RoomSync;
   groups: GroupSync;
   stream: WebSocketStream;
@@ -89,11 +90,20 @@ export interface LiveStack {
 export async function startLive(signedIn: Session): Promise<LiveStack> {
   if (!signedIn.device) throw new Error('this device has no certificate yet');
 
-  // The wasm has to be up before the engine touches it. Shared, because two
-  // overlapping initialisations produce two instances and one of them wins.
-  await cryptoWasm();
-
-  const crypto = new LocalCryptoEngine();
+  /**
+   * MLS runs in a Worker, not on the thread that paints.
+   *
+   * `docs/31` §6 measured it: a 500-leaf removal is 212 ms and a 2,000-leaf one
+   * is 804 ms. On the main thread that is 13 and 48 dropped frames — a commit
+   * that visibly stops the app. `LocalCryptoEngine` says "do not use it in a
+   * browser" in its own docstring, and the browser was using it.
+   *
+   * The Worker gets its own wasm instance, which is fine and in fact the point:
+   * nothing shares an object across the boundary, only bytes. The main thread
+   * still loads the wasm for the envelope and transfer keys (`identity.ts`),
+   * and those touch nothing this engine owns.
+   */
+  const crypto = spawnCryptoEngine({ wasm: cryptoWasmUrl });
   const identity = await crypto.open({
     deviceLabel: 'this browser',
     accountSecret: signedIn.accountKey,
