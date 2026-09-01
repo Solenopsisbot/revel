@@ -128,10 +128,23 @@ const bobSync = await bob.page.evaluate(async () => {
 ok('bob socket is open', bobSync.socket === 'open', bobSync.socket);
 ok('bob sees the room, with a group', !!bobSync.rooms?.[0]?.group, bobSync);
 
-const bobGroups = await bob.page.evaluate(async () => ({
-  groups: await window.__live.crypto.groups(),
-  welcomes: await window.__live.groups.acceptWelcomes().catch((e) => String(e)),
-}));
+// Polled, because joining is not something bob does — it is something that
+// happens to him when alice's commit and his Welcome both land, and neither is
+// on this test's clock. The original sampled once and read `groups()` *before*
+// the `acceptWelcomes()` beside it (an object literal evaluates in source
+// order), so it was asking whether some earlier sync happened to have taken
+// the Welcome already. It usually had. That is the worst kind of flake:
+// passing for a reason unrelated to what it claims to check.
+const bobGroups = await bob.page.evaluate(async () => {
+  let welcomes = [];
+  for (let i = 0; i < 30; i++) {
+    welcomes = await window.__live.groups.acceptWelcomes().catch((e) => String(e));
+    const groups = await window.__live.crypto.groups();
+    if (groups.length) return { welcomes, groups };
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return { welcomes, groups: await window.__live.crypto.groups() };
+});
 ok('bob has joined the MLS group', (bobGroups.groups ?? []).length > 0, bobGroups);
 
 // ---------------------------------------------------------------------------
