@@ -63,7 +63,13 @@ const MEASURE = () => {
     if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') continue;
     const r = el.getBoundingClientRect();
     if (!r.width && !r.height) continue;
-    const id = `${el.tagName.toLowerCase()}.${[...el.classList].filter((c) => !c.startsWith('s-')).join('.')}`;
+    // Svelte's scoping class is `s-<hash>` from the dev server and
+    // `svelte-<hash>` from a production build, and leaving either in makes the
+    // identity build-specific — which is how this suite passed on localhost and
+    // failed against revel.chat on nothing but a class name.
+    const id = `${el.tagName.toLowerCase()}.${[...el.classList]
+      .filter((c) => !/^s(velte)?-[a-z0-9]+$/i.test(c))
+      .join('.')}`;
 
     let clipped = false;
     for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
