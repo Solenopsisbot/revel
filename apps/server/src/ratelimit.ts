@@ -145,6 +145,28 @@ export class RateLimiter {
  */
 export const LIMITS = {
   auth: { capacity: 10, refillPerSecond: 0.2 },
+  /**
+   * Registering a device certificate.
+   *
+   * It was `auth`, and that was wrong in a way that only shows up on a shared
+   * address. `auth` is sized against *password guessing*, where every attempt
+   * is an attempt and ten in a burst is already suspicious. Device
+   * registration is a different act: it is idempotent, it is self-
+   * authenticating — the certificate either verifies against the account key
+   * or it does not, and there is nothing to guess at — and a normal client
+   * calls it once per device per start.
+   *
+   * On one bucket per address that meant two accounts on one machine, or a
+   * household, or anyone behind carrier NAT, sharing ten tokens refilling at
+   * one per five seconds. What that produced was a 429 during startup, which
+   * the client surfaced as a core that would not start.
+   *
+   * Still bounded, because it does public-key work on bytes a stranger chose:
+   * one signature verification a second, sustained, per address. An Ed25519
+   * verify is tens of microseconds, so this is not the expensive part of
+   * anything.
+   */
+  device: { capacity: 20, refillPerSecond: 1 },
   lookup: { capacity: 30, refillPerSecond: 0.5 },
   write: { capacity: 60, refillPerSecond: 5 },
   read: { capacity: 120, refillPerSecond: 10 },
@@ -201,7 +223,10 @@ export interface RateLimitDeps {
  * thing to get wrong.
  */
 export function classify(method: string, path: string): LimitClass {
-  if (path.startsWith('/auth/') || (method === 'POST' && path === '/idp/devices')) return 'auth';
+  // Before the `/auth/` test, because it is the more specific claim on a path
+  // that would otherwise fall into a bucket sized for a different threat.
+  if (method === 'POST' && path === '/idp/devices') return 'device';
+  if (path.startsWith('/auth/')) return 'auth';
   if (path.startsWith('/idp/accounts/') && method === 'GET') return 'lookup';
   if (path.endsWith('/blobs') && method === 'POST') return 'upload';
   if (method === 'GET' || method === 'HEAD') return 'read';

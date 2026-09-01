@@ -52,6 +52,11 @@ export function whyNot(code: string): string {
       return 'That name is on another provider, which is not supported yet.';
     case 'room_id_conflict':
       return 'Something is wrong with that conversation. Tell us about it.';
+    case 'rate_limited':
+      // Not a refusal and not a fault — it is the provider asking for a moment.
+      // Says so, because "could not reach your provider" would send somebody
+      // to check their wifi over a limit that clears on its own.
+      return 'Your provider is asking us to slow down. Try again in a moment.';
     case 'unreachable':
       return 'Could not reach your provider.';
     default:

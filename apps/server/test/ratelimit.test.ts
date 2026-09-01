@@ -123,7 +123,21 @@ describe('classifying a request', () => {
     // anything — the classic shape of a denial-of-service target.
     expect(classify('POST', '/auth/challenge')).toBe('auth');
     expect(classify('POST', '/auth/session')).toBe('auth');
-    expect(classify('POST', '/idp/devices')).toBe('auth');
+  });
+
+  it('gives device registration its own class, not the password-guessing one', async () => {
+    // It was `auth`, which is sized against guessing: every attempt is an
+    // attempt, and ten in a burst is already suspicious. Registering a device
+    // is idempotent and self-authenticating — the certificate verifies against
+    // the account key or it does not — and a client does it once per start. On
+    // a shared address that difference is the whole story: two accounts on one
+    // machine used to exhaust the bucket and get a 429 during startup.
+    expect(classify('POST', '/idp/devices')).toBe('device');
+    // Only the registration. Listing and revoking are authenticated and
+    // ordinary.
+    expect(classify('GET', '/idp/devices')).toBe('read');
+    expect(classify('DELETE', '/idp/devices/abc')).toBe('write');
+    expect(LIMITS.device.refillPerSecond).toBeGreaterThan(LIMITS.auth.refillPerSecond);
   });
 
   it('treats handle resolution as its own thing', async () => {

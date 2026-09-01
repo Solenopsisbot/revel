@@ -31,6 +31,7 @@ import Onboarding from '$lib/onboarding/Onboarding.svelte';
 import { onboarding } from '$lib/onboarding/onboarding.svelte.js';
 import ProfileCard from '$lib/ProfileCard.svelte';
 import SearchPanel from '$lib/search/SearchPanel.svelte';
+import StartFailure from '$lib/StartFailure.svelte';
 import { search } from '$lib/search/search.svelte.js';
 import { session } from '$lib/session.svelte.js';
 import SettingsOverlay from '$lib/settings/SettingsOverlay.svelte';
@@ -282,16 +283,31 @@ const deepLink = page.url.searchParams.get('settings');
 let settingsOpen = $state(!!deepLink);
 let settingsSection = $state(deepLink ?? 'account');
 
+/**
+ * The face speaking here — and, when there isn't one, nothing.
+ *
+ * The last resort used to be the fixture face, gated on `live.running`. That
+ * is false for a signed-in account whose core has not started *or has failed*,
+ * so an account watching a 429 was shown June, out of somebody else's demo.
+ * `core.demo` is the question that was meant: is this client the fixtures.
+ */
 const me = $derived(
   core.myFaces.find((f) => f.id === core.speakingHere) ??
     core.myFaces.find((f) => f.id === core.speakingAs) ??
-    (live.running ? undefined : core.facesSeed[core.speakingAs]),
+    (core.demo ? core.facesSeed[core.speakingAs] : undefined),
 );
-/** This account, as a person reads it: the handle when there is one. */
+/**
+ * This account, as a person reads it: the handle when there is one.
+ *
+ * Same fix, and this is the one that was actually reported — a real account
+ * whose core failed to start was told it was `viola@revel.chat`. An address is
+ * the single most identifying thing on this screen and it must never be a
+ * guess. Empty until the real one is known.
+ */
 const myAddress = $derived(
-  live.running
-    ? (session.address || session.current?.handle || live.stack?.account.slice(0, 8) || '')
-    : 'viola@revel.chat',
+  core.demo
+    ? 'viola@revel.chat'
+    : session.address || session.current?.handle || live.stack?.account.slice(0, 8) || '',
 );
 
 let commandOpen = $state(false);
@@ -1112,6 +1128,10 @@ function toggleMembers() {
          they will survive, and it belongs where they are typing rather than
          buried in settings. Only for a signed-in account: the demo has nothing
          to lose. -->
+    <!-- Above the beta notice on purpose: one says the data might not
+         survive, the other says there is no data on screen right now. The
+         second is the more urgent sentence. -->
+    {#if !core.demo}<StartFailure />{/if}
     {#if live.running}<BetaNotice />{/if}
 
     {/if}

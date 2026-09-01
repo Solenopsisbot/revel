@@ -59,14 +59,36 @@ class Live {
   }
 
   /**
+   * The machine-readable half of the failure — `rate_limited`, `unreachable`.
+   *
+   * Kept beside `error` rather than parsed back out of it, because `whyNot`
+   * needs the code and the string is for a log.
+   */
+  reason = $state('');
+  /** A start is in flight. Distinguishes "not yet" from "not going to". */
+  starting = $state(false);
+  /** The session a failed start can be retried with. */
+  #session: Session | null = null;
+
+  /**
    * Start the real core for a signed-in device.
    *
    * Failure is reported, not thrown: a Host that is unreachable must not stop
-   * the app opening, and everything local still works. `error` is what the
-   * connection banner reads.
+   * the app opening, and everything local still works.
+   *
+   * Reported is the operative word, and for a long time it was not true —
+   * `error` was written here and read by nothing, so a start that failed left a
+   * signed-in account on an empty app with no statement of why. That is the
+   * worst of both: it neither works nor says so.
    */
   async start(session: Session): Promise<void> {
-    if (this.stack) return;
+    if (this.stack || this.starting) return;
+    this.#session = session;
+    this.starting = true;
+    // Cleared on the way in, so a retry that succeeds does not leave the last
+    // failure on screen next to working data.
+    this.error = '';
+    this.reason = '';
     try {
       const { startLive } = await import('./live.js');
       const stack = await startLive(session);
@@ -77,7 +99,24 @@ class Live {
     } catch (err) {
       console.error('could not start the real core', err);
       this.error = String((err as Error)?.message ?? err);
+      const { reasonOf } = await import('./startErrors.js');
+      this.reason = reasonOf(err);
+    } finally {
+      this.starting = false;
     }
+  }
+
+  /**
+   * Try again after a failed start.
+   *
+   * Worth having as its own thing because the most likely reason to be here is
+   * transient — a rate limit, a Host restarting, a tunnel that was not up yet.
+   * Reloading the page would also work and costs the crypto worker, the store
+   * and the whole bootstrap; this costs one attempt.
+   */
+  async retry(): Promise<void> {
+    if (!this.#session || this.stack || this.starting) return;
+    await this.start(this.#session);
   }
 
   async stop(): Promise<void> {

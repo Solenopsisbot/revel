@@ -55,12 +55,21 @@ $effect(() => {
  * owns history, and a navigation here would remount the page and lose the
  * value we just read.
  */
+/**
+ * Whether the key was taken out of the address bar on this visit.
+ *
+ * Only then is the note below true and worth saying. Coming back from sign-up
+ * there is no fragment to remove — the key is in the stash — and telling
+ * somebody we removed something we did not is its own small lie.
+ */
+let stripped = $state(false);
 $effect(() => {
   if (!code) return;
   const fragment = location.hash.replace(/^#/, '');
   if (fragment) {
     stashInvite(code, fragment);
     history.replaceState(history.state, '', location.pathname + location.search);
+    stripped = true;
   }
   secret = fragment || readStash(code) || '';
 });
@@ -147,6 +156,26 @@ function join() {
         today stays unreadable to you — it was encrypted to a group you weren't
         in yet, and no one can undo that after the fact.
       </p>
+
+      <!--
+        Said out loud, because otherwise this page quietly turns a working link
+        into a broken one in the exact place people copy links from.
+
+        Removing the key from the address bar is right and stays: a fragment
+        sits in history, in a screenshot, and in whatever the browser syncs
+        between machines, and this one is a credential. What was wrong was
+        doing it silently — the URL still *looks* like an invite, so somebody
+        who passes it on sends a link that lands on "half the link is missing"
+        and has no idea why.
+      -->
+      {#if stripped}
+        <p class="note">
+          We took the key out of the address bar above — it's a password, and it
+          doesn't belong in your history. This link still works for you here.
+          To pass it on, copy it from the message it came in rather than from
+          the address bar.
+        </p>
+      {/if}
     {/if}
 
     {#if usable && known}
@@ -176,6 +205,14 @@ function join() {
   .pane { animation: enter var(--t-slow) var(--ease); max-width: 34rem; }
   @keyframes enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
+  .note {
+    margin: 14px 0 0;
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    color: color-mix(in oklab, var(--text) 62%, transparent);
+    border-left: 2px solid color-mix(in oklab, var(--text) 26%, transparent);
+    padding-left: 12px;
+  }
   .eyebrow {
     font-size: var(--text-sm); font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
     color: color-mix(in oklab, var(--text) 62%, transparent); margin: 0;

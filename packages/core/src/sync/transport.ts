@@ -187,6 +187,15 @@ export class TransportError extends Error {
   }
 
   /**
+   * The server's `Retry-After`, in seconds, when it sent one.
+   *
+   * Set by whoever read the response, because the header lives there and this
+   * is thrown from several places. A caller backing off should prefer it to a
+   * guess: the server knows when its own bucket refills.
+   */
+  retryAfter?: number;
+
+  /**
    * Whether trying again could plausibly work.
    *
    * A 403 will still be a 403 in ten seconds; a 502 might not be. The
@@ -381,10 +390,9 @@ export class HttpTransport implements Transport {
     });
   }
   listInvites(spaceId: string): Promise<InviteInfo[]> {
-    return this.#json<{ invites: InviteInfo[] }>(
-      `/spaces/${encodeURIComponent(spaceId)}/invites`,
-      { method: 'GET' },
-    ).then((r) => r.invites);
+    return this.#json<{ invites: InviteInfo[] }>(`/spaces/${encodeURIComponent(spaceId)}/invites`, {
+      method: 'GET',
+    }).then((r) => r.invites);
   }
   async revokeInvite(spaceId: string, code: string): Promise<void> {
     await this.#request(

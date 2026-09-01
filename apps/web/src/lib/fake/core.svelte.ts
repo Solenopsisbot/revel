@@ -643,7 +643,12 @@ class Core {
     // agree with what the list is actually showing. They disagreed: a real
     // conversation rendered underneath "Nothing here yet", because this read
     // the fixtures directly while `MessageList` read the seam.
-    if (live.running) return conversationTimeline(this.currentRoomId);
+    // Three states, not two. `demo` decides whether fixtures are wanted at
+    // all; `live.running` only decides whether the real answer has arrived
+    // yet. Asking `live.running` alone put the fixture Solexsis conversation
+    // in front of a signed-in account whose core had failed to start — which
+    // is not a degraded view of their data, it is somebody else's.
+    if (!this.demo) return live.running ? conversationTimeline(this.currentRoomId) : [];
     return (this.messages[this.currentRoomId] ?? []).filter((m) => !m.thread);
   }
 
@@ -1120,8 +1125,8 @@ class Core {
     // A real room's roster is the `room.faces` state the reducer built from
     // encrypted events (`docs/03` §7) — the only place a plural system's
     // members are ever written down, and never at the Host.
-    if (live.running) {
-      const room = live.room(this.currentRoomId);
+    if (!this.demo) {
+      const room = live.running ? live.room(this.currentRoomId) : null;
       const faces = room ? [...room.faces.values()] : [];
       // Cast to the fixture `Face` on purpose: the roster is rendered by the
       // same components as a fixture one, and widening the return type made
@@ -1224,7 +1229,8 @@ class Core {
    * missing from the room it is about to speak in.
    */
   get facesHere(): string[] | null {
-    if (live.running) {
+    if (!this.demo) {
+      if (!live.running) return null;
       if (!this.dm && this.scope !== 'home') return null;
       const spoken = this.facesSpokenHere;
       const speaking = this.speakingHere;
@@ -1282,7 +1288,8 @@ class Core {
   /** My faces that have already spoken in the current room or DM. */
   get facesSpokenHere(): string[] {
     const mine = myFaces.live ? myFaces.book.faces.map((f) => f.id) : myFacesSeed;
-    if (live.running) {
+    if (!this.demo) {
+      if (!live.running) return [];
       // The real timeline. `this.messages` is fixture data, so a signed-in
       // account asking "which of my faces have shown up here" was always
       // answered `[]` — and every disclosure warning built on it was silent.
@@ -1316,7 +1323,9 @@ class Core {
    * next message — which is also the last moment it can still be cancelled.
    */
   addFaceHere(faceId: string) {
-    if (live.running) {
+    if (!this.demo) {
+      // Nothing to speak into yet, and a fixture DM is not a stand-in for it.
+      if (!live.running) return;
       if (!this.myFaces.some((f) => f.id === faceId)) return;
       void myFaces.speak(this.currentRoomId, faceId);
       return;
@@ -1444,7 +1453,11 @@ class Core {
     // 16 ms budget `docs/29` §5 sets and the reason `send` is ordered the way
     // it is — so this must not also make a fixture row, or the message appears
     // twice and one of them never resolves.
-    if (live.running) {
+    if (!this.demo) {
+      // A signed-in account with no core has nowhere to put this. Writing a
+      // fixture row instead would show them a message that was never sent and
+      // never will be, sitting in a conversation that is not theirs.
+      if (!live.running) return;
       const room = this.currentRoomId;
       const replyTo = thread ? undefined : (this.replyTo ?? undefined);
       void live

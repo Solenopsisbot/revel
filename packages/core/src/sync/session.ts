@@ -38,6 +38,12 @@ export interface HostSessionOptions {
   fetch?: typeof globalThis.fetch;
   /** Overridable so a test is not a function of the wall clock. */
   now?: () => number;
+  /**
+   * How to wait between retries. Overridable for the same reason `now` is: a
+   * test that actually sleeps four seconds to prove a backoff is a test nobody
+   * runs.
+   */
+  sleep?: (ms: number) => Promise<void>;
   /** Called whenever a fresh token is obtained, for a caller that stores it. */
   onSession?: (session: SessionResponse) => void;
 }
@@ -55,6 +61,7 @@ export class HostSession {
   #baseUrl: string;
   #fetch: typeof globalThis.fetch;
   #now: () => number;
+  #sleep: (ms: number) => Promise<void>;
   #onSession: ((session: SessionResponse) => void) | undefined;
 
   #session: SessionResponse | null = null;
@@ -66,6 +73,7 @@ export class HostSession {
     this.#baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.#now = options.now ?? (() => Date.now());
+    this.#sleep = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.#onSession = options.onSession;
   }
 
@@ -143,21 +151,72 @@ export class HostSession {
     return (await this.#crypto.identity()).devicePublicKey;
   }
 
+  /**
+   * POST, and try again when the answer says trying again would work.
+   *
+   * Every request this class makes is safe to repeat. `register` is idempotent
+   * by design; `/auth/challenge` just mints another nonce; `/auth/session`
+   * spends one, and a refusal means the handler never ran — the limiter is
+   * middleware in front of it, and a 5xx is the same story — so the nonce is
+   * still there to spend.
+   *
+   * It matters because this is the *startup* path. A rate limit is transient
+   * by definition and says so in a header, and giving up on one left a
+   * signed-in account with no core at all: no rooms, no messages, nothing to
+   * retry with. Two accounts on one machine was enough to cause it.
+   *
+   * Bounded and short. Three attempts, and `Retry-After` is honoured but
+   * clamped — a server asking us to wait a minute is telling us to stop, not
+   * to sleep through the app's entire startup, and the caller has a Try again
+   * button for that case.
+   */
   async #json<T>(path: string, body: unknown): Promise<T> {
-    const response = await this.#fetch(`${this.#baseUrl}${path}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
+    let last: TransportError | undefined;
+    for (let attempt = 0; attempt < RETRIES; attempt++) {
+      if (attempt > 0) await this.#sleep(backoff(last, attempt));
+      const response = await this.#fetch(`${this.#baseUrl}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (response.ok) return (await response.json()) as T;
+
       const reason = await response
         .json()
         .then((b: unknown) => (b as { error?: string })?.error)
         .catch(() => undefined);
-      throw new TransportError(response.status, reason ?? `http_${response.status}`);
+      last = new TransportError(response.status, reason ?? `http_${response.status}`);
+      // A 403 will still be a 403 in a second. Only the ones that might not be.
+      if (!last.retryable) throw last;
+      last.retryAfter = seconds(response.headers.get('retry-after'));
     }
-    return (await response.json()) as T;
+    throw last as TransportError;
   }
+}
+
+/** Attempts in total, not retries after the first. */
+const RETRIES = 3;
+/** Long enough for a token to refill, short enough not to look like a hang. */
+const MAX_WAIT_MS = 4000;
+
+/**
+ * How long to wait before attempt `n`.
+ *
+ * The server's `Retry-After` when it gave one, because it knows when its own
+ * bucket refills and we are guessing; otherwise exponential from 250ms. Capped
+ * either way.
+ */
+function backoff(last: TransportError | undefined, attempt: number): number {
+  const asked = last?.retryAfter;
+  if (asked !== undefined) return Math.min(asked * 1000, MAX_WAIT_MS);
+  return Math.min(250 * 2 ** (attempt - 1), MAX_WAIT_MS);
+}
+
+/** `Retry-After` in whole seconds, or undefined if it was absent or a date. */
+function seconds(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const n = Number(header);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
 }
 
 function toBase64url(bytes: Uint8Array): string {
