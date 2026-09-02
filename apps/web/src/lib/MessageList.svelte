@@ -86,8 +86,21 @@ const rows = $derived(
       !m.replyTo &&
       !prev.redacted &&
       !m.redacted;
+    /**
+     * A pause inside a run of messages from one person.
+     *
+     * Grouping is binary — same face, under five minutes — and so was the
+     * spacing: four pixels whether the next line came two seconds later or
+     * four and a half minutes later. Two seconds is one thought finishing;
+     * four minutes is a person coming back. They should not look identical.
+     *
+     * One step, not a gradient. The useful signal is "there was a pause", and
+     * a gap that scales continuously with time turns a conversation into a
+     * ruler.
+     */
+    const paused = grouped && !!prev && m.at - prev.at > 60_000;
     const unreadAbove = core.lastRead[core.currentRoomId] === prev?.id && !!prev;
-    return { m, grouped, dayBreak, unreadAbove };
+    return { m, grouped, paused, dayBreak, unreadAbove };
   }),
 );
 
@@ -215,11 +228,11 @@ const bubble = $derived(core.room.style === 'bubbles');
       </div>
     {/if}
 
-    {#each rows as { m, grouped, dayBreak, unreadAbove } (m.id)}
+    {#each rows as { m, grouped, paused, dayBreak, unreadAbove } (m.id)}
       {#if dayBreak}
         <div class="day" role="separator"><span>{dayLabel(m.at)}</span></div>
       {/if}
-      <MessageRow {m} grouped={grouped && !unreadAbove} {unreadAbove} {bubble} />
+      <MessageRow {m} grouped={grouped && !unreadAbove} {paused} {unreadAbove} {bubble} />
     {/each}
   </div>
 

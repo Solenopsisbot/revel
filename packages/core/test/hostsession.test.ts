@@ -13,7 +13,7 @@
  * refusal from the limiter means the handler never ran, so the nonce is still
  * there.
  */
-import { HostSession } from '@revel/core';
+import { HostSession, HttpTransport } from '@revel/core';
 import { describe, expect, it } from 'vitest';
 
 /** Enough of a `CryptoEngine` for the two things `HostSession` asks it. */
@@ -133,5 +133,58 @@ describe('signing in', () => {
     expect(calls).toHaveLength(3);
     expect(calls[1]).toContain('/auth/session');
     expect(calls[2]).toContain('/auth/session');
+  });
+});
+
+describe('the ordinary transport, when the Host is limiting', () => {
+  /**
+   * Separate from `HostSession` above and with a *narrower* rule.
+   *
+   * `HostSession` retries 5xx as well, because everything it sends is
+   * explicitly safe to repeat. This one carries arbitrary operations —
+   * `POST /spaces` among them — so it retries only 429, where the limiter
+   * running in front of the handler is proof the request had no effect.
+   */
+  const limited = () =>
+    new Response(JSON.stringify({ error: 'rate_limited' }), {
+      status: 429,
+      headers: { 'retry-after': '0' },
+    });
+
+  function transport(responses: Response[]) {
+    const calls: string[] = [];
+    const fetch = (async (url: string | URL | Request) => {
+      calls.push(String(url));
+      const next = responses.shift();
+      if (!next) throw new Error(`unexpected request: ${String(url)}`);
+      return next;
+    }) as unknown as typeof globalThis.fetch;
+    return { t: new HttpTransport({ baseUrl: 'https://revel.chat', fetch }), calls };
+  }
+
+  it('rides out a limit rather than leaving half a space behind', async () => {
+    // The reported shape: making a space is three requests, and a limit landing
+    // on the second left one that existed, had no rooms, and could not be
+    // finished or undone.
+    const { t, calls } = transport([
+      limited(),
+      new Response(JSON.stringify({ id: 's1', visibility: 'private' }), { status: 201 }),
+    ]);
+    await t.createSpace();
+    expect(calls).toHaveLength(2);
+  });
+
+  it('does not retry a 500, because the handler may have run', async () => {
+    // The distinction that makes the retry above safe. Repeating a create that
+    // might have half-succeeded is how one request becomes two spaces.
+    const { t, calls } = transport([new Response('boom', { status: 500 })]);
+    await expect(t.createSpace()).rejects.toMatchObject({ status: 500 });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('gives up after a few, with the reason intact', async () => {
+    const { t, calls } = transport([limited(), limited(), limited()]);
+    await expect(t.createSpace()).rejects.toMatchObject({ reason: 'rate_limited' });
+    expect(calls).toHaveLength(3);
   });
 });

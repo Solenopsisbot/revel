@@ -473,20 +473,43 @@ export class HttpTransport implements Transport {
     return (await this.#request(path, init)).json() as Promise<T>;
   }
 
+  /**
+   * One request, and up to two more if the Host asks us to slow down.
+   *
+   * **429 only, and that limit is the point.** The rate limiter is middleware
+   * *in front of* the handler, so a 429 is proof the request had no effect —
+   * which makes retrying it safe whether or not the operation is idempotent. A
+   * 500 carries no such proof: the handler may have half-run, and blindly
+   * repeating a `POST /spaces` would leave two spaces where a person asked for
+   * one. So those still throw.
+   *
+   * Worth having because a multi-step operation had no way to survive one:
+   * making a space is create-the-space, create-the-room, name-it, and a limit
+   * landing on the second or third step left a space that existed, had no
+   * rooms, and rendered as "Unnamed space" with no way to finish or undo it.
+   */
   async #request(path: string, init: RequestInit): Promise<Response> {
-    const response = await this.#fetch(`${this.#baseUrl}${path}`, {
-      ...init,
-      headers: {
-        // The default, overridable by `init.headers` — which is how a blob
-        // upload declares itself as bytes. Ordering matters here and is easy to
-        // reverse by accident.
-        'content-type': 'application/json',
-        ...(await this.#headers()),
-        ...init.headers,
-      },
-    });
+    let last: TransportError | undefined;
+    for (let attempt = 0; attempt < LIMIT_RETRIES; attempt++) {
+      if (attempt > 0) {
+        const wait = Math.min((last?.retryAfter ?? 1) * 1000, MAX_LIMIT_WAIT_MS);
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
 
-    if (!response.ok) {
+      const response = await this.#fetch(`${this.#baseUrl}${path}`, {
+        ...init,
+        headers: {
+          // The default, overridable by `init.headers` — which is how a blob
+          // upload declares itself as bytes. Ordering matters here and is easy
+          // to reverse by accident.
+          'content-type': 'application/json',
+          ...(await this.#headers()),
+          ...init.headers,
+        },
+      });
+
+      if (response.ok) return response;
+
       // The server answers refusals with `{ error: "<reason>" }`. Anything else
       // came from in front of it — a proxy, a captive portal — and the status
       // is all we have.
@@ -494,9 +517,21 @@ export class HttpTransport implements Transport {
         .json()
         .then((b: unknown) => (b as { error?: string })?.error)
         .catch(() => undefined);
-      throw new TransportError(response.status, reason ?? `http_${response.status}`);
+      last = new TransportError(response.status, reason ?? `http_${response.status}`);
+      if (response.status !== 429) throw last;
+      const after = Number(response.headers.get('retry-after'));
+      if (Number.isFinite(after) && after >= 0) last.retryAfter = after;
     }
-
-    return response;
+    throw last as TransportError;
   }
 }
+
+/** Attempts in total, not retries after the first. */
+const LIMIT_RETRIES = 3;
+/**
+ * A cap on how long to sit on a `Retry-After`.
+ *
+ * A Host asking for a minute is telling us to stop, not to freeze the UI for a
+ * minute. Past this the error surfaces and the person decides.
+ */
+const MAX_LIMIT_WAIT_MS = 4000;

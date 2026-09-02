@@ -115,6 +115,94 @@ function makeStream(options: {
   };
 }
 
+describe('a connection that opens and immediately dies', () => {
+  /**
+   * The flap. A socket that opens and drops — a proxy that hangs up, a token
+   * accepted then rejected, a network that is up but not usable — used to reset
+   * the backoff on `open`, on the reasonable-sounding theory that opening meant
+   * succeeding. It does not, and the result was a reconnect every second
+   * forever, each one dragging a full catch-up behind it: measured at 25
+   * requests a second against a real deployment.
+   */
+  it('keeps escalating the backoff rather than resetting it', () => {
+    const attempts: number[] = [];
+    const sockets: FakeSocket[] = [];
+    let pending: (() => void) | null = null;
+    const ws = new WebSocketStream({
+      connect: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      backoff: (attempt) => {
+        attempts.push(attempt);
+        return 1;
+      },
+      setTimeout: (fn) => {
+        pending = fn as () => void;
+        return 1;
+      },
+      clearTimeout: () => {
+        pending = null;
+      },
+    });
+    ws.start();
+
+    for (let i = 0; i < 5; i++) {
+      const socket = sockets[sockets.length - 1] as FakeSocket;
+      socket.onopen?.({});
+      // Dies before it has been up long enough to count. The settle timer that
+      // would have reset the counter is never fired.
+      socket.onclose?.({});
+      const fire = pending;
+      pending = null;
+      fire?.();
+    }
+
+    expect(attempts).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('does reset once it has stayed up', () => {
+    // The other half: a connection that genuinely works must not inherit the
+    // backoff of the failures before it, or one bad patch punishes the next
+    // hour.
+    const attempts: number[] = [];
+    const sockets: FakeSocket[] = [];
+    const timers: (() => void)[] = [];
+    const ws = new WebSocketStream({
+      connect: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      backoff: (attempt) => {
+        attempts.push(attempt);
+        return 1;
+      },
+      setTimeout: (fn) => {
+        timers.push(fn as () => void);
+        return timers.length;
+      },
+      clearTimeout: () => {},
+    });
+    ws.start();
+
+    const first = sockets[0] as FakeSocket;
+    first.onopen?.({});
+    first.onclose?.({});
+    timers.splice(0).forEach((fn) => fn());
+
+    const second = sockets[sockets.length - 1] as FakeSocket;
+    second.onopen?.({});
+    // The settle timer fires: this one stayed up.
+    timers.splice(0).forEach((fn) => fn());
+    second.onclose?.({});
+    timers.splice(0).forEach((fn) => fn());
+
+    expect(attempts[attempts.length - 1]).toBe(0);
+  });
+});
+
 describe('WebSocketStream', () => {
   it('subscribes once the connection is open', () => {
     const s = stream();

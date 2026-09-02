@@ -36,11 +36,17 @@ import { HOLD, longpress, tapActions } from './touch.svelte.js';
 let {
   m,
   grouped,
+  paused = false,
   unreadAbove = false,
   bubble = false,
 }: {
   m: Message;
   grouped: boolean;
+  /**
+   * Grouped, but after a pause — see `MessageList`. Buys a little air without
+   * breaking the run into a new block with a second avatar and name.
+   */
+  paused?: boolean;
   unreadAbove?: boolean;
   /**
    * Bubble style (`docs/07` §"Two message styles"). DMs get it by default;
@@ -356,6 +362,7 @@ function who(by: string[], key: string) {
   class:bubble
   class:mine
   class:grouped={grouped && !unreadAbove}
+  class:paused={paused && !unreadAbove}
   class:pending={m.pending}
   class:editing
   class:gone={!!m.redacted || !!m.purged}
@@ -666,6 +673,10 @@ function who(by: string[], key: string) {
   .row:hover::before { opacity: .55; }
   .row:has(.actions button:focus-visible) { background: var(--ground-2); }
   .row.grouped { padding-top: var(--row-gap); padding-bottom: var(--row-gap); }
+  /* One step up for a run that resumed after a minute or so. Deliberately
+     small — it is a breath, not a separator; the separator is what happens at
+     five minutes, where the run ends and the name comes back. */
+  .row.grouped.paused { padding-top: calc(var(--row-gap) + 8px); }
   .row.editing { background: var(--ground-2); }
   .row.gone { opacity: .72; }
 

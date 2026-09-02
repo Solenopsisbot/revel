@@ -82,6 +82,15 @@ export interface WebSocketStreamOptions {
 
 const DEFAULT_BACKOFF = (attempt: number) => Math.min(1000 * 2 ** attempt, 30_000);
 
+/**
+ * How long a connection has to stay up before it counts as a success.
+ *
+ * Below this it is a flap, and a flap must keep escalating the backoff rather
+ * than resetting it. Ten seconds is longer than any handshake and far shorter
+ * than any session worth keeping.
+ */
+const STABLE_MS = 10_000;
+
 export class WebSocketStream implements EventStream {
   #options: WebSocketStreamOptions;
   #socket: SocketLike | null = null;
@@ -151,7 +160,26 @@ export class WebSocketStream implements EventStream {
       if (this.#socket !== socket) return;
       this.#open = true;
       const reconnecting = this.#attempt > 0;
-      this.#attempt = 0;
+      /**
+       * **Not reset here.** Opening is not the same as working.
+       *
+       * This used to zero the attempt counter the instant a socket opened, on
+       * the reasonable-sounding theory that a connection that opened is a
+       * connection that succeeded. A socket that opens and dies immediately —
+       * a proxy that hangs up, a token the server accepts and then rejects,
+       * a network that is up but not usable — then reconnected at
+       * `backoff(0)`, which is one second, forever. Exponential backoff that
+       * never gets past its first step is a one-second poll with extra steps,
+       * and every one of those reconnects dragged a full catch-up behind it.
+       *
+       * Reset once it has *stayed* open instead. `unref` where it exists so a
+       * timer cannot hold a Node process open on its own.
+       */
+      const settle = this.#options.setTimeout ?? globalThis.setTimeout;
+      const settled = settle(() => {
+        if (this.#socket === socket && this.#open) this.#attempt = 0;
+      }, STABLE_MS);
+      (settled as { unref?: () => void })?.unref?.();
       this.#options.onStatus?.('open');
 
       // Absolute, not incremental: the server does not know what the last

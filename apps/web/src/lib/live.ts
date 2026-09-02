@@ -221,7 +221,56 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
    */
   let restoredGroups = new Set<string>();
 
-  const syncGroups = async () => {
+  /**
+   * `syncGroups` is expensive, and three separate things ask for it.
+   *
+   * One pass is a handshake catch-up per group, a key-package claim per group,
+   * an events fetch per room, a `/welcomes`, a `/rooms`, and a claim per group
+   * again inside `reconcileGroups` — about 25 requests for a small account. It
+   * is triggered on connect, on every reconnect, and on **every WELCOME frame**,
+   * none of which were coordinated.
+   *
+   * So a socket that opened and died once a second ran the whole pass once a
+   * second, and any Welcome that kept being redelivered did the same. Measured
+   * on a real account: 25 requests per second, indefinitely, which is both a
+   * self-inflicted denial of service and the reason the rate limiter kept
+   * refusing perfectly ordinary work.
+   *
+   * Two guards, and they are different:
+   *
+   * - **Coalesce.** Callers that arrive while a pass is running get that pass,
+   *   not another one. Three triggers firing together is the normal case, not
+   *   the edge case.
+   * - **Throttle with a trailing run.** At most one pass per `SYNC_MIN_MS`, and
+   *   a request that arrives inside that window is *deferred*, never dropped —
+   *   dropping one would mean a Welcome that arrived at the wrong moment is
+   *   never taken, which is exactly the bug this whole function exists to avoid.
+   */
+  let syncing: Promise<void> | null = null;
+  let pending: Promise<void> | null = null;
+  let lastSyncAt = 0;
+  const SYNC_MIN_MS = 4000;
+
+  const syncGroups = async (): Promise<void> => {
+    if (syncing) return syncing;
+    if (pending) return pending;
+    const waitFor = Math.max(0, SYNC_MIN_MS - (Date.now() - lastSyncAt));
+    if (waitFor > 0) {
+      pending = new Promise<void>((resolve) => setTimeout(resolve, waitFor)).then(() => {
+        pending = null;
+        return syncGroups();
+      });
+      return pending;
+    }
+    lastSyncAt = Date.now();
+    syncing = syncGroupsNow().finally(() => {
+      syncing = null;
+      lastSyncAt = Date.now();
+    });
+    return syncing;
+  };
+
+  const syncGroupsNow = async () => {
     await groups.acceptWelcomes();
     for (const groupId of new Set([...restoredGroups, ...(await crypto.groups())])) {
       await groups.catchUp(groupId).catch(() => {});
@@ -278,7 +327,22 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
       void syncGroups();
     },
     onHandshake: (record) => void groups.receiveHandshake(record),
-    onWelcome: () => void syncGroups(),
+    /**
+     * A Welcome for a group this device already holds is nothing to do.
+     *
+     * The frame names the group, so this is answerable without a round trip —
+     * and without it a Welcome that keeps being redelivered drives a full sync
+     * pass every time it arrives, which is one of the two ways the request
+     * storm sustained itself.
+     */
+    onWelcome: (group) => {
+      void crypto
+        .groups()
+        .then((held) => {
+          if (!held.includes(group)) return syncGroups();
+        })
+        .catch(() => syncGroups());
+    },
     /**
      * Somebody joined a space this device is in — commit their leaf.
      *

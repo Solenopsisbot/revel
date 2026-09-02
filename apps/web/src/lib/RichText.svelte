@@ -47,13 +47,33 @@ const big = $derived(jumbo(body));
         <ul>{#each b.items ?? [] as item, k (k)}<li>{@render run(item)}</li>{/each}</ul>
       {/if}
     {:else}
-      {@render run(b.tokens ?? [])}
+      <p>{@render run(b.tokens ?? [])}</p>
     {/if}
   {/each}
 </div>
 
 <style>
-  .rt { white-space: pre-wrap; word-break: break-word; }
+  /*
+   * `pre-wrap` belongs on the *content*, not on the container.
+   *
+   * It was on `.rt`, which meant the whitespace in this component's own
+   * template — the newline and indentation between `{#each}`, `{#if}` and
+   * `{:else}` — was rendered as whitespace in the message. Every single
+   * message got a trailing blank line out of it, which looked like a spacing
+   * bug between rows and was actually a spacing bug inside one: a one-line
+   * message measured 45px against a 22.5px line height.
+   *
+   * The newlines that *are* content live inside a block's text, so keeping
+   * `pre-wrap` on the blocks preserves them and nothing else. Prose is a `<p>`
+   * for the same reason — bare tokens sat directly in `.rt` where there was no
+   * element to carry it.
+   */
+  .rt { white-space: normal; word-break: break-word; }
+  .rt p, blockquote, .hd, li { white-space: pre-wrap; }
+  .rt p { margin: 0; }
+  /* Consecutive prose blocks are separate paragraphs and read as such; the
+     parser only splits them where the author left a blank line. */
+  .rt p + p { margin-top: 0.6em; }
 
   /*
    * Block elements inside a message.
