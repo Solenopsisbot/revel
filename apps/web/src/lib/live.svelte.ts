@@ -17,13 +17,7 @@
  */
 
 import type { RoomState, Session } from '@revel/core';
-import type {
-  DeviceInfo,
-  RoleInfo,
-  RoomInfo,
-  SpaceInfo,
-  SpaceMemberInfo,
-} from '@revel/protocol';
+import type { DeviceInfo, RoleInfo, RoomInfo, SpaceInfo, SpaceMemberInfo } from '@revel/protocol';
 import type { LiveStack } from './live.js';
 
 /**
@@ -83,6 +77,16 @@ class Live {
   reason = $state('');
   /** A start is in flight. Distinguishes "not yet" from "not going to". */
   starting = $state(false);
+  /**
+   * The room and space lists have been filled at least once — from the Host or
+   * from the local cache.
+   *
+   * Distinct from `running`, which is true the moment the stack is built and
+   * says nothing about whether it has been asked anything. Anything that acts
+   * on "which rooms exist" has to wait for this instead, or it runs against an
+   * empty list and concludes the room it wanted is gone.
+   */
+  loaded = $state(false);
   /** The session a failed start can be retried with. */
   #session: Session | null = null;
 
@@ -115,8 +119,15 @@ class Live {
       // refreshes below, which will not work either — and would otherwise
       // report the same problem as an anonymous empty list.
       if (stack.hostError) this.#failed(stack.hostError);
+      // **The cache first, then the network.** Both lists are written through
+      // to the local store on every success, so on any start after the first
+      // there is an answer on disk that is right — and waiting for a round trip
+      // before showing it is what made a reload look blank for a few seconds.
+      // Painted immediately, replaced a moment later by whatever the Host says.
+      await this.#fromCache();
       await this.refreshRooms();
       await this.refreshSpaces();
+      this.loaded = true;
     } catch (err) {
       console.error('could not start the real core', err);
       await this.#failed(err);
@@ -171,6 +182,7 @@ class Live {
   }
 
   async stop(): Promise<void> {
+    this.loaded = false;
     for (const off of this.#unwatch) off();
     this.#unwatch = [];
     this.#watching.clear();
@@ -203,7 +215,12 @@ class Live {
   /** Subscribe a room once. Idempotent, and the only place `watch` is called. */
   #subscribe(roomId: string): void {
     const stack = this.stack;
-    if (!stack || this.#watching.has(roomId)) return;
+    // **Not the empty string.** `core.currentRoomId` is `''` whenever no
+    // conversation is open, which is every fresh load — and it was being passed
+    // straight through here as though it named a room. That registered a socket
+    // subscription for `''`, so every reconnect asked the Host for
+    // `/rooms//events` and got a 404, once per reconnect, forever.
+    if (!roomId || !stack || this.#watching.has(roomId)) return;
     this.#watching.add(roomId);
     // `open` fills the state from the local store; `watch` keeps it fresh.
     // Bumping on the way out matters: `open` is the *only* thing that loads a
@@ -364,6 +381,43 @@ class Live {
     this.spaces = loaded;
     void stack.store.put(SPACES_CACHE, loaded).catch(() => {});
     this.version++;
+  }
+
+  /**
+   * Paint what this device already knows, before asking the Host anything.
+   *
+   * Read straight out of the store rather than through the two `refresh`
+   * methods, because those are the *network* path and their fallback only
+   * applies when it fails. This is the other case: the network will probably
+   * work, and there is no reason to look at nothing while it does.
+   */
+  async #fromCache(): Promise<void> {
+    const stack = this.stack;
+    if (!stack) return;
+    const [rooms, spaces] = await Promise.all([
+      stack.store
+        .get<{ id: string; kind: string; space?: string; members?: string[] }[]>('directory.rooms')
+        .catch(() => null),
+      stack.store.get<LiveSpace[]>(SPACES_CACHE).catch(() => null),
+    ]);
+    if (rooms?.length) {
+      this.rooms = rooms.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        space: r.space ?? null,
+        members: r.members ?? [],
+      }));
+    }
+    if (spaces?.length) {
+      this.spaces = spaces;
+      for (const space of spaces) for (const room of space.rooms) this.#subscribe(room.id);
+    }
+    if (rooms?.length || spaces?.length) {
+      // Enough to act on. A deep link can be followed against a cached list;
+      // it is the same list the Host is about to confirm.
+      this.loaded = true;
+      this.version++;
+    }
   }
 
   async refreshRooms(): Promise<void> {

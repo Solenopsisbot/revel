@@ -44,9 +44,8 @@ import {
 } from '@revel/core';
 import { type CryptoEngine, spawnCryptoEngine } from '@revel/crypto';
 import cryptoWasmUrl from '@revel/crypto-wasm/revel_crypto_bg.wasm?url';
-import { has, parse, Permission } from '@revel/protocol';
+import { has, Permission, parse } from '@revel/protocol';
 import { myFaces } from './faces.svelte.js';
-import { session } from './session.svelte.js';
 // A cycle on paper and not in practice: `live.svelte.ts` reaches this module
 // through a dynamic `import()` inside `start`, so it is always evaluated first
 // and its export exists by the time anything here reads it. Worth it — the
@@ -54,6 +53,7 @@ import { session } from './session.svelte.js';
 // second copy of the space list that would drift from the one the UI renders.
 import { live } from './live.svelte.js';
 import { notifications } from './notify.svelte.js';
+import { session } from './session.svelte.js';
 
 /** Where the Host lives. Same origin in dev, behind the vite proxy. */
 const HOST = import.meta.env.VITE_HOST_URL ?? '';
@@ -279,6 +279,25 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
     },
     onHandshake: (record) => void groups.receiveHandshake(record),
     onWelcome: () => void syncGroups(),
+    /**
+     * Somebody joined a space this device is in — commit their leaf.
+     *
+     * Nothing else was doing this. `COMMIT_REQUESTED` fires on pending MLS
+     * proposals and a join by invite link makes none, so an existing member's
+     * client never found out until it happened to sync for some other reason.
+     * The newcomer meanwhile sat in a space whose name they could not decrypt.
+     *
+     * `reconcileGroups` re-reads the membership from the Host and commits the
+     * difference, then says the space's name, its roles and its room names
+     * again — all of which were encrypted to epochs the newcomer's leaf did
+     * not exist in.
+     */
+    onMembersChanged: () => {
+      void directory
+        ?.reconcileGroups()
+        .then(() => live.refreshSpaces())
+        .catch((err) => console.error('revel: could not reconcile after a join', err));
+    },
     onCommitRequested: (groupId) => void groups.flush(groupId),
   });
 

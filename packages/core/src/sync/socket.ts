@@ -45,6 +45,15 @@ export interface WebSocketStreamOptions {
   onStatus?: (status: 'connecting' | 'open' | 'closed') => void;
 
   /**
+   * Somebody joined or left a space this device is in.
+   *
+   * **Reconcile here.** Nothing else tells an existing member that a newcomer
+   * needs their leaf committed — a join by invite link creates no MLS proposal,
+   * so `onCommitRequested` never fires for it.
+   */
+  onMembersChanged?: (spaceId: string) => void;
+
+  /**
    * Device-addressed frames, which have no room to route through.
    *
    * A group can serve several rooms (`docs/03` §4), and a Welcome arrives for a
@@ -179,6 +188,8 @@ export class WebSocketStream implements EventStream {
           return this.#options.onCommitRequested?.(frame.d.group, frame.d.deadline);
         case 'WELCOME':
           return this.#options.onWelcome?.(frame.d.group, frame.d.bytes);
+        case 'MEMBERS_CHANGED':
+          return this.#options.onMembersChanged?.(frame.d.space);
         default:
           return;
       }

@@ -38,6 +38,25 @@ describe('parsing an address', () => {
     });
   });
 
+  it('accepts a provider with a port, which is what a local one has', () => {
+    // The dev Host names itself `localhost:<port>` because that is where it
+    // answers — and `IdpName` used to forbid the colon, so every address
+    // resolution on a local deployment failed with `invalid_address`. A
+    // whole-app failure caused by a regex, worked around twice before it was
+    // fixed once.
+    expect(parseAddress('viola@localhost:8080', IDP)).toEqual({
+      handle: 'viola',
+      idp: 'localhost:8080',
+    });
+  });
+
+  it('still refuses things that are not a provider at all', () => {
+    // Widening the pattern is only safe while it stays a pattern.
+    expect(parseAddress('viola@not a host', IDP)).toBeNull();
+    expect(parseAddress('viola@revel.chat:notaport', IDP)).toBeNull();
+    expect(parseAddress('viola@revel.chat:8080:9090', IDP)).toBeNull();
+  });
+
   it('splits on the last @, so a handle cannot smuggle one in', () => {
     // `a@b@c` has to be somebody at `c`, not `a` at `b@c`.
     expect(parseAddress('a@b@revel.chat', IDP)).toBeNull();

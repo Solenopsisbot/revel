@@ -46,7 +46,20 @@ export const Handle = z.string().regex(/^[a-z0-9_-]{2,32}$/, 'not a handle');
 export const HandleInput = z.string().regex(/^[A-Za-z0-9_-]{2,32}$/, 'not a handle');
 
 /** An IdP's name, as it appears after the `@`. */
-export const IdpName = z.string().regex(/^[a-z0-9.-]{1,253}$/, 'not an idp name');
+/**
+ * A provider's name — a hostname, and optionally a port.
+ *
+ * The port is not a concession, it is part of the name: an IdP is identified by
+ * where it answers, and `localhost:8080` is where one answers in development.
+ * Without it every local Host defaulted to a name its own protocol rejected, so
+ * *every* address resolution failed with `invalid_address` — a whole-app
+ * failure whose only cause was a regex, and which has been worked around twice
+ * by regenerating a host key rather than fixed once here.
+ *
+ * `parseAddress` already splits on the *last* `@`, so `viola@localhost:8080`
+ * was always parsed correctly and only this said no.
+ */
+export const IdpName = z.string().regex(/^[a-z0-9.-]{1,253}(:\d{1,5})?$/, 'not an idp name');
 
 export const AccountStatus = z.enum(['active', 'suspended']);
 export type AccountStatus = z.infer<typeof AccountStatus>;

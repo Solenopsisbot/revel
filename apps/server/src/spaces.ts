@@ -18,19 +18,19 @@
  */
 import {
   audienceKey,
+  BanInput,
+  CreateInvite,
   CreateSpace,
   CreateSpaceRoom,
-  BanInput,
   canGrant,
-  CreateInvite,
   DEFAULT_EVERYONE,
   fromBase64,
   has,
   MemberRolesInput,
   Permission,
   parse,
-  type RoleInfo,
   RedeemInvite,
+  type RoleInfo,
   RoleInput,
   type SnowflakeFactory,
   type SpaceInfo,
@@ -46,6 +46,15 @@ export interface SpaceDeps {
   store: Store;
   ids: SnowflakeFactory;
   authenticate(req: Request): Promise<Actor | null>;
+  /**
+   * The socket hub, so a membership change can be announced.
+   *
+   * Optional: every route here works without it, and a test that only cares
+   * about the HTTP surface should not have to build one. What is lost without
+   * it is latency, not correctness — a client reconciles on its next sync
+   * either way.
+   */
+  hub?: { toDevice(devicePub: string, frame: unknown): number };
 }
 
 export function mountSpaces(app: Hono, deps: SpaceDeps): void {
@@ -459,6 +468,11 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
     if (!invite) return c.json({ error: 'invite_spent' }, 410);
 
     await joinSpace(deps.store, invite.spaceId, actor.accountId);
+    // Before the response, so a client that joins and immediately asks has
+    // already caused the other side to start committing.
+    await announceMembers(deps, invite.spaceId, actor.accountId).catch((err) =>
+      console.error('could not announce the new member', err),
+    );
     return c.json({ space: invite.spaceId, joined: true }, 201);
   });
 
@@ -497,6 +511,12 @@ export function mountSpaces(app: Hono, deps: SpaceDeps): void {
     for (const account of parsed.data.accounts) {
       await joinSpace(deps.store, spaceId, account);
     }
+    // Which is exactly why this is here: somebody has to be told to do it. The
+    // inviter is usually online and about to, but "usually" is why the invite
+    // link case sat unnamed for as long as it did.
+    await announceMembers(deps, spaceId, gated.actor.accountId).catch((err) =>
+      console.error('could not announce the new members', err),
+    );
     return c.json({ added: parsed.data.accounts }, 201);
   });
 
@@ -711,6 +731,37 @@ function wireInvite(i: Invite) {
  * It mattered less when the only way in was somebody typing your handle. An
  * invite link goes to strangers.
  */
+/**
+ * Tell the space's existing members that its membership moved.
+ *
+ * The gap this fills: `COMMIT_REQUESTED` is driven by *pending MLS proposals*,
+ * and somebody joining by invite link makes none — they have no keys yet, so
+ * there is nothing they could have proposed. The Host writes a membership row
+ * and, before this, told nobody at all.
+ *
+ * What that cost was the whole point of joining. Nobody committed the
+ * newcomer's leaf, so they held no keys for the space, so the space's *name* —
+ * an encrypted event like everything else — was unreadable and rendered as
+ * "Unnamed space" until some other member's client happened to sync for an
+ * unrelated reason. Which could be never.
+ *
+ * Excludes the joiner: they already know, and they are the one member who can
+ * do nothing about it.
+ */
+async function announceMembers(deps: SpaceDeps, spaceId: string, except: string): Promise<void> {
+  const hub = deps.hub;
+  if (!hub) return;
+  const members = await deps.store.listSpaceMembers(spaceId);
+  for (const member of members) {
+    if (member.accountId === except) continue;
+    // Revoked devices excluded by default, which is what we want: a nudge to a
+    // key that is no longer allowed to act on it is noise.
+    for (const device of await deps.store.listAccountDevices(member.accountId)) {
+      hub.toDevice(device.pub, { op: 'MEMBERS_CHANGED', d: { space: spaceId } });
+    }
+  }
+}
+
 async function joinSpace(store: Store, spaceId: string, account: string): Promise<void> {
   // No roles to start. Adding somebody and granting them something are two
   // decisions, and rolling them into one invite is how people end up with

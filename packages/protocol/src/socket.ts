@@ -84,6 +84,29 @@ export const ServerFrame = z.discriminatedUnion('op', [
     op: z.literal('WELCOME'),
     d: z.object({ group: Snowflake, bytes: z.string().base64() }),
   }),
+
+  /**
+   * Somebody's membership of a space changed. Reconcile.
+   *
+   * The gap this closes: `COMMIT_REQUESTED` fires on *pending MLS proposals*,
+   * and joining a space by invite link produces none. The joiner has no keys
+   * yet, so they cannot propose anything — a membership row appears at the
+   * Host and every existing member's client is simply never told.
+   *
+   * The consequence was not subtle. Until some member's client happened to
+   * sync for an unrelated reason, nobody committed the newcomer's leaf, so
+   * they sat in a space they could not read a word of, looking at "Unnamed
+   * space" — the name is an encrypted event and they had no keys for it.
+   *
+   * Carries no membership *list*, deliberately. It is a nudge, and the client
+   * asks the Host what changed — which it was going to do anyway, and which
+   * keeps this frame from being a second source of truth that can disagree
+   * with the first.
+   */
+  z.object({
+    op: z.literal('MEMBERS_CHANGED'),
+    d: z.object({ space: Snowflake }),
+  }),
 ]);
 export type ServerFrame = z.infer<typeof ServerFrame>;
 

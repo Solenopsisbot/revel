@@ -39,7 +39,8 @@ function watch(page, who) {
   page.on('pageerror', (err) => problems.push(`${who}: ${String(err).slice(0, 150)}`));
   page.on('console', (m) => {
     const text = m.text();
-    if (/no group|send failed|could not/i.test(text)) problems.push(`${who}: ${text.slice(0, 140)}`);
+    if (/no group|send failed|could not/i.test(text))
+      problems.push(`${who}: ${text.slice(0, 140)}`);
   });
 }
 
@@ -104,8 +105,9 @@ const B = `sb${stamp}`;
  * that never starts rather than as an error, which reads like a broken build.
  */
 const REAL = !APP.includes('localhost');
-// The auth bucket is 10 tokens refilling at one per five seconds, and a
-// sign-up spends several. A minute buys back enough for the next one.
+// The auth bucket is 30 tokens refilling at one a second, and a sign-up spends
+// several. A minute buys back the whole bucket, which is more than enough — the
+// pause is cheap insurance rather than a tight fit.
 const breathe = () => (REAL ? wait(60_000) : Promise.resolve());
 
 const alice = await signUp(A, 'Viola');
@@ -304,11 +306,14 @@ const link = await alice.page.evaluate(async (id) => {
 ok('the link has a fragment', link.includes('/i/') && link.includes('#'), link?.slice(0, 60));
 ok(
   'and the server was never given the half after it',
-  await alice.page.evaluate(async ([id, url]) => {
-    const secret = url.split('#')[1];
-    const invites = await window.__revel.live.stack.core.directory.listInvites(id);
-    return !JSON.stringify(invites).includes(secret);
-  }, [spaceId, link]),
+  await alice.page.evaluate(
+    async ([id, url]) => {
+      const secret = url.split('#')[1];
+      const invites = await window.__revel.live.stack.core.directory.listInvites(id);
+      return !JSON.stringify(invites).includes(secret);
+    },
+    [spaceId, link],
+  ),
 );
 
 const C = `sc${stamp}`;
@@ -341,7 +346,9 @@ await cp.waitForURL(/\/signup/, { timeout: 30_000 });
 await cp.fill('input[type=text]', C);
 await cp.fill('input[type=password]', password);
 await cp.waitForFunction(
-  () => ![...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Continue')?.disabled,
+  () =>
+    ![...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Continue')
+      ?.disabled,
 );
 await cp.getByRole('button', { name: 'Continue' }).click();
 await cp.waitForSelector('text=YOUR RECOVERY CODE', { timeout: 90_000 });
@@ -350,13 +357,12 @@ await cp.waitForSelector('text=YOUR RECOVERY CODE', { timeout: 90_000 });
 await cp.getByRole('checkbox').check();
 await cp.getByRole('button', { name: 'Continue' }).click();
 await wait(1500);
-await cp.getByRole('button', { name: /Finish|Skip for now/ }).first().click();
+await cp
+  .getByRole('button', { name: /Finish|Skip for now/ })
+  .first()
+  .click();
 await wait(4000);
-ok(
-  'signing up comes back to the invite',
-  cp.url().includes('/i/'),
-  cp.url(),
-);
+ok('signing up comes back to the invite', cp.url().includes('/i/'), cp.url());
 // **Without the fragment.** It was stripped from the address bar before the
 // detour, so getting back in means the stash survived sign-up — which is what
 // `docs/18` asks for and the only reason the round trip is usable.
@@ -377,26 +383,44 @@ await cp.evaluate(async () => {
   await live.refreshSpaces();
 });
 await wait(3000);
+ok('and she is in the space', (await cp.evaluate(() => window.__revel.core.spaces.length)) === 1);
+
+// This used to assert the opposite — that the space read as "Unnamed space",
+// because a row is not access and nobody had committed her leaf. That was true
+// and it was also the bug: nothing *told* an existing member to commit, so the
+// unnamed state was not a moment, it was where she stayed.
+//
+// The invariant itself has not moved and is not asserted here, because here it
+// is no longer observable: the Host announces the join, alice's client
+// reconciles, and the keys arrive in the same breath. It is asserted where it
+// still shows — the ban section below, where the membership row goes and the
+// keys have to go with it.
 ok(
-  'and she is in the space',
-  (await cp.evaluate(() => window.__revel.core.spaces.length)) === 1,
+  'and the Host still never learned what it is called',
+  await alice.page.evaluate(async () => {
+    const { live } = window.__revel;
+    const rooms = await live.stack.core.directory.spaceRooms(live.spaces[0].info.id);
+    return !JSON.stringify(rooms).includes('Solexsis');
+  }),
 );
 
-// She holds no keys yet: a row is not access, and nobody was present to
-// commit her leaf. Until somebody does, the space has no readable name.
-ok(
-  'but cannot read a word of it yet — a row is not access',
-  (await cp.evaluate(() => window.__revel.core.spaces[0]?.name)) === 'Unnamed space',
-  await cp.evaluate(() => window.__revel.core.spaces[0]?.name),
-);
-
-// Alice syncs. Nothing told her carol exists; `reconcileGroups` notices.
-await alice.page.evaluate(() => window.__revel.live.stack.sync());
+// **Nobody touches alice.** That is the assertion.
+//
+// This used to poke her client into syncing, because nothing else would: a
+// join by invite link produces no MLS proposal, so `COMMIT_REQUESTED` never
+// fires, and an existing member found out only by happening to sync for an
+// unrelated reason. Carol meanwhile sat in a space she could not read a word
+// of, looking at "Unnamed space", possibly forever.
+//
+// The Host now says `MEMBERS_CHANGED` to the other members' devices when
+// somebody joins, and alice's client reconciles on it — commits carol's leaf,
+// then says the space's name, its roles and its room names again, all of which
+// were encrypted to epochs carol's leaf did not exist in.
 await wait(9000);
 await resync(cp);
 await wait(3000);
 ok(
-  'and can, once any member syncs and commits her leaf',
+  'and can, without anybody poking the member who had to commit her leaf',
   (await cp.evaluate(() => window.__revel.core.spaces[0]?.name)) === 'Solexsis',
   await cp.evaluate(() => window.__revel.core.spaces[0]?.name),
 );
@@ -475,8 +499,8 @@ ok(
 );
 ok(
   'while its sibling — which shared its group — still works',
-  await bob.page.evaluate(
-    () => (window.__revel.core.spaces[0]?.rooms ?? []).some((r) => r.name === 'general'),
+  await bob.page.evaluate(() =>
+    (window.__revel.core.spaces[0]?.rooms ?? []).some((r) => r.name === 'general'),
   ),
 );
 
@@ -540,8 +564,8 @@ await alice.page.evaluate(() => window.__revel.core.refreshBans());
 await wait(2000);
 ok(
   'the ban is recorded, with its reason',
-  await alice.page.evaluate(
-    () => window.__revel.core.bansSeen.some((b) => b.reason === 'testing the door'),
+  await alice.page.evaluate(() =>
+    window.__revel.core.bansSeen.some((b) => b.reason === 'testing the door'),
   ),
   await alice.page.evaluate(() => window.__revel.core.bansSeen),
 );

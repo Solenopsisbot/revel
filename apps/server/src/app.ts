@@ -246,7 +246,13 @@ export function createApp(deps: AppDeps) {
     ...(deps.maxBlobBytes === undefined ? {} : { maxBytes: deps.maxBlobBytes }),
   });
   mountRooms(app, { store: deps.store, ids: deps.ids, idp, authenticate: deps.authenticate });
-  mountSpaces(app, { store: deps.store, ids: deps.ids, authenticate: deps.authenticate });
+  mountSpaces(app, {
+    store: deps.store,
+    ids: deps.ids,
+    authenticate: deps.authenticate,
+    // So a join can be announced to the members who have to act on it.
+    hub: deps.hub,
+  });
 
   mountGroups(app, {
     store: deps.store,

@@ -49,14 +49,23 @@ export interface Location {
  * (`docs/19`: "opening a message link you can't decrypt yet shows the catching
  * up on keys banner").
  */
-export function applyUrl(url: URL): { message?: string } {
+export function applyUrl(url: URL): { message?: string; landed: boolean } {
   const q = url.searchParams;
   const dm = q.get('dm');
   const spaceId = q.get('space');
   const roomId = q.get('room');
 
-  if (dm && core.dms.some((d) => d.id === dm)) {
-    core.openHome(dm);
+  let landed = true;
+  if (dm) {
+    // **`landed` is the whole point of this being reported.** For a signed-in
+    // account the room list arrives from the Host *after* this runs, so at
+    // first call `core.dms` is empty and a perfectly good `?dm=` matched
+    // nothing. That on its own was survivable; what made it a bug is that
+    // `syncUrl` then wrote the current — empty — location over the address
+    // bar, so reloading a conversation dropped you at `/app?` and destroyed
+    // the link in the same motion. The caller waits for this to be true.
+    landed = core.dms.some((d) => d.id === dm);
+    if (landed) core.openHome(dm);
   } else if (spaceId && roomId) {
     const space = core.spaces.find((s) => s.id === spaceId);
     const room = space?.rooms.find((r) => r.id === roomId);
@@ -64,15 +73,22 @@ export function applyUrl(url: URL): { message?: string } {
     // the space if we know it and leave the rest to the banner.
     // `rooms[0]` may not exist: a space can have no rooms you can see, and
     // landing on it with nothing open is a truer answer than a crash.
+    landed = !!space;
     if (space) core.openRoom(space.id, room?.id ?? space.rooms[0]?.id ?? '');
   }
 
   const message = q.get('m') ?? undefined;
-  return message ? { message } : {};
+  return message ? { message, landed } : { landed };
 }
 
-/** The parameters this module owns. Everything else in the URL is not ours. */
-const OWNED = ['space', 'room', 'dm', 'm', 'settings'];
+/**
+ * The parameters this module owns. Everything else in the URL is not ours.
+ *
+ * `join` is here so that finishing one takes it out of the address bar. It is
+ * a one-shot instruction, not a location — leaving it there meant a reload
+ * tried to redeem an invite that had already been redeemed, and got told so.
+ */
+const OWNED = ['space', 'room', 'dm', 'm', 'settings', 'join'];
 
 /**
  * The address for where the app is now.

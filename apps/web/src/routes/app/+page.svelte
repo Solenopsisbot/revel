@@ -8,34 +8,34 @@ import { back } from '$lib/back.js';
 import Composer from '$lib/Composer.svelte';
 import ContextMenu from '$lib/ContextMenu.svelte';
 import CommandBar from '$lib/command/CommandBar.svelte';
-import DmHome from '$lib/DmHome.svelte';
 import { contextMenu } from '$lib/contextmenu.svelte.js';
+import DmHome from '$lib/DmHome.svelte';
 import { applyUrl, syncUrl } from '$lib/deeplink.js';
 import { drawers } from '$lib/drawers.svelte.js';
 import { myFaces } from '$lib/faces.svelte.js';
-import { notifications } from '$lib/notify.svelte.js';
 import { connection } from '$lib/fake/connection.svelte.js';
 import { conversation } from '$lib/fake/conversation.svelte.js';
 import { core, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
 import type { NotifyLevel } from '$lib/fake/data.js';
 import Icon from '$lib/Icon.svelte';
-import { lastRoom } from '$lib/lastRoom.js';
 import { clearStash, readStash } from '$lib/invite.js';
-import { reasonOf, whyNot } from '$lib/startErrors.js';
+import { lastRoom } from '$lib/lastRoom.js';
 import { layout } from '$lib/layout.svelte.js';
 import { live } from '$lib/live.svelte.js';
 import MessageList from '$lib/MessageList.svelte';
 import { lightbox } from '$lib/media/lightbox.svelte.js';
 import { memberMenu, roomMenu, spaceMenu } from '$lib/menus.js';
+import { notifications } from '$lib/notify.svelte.js';
 import Onboarding from '$lib/onboarding/Onboarding.svelte';
 import { onboarding } from '$lib/onboarding/onboarding.svelte.js';
 import ProfileCard from '$lib/ProfileCard.svelte';
-import SearchPanel from '$lib/search/SearchPanel.svelte';
 import StartFailure from '$lib/StartFailure.svelte';
+import SearchPanel from '$lib/search/SearchPanel.svelte';
 import { search } from '$lib/search/search.svelte.js';
 import { session } from '$lib/session.svelte.js';
 import SettingsOverlay from '$lib/settings/SettingsOverlay.svelte';
 import SpaceSettings from '$lib/space/SpaceSettings.svelte';
+import { reasonOf, whyNot } from '$lib/startErrors.js';
 import ThreadPanel from '$lib/thread/ThreadPanel.svelte';
 import { longpress } from '$lib/touch.svelte.js';
 import CallBar from '$lib/voice/CallBar.svelte';
@@ -55,6 +55,21 @@ if (linked.message) {
   if (here) core.jumpTo = linked.message;
   else core.awaitingKeys = linked.message;
 }
+
+/**
+ * A link we could not follow yet.
+ *
+ * For a signed-in account the room list is not here at init — it arrives from
+ * the Host a moment later — so `?dm=<id>` matched nothing on the first pass.
+ * The link was not merely ignored: `syncUrl` below then wrote the empty
+ * location over the address bar, so reloading a conversation both failed to
+ * reopen it *and* deleted the link that would have.
+ *
+ * Held until the lists are in, then tried once more. Once is right: if the
+ * room still is not there it is gone, and the address bar should say so rather
+ * than keep pointing at it.
+ */
+let following = $state(!linked.landed);
 
 /**
  * Restore the signed-in device before deciding anything.
@@ -256,7 +271,8 @@ $effect(() => {
   joined = true;
   const secret = readStash(code);
   if (!secret) {
-    joinFailed = 'That invite link is missing the part after the #. Open it again from the message.';
+    joinFailed =
+      'That invite link is missing the part after the #. Open it again from the message.';
     return;
   }
   joining = code;
@@ -588,6 +604,10 @@ $effect(() => {
   // and wrote whatever `core` was defaulting to, which is how a fresh visit to
   // `/app` flashed `?space=solexsis&room=design`.
   if (!ready) return;
+  // Not while a link from the address bar is still waiting to be followed.
+  // This effect would otherwise overwrite it with wherever the app happens to
+  // be, which for a fresh load is nowhere.
+  if (following) return;
   // Not before SvelteKit's router has started. `replaceState` *throws* when it
   // has not, and an effect that throws aborts the rest of the flush along with
   // it — which is how the touch layer used to die on mobile, several effects
@@ -621,6 +641,23 @@ $effect(() => {
   if (!layout.narrow) return;
   if (navEl) drawers.setWidth('nav', navEl.offsetWidth);
   if (membersEl) drawers.setWidth('members', membersEl.offsetWidth);
+});
+
+/**
+ * Follow the address bar once the room list exists.
+ *
+ * `live.loaded` rather than `live.running`: the stack is up the moment it is
+ * built, and the rooms it will list are still a request away. Running this on
+ * `running` alone was the same mistake as reading them at init, one tick later.
+ */
+$effect(() => {
+  if (!following) return;
+  if (!live.running || !live.loaded) return;
+  applyUrl(page.url);
+  // Whether or not it landed. A room that is not in a loaded list is gone, and
+  // retrying forever would pin the address bar to something that no longer
+  // exists and never let `syncUrl` correct it.
+  following = false;
 });
 
 /** Chat is the app; the drawer is transient (`docs/24`). Picking something

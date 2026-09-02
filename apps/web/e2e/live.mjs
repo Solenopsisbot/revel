@@ -68,17 +68,31 @@ async function open(handle) {
   await go.click();
   await page.waitForSelector('text=YOUR RECOVERY CODE', { timeout: 60000 });
 
+  /**
+   * Use the stack the app already started. Do not start a second one.
+   *
+   * This used to call `startLive` here, which was correct when it was written
+   * and stopped being correct when `session.restore()` began starting the core
+   * itself. From then on every page in this suite ran **two** stacks: two
+   * crypto workers with separate MLS state, and two sockets on one device.
+   *
+   * A Welcome is addressed to a *device*, and the hub delivers it to every live
+   * connection of that device — so both stacks got it, both called
+   * `acceptWelcomes`, and the one that lost the race never imported the group.
+   * That is the entire "bob has joined the MLS group" flake, and it failed
+   * about half the time for a reason that had nothing to do with the code under
+   * test.
+   */
+  await page.goto(`${APP}/app?e2e=1`, { waitUntil: 'load' });
   const started = await page.evaluate(async () => {
-    const { session } = await import('/src/lib/session.svelte.ts');
-    const s = await session.restore();
-    if (!s) return { error: 'no session' };
-    const { startLive } = await import('/src/lib/live.ts');
-    try {
-      window.__live = await startLive(s);
-      return { account: window.__live.account, device: window.__live.device };
-    } catch (err) {
-      return { error: String((err && err.message) || err) };
+    for (let i = 0; i < 90; i++) {
+      if (window.__revel?.live?.running) break;
+      await new Promise((r) => setTimeout(r, 500));
     }
+    const stack = window.__revel?.live?.stack;
+    if (!stack) return { error: window.__revel?.live?.error || 'the core never started' };
+    window.__live = stack;
+    return { account: stack.account, device: stack.device };
   });
 
   return { handle, page, ...started };

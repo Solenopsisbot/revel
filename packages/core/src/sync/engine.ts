@@ -1114,6 +1114,7 @@ export class RoomSync {
    */
   async catchUpAll(rooms: string[] = [...this.#rooms.keys()]): Promise<void> {
     for (const roomId of rooms) {
+      if (!roomId) continue;
       // One room failing to catch up must not stop the others: a room whose
       // membership was revoked while we were offline will refuse forever.
       await this.catchUp(roomId).catch(() => {});
@@ -1122,7 +1123,11 @@ export class RoomSync {
 
   /** Subscribe to live events for a room, if a stream was provided. */
   listen(roomId: string): void {
-    if (!this.#stream || this.#unsubscribes.has(roomId)) return;
+    // The other half of the same guard the caller should already have applied.
+    // An empty id is not a room, and letting one in here is what put `''` in
+    // the socket's subscription set — from where it came back on every
+    // reconnect as a request for `/rooms//events`.
+    if (!roomId || !this.#stream || this.#unsubscribes.has(roomId)) return;
     this.#unsubscribes.set(
       roomId,
       this.#stream.subscribe(roomId, (event) => {
