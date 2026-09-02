@@ -22,12 +22,21 @@ import { whyNot } from './startErrors.js';
 const why = $derived(whyNot(live.reason || 'unreachable'));
 </script>
 
-{#if live.error && !live.running}
+{#if live.error}
   <div class="failed" role="status">
     <Icon name="warn" size={15} />
     <span class="what">
-      <b>Not connected to your provider.</b>
-      {why} Nothing here is missing — it just hasn't loaded.
+      {#if live.localOnly}
+        <!-- The stack is up and the local database is open, so this is a real
+             app with real history in it — just no way to reach the Host. Which
+             is a very different sentence from "nothing loaded", and saying the
+             wrong one is how somebody concludes their messages are gone. -->
+        <b>Showing what's on this device.</b>
+        {why} New messages won't arrive and anything you send will wait.
+      {:else}
+        <b>Not connected to your provider.</b>
+        {why} Nothing here is missing — it just hasn't loaded.
+      {/if}
     </span>
     <button onclick={() => live.retry()} disabled={live.starting}>
       {live.starting ? 'Trying…' : 'Try again'}

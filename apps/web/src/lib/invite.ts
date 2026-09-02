@@ -82,3 +82,29 @@ export function clearStash(): void {
     /* nothing to clear, or nowhere to clear it from */
   }
 }
+
+/**
+ * An invite link inside a message body, if there is one.
+ *
+ * Same origin only. `previewInvite` asks *this* Host about the code, so a link
+ * to somebody else's deployment is a link we cannot describe and should not
+ * pretend to — it renders as an ordinary link, which is the honest fallback.
+ *
+ * The fragment is required. Without it the link cannot be used (`/i/<code>`
+ * says so in words), and a card offering to join something nobody can join is
+ * worse than no card.
+ */
+export function inviteIn(text: string): { code: string; url: string } | null {
+  if (typeof location === 'undefined') return null;
+  // Deliberately not global-flagged and deliberately first-match: a message
+  // with two invites in it is not a shape worth designing a stack of cards for.
+  const found = text.match(/https?:\/\/[^\s<>"]+\/i\/([a-z0-9-]{4,64})#([^\s<>"]+)/i);
+  if (!found) return null;
+  const [url, code] = found;
+  try {
+    if (new URL(url).origin !== location.origin) return null;
+  } catch {
+    return null;
+  }
+  return { code: code as string, url };
+}

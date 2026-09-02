@@ -1128,13 +1128,23 @@ function toggleMembers() {
          they will survive, and it belongs where they are typing rather than
          buried in settings. Only for a signed-in account: the demo has nothing
          to lose. -->
-    <!-- Above the beta notice on purpose: one says the data might not
-         survive, the other says there is no data on screen right now. The
-         second is the more urgent sentence. -->
-    {#if !core.demo}<StartFailure />{/if}
     {#if live.running}<BetaNotice />{/if}
 
     {/if}
+
+    <!--
+      Outside the header block, unlike the beta notice.
+
+      That block is suppressed when there is no room open — home is not a room
+      and does not want a room's chrome — and "no room open" is *exactly* the
+      state a client that could not reach its Host is in. So the one message
+      that explains the emptiness was hidden by the emptiness.
+
+      Above the beta notice in the reading order for the same reason it is
+      first here: one says the data might not survive, the other says why there
+      is none on screen right now, and the second is the more urgent sentence.
+    -->
+    {#if !core.demo}<StartFailure />{/if}
 
     {#if voice.viewingCall}
       <CallStage />

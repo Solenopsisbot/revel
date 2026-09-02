@@ -92,13 +92,17 @@ class DeviceSession {
         const { live } = await import('./live.svelte.js');
         void live.start(this.current);
 
-        // A device token, so this device can act at the Host. Floating on
-        // purpose: a Host that is unreachable must not stop the app opening —
-        // everything local still works, and the token is retried on next use.
-        const { authenticateDevice } = await import('./identity.js');
-        void authenticateDevice(this.current).catch((err) =>
-          console.error('device authentication failed', err),
-        );
+        // No second handshake here. `live.start` above builds a `HostSession`,
+        // which registers this device's certificate and exchanges it for a
+        // token — and this used to do all three of those requests again,
+        // through a completely separate implementation, on every single start.
+        //
+        // Two device registrations, two nonces and two sessions per load, for
+        // one device. The limiter buckets by address, so a couple of reloads or
+        // a second tab spent the whole `auth` allowance and the app came up
+        // with no core. `identity.ts` now reads the token off the running
+        // stack, and only does its own handshake during sign-up, where there is
+        // no stack yet.
       }
     } catch (err) {
       // A storage failure is not a reason to be stuck on a blank page. Treated

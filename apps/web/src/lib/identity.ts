@@ -22,6 +22,7 @@ const IDP = import.meta.env.VITE_IDP_URL ?? '';
 
 export const transport: IdpTransport = {
   async post(path, body) {
+    const bearer = await token();
     const res = await fetch(`${IDP}${path}`, {
       method: 'POST',
       headers: {
@@ -29,13 +30,50 @@ export const transport: IdpTransport = {
         // Sent when there is one. Most of these routes are unauthenticated by
         // design — signing in is what you do when you have nothing — so this is
         // additive rather than required.
-        ...(deviceToken ? { authorization: `Bearer ${deviceToken}` } : {}),
+        ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
       },
       body: JSON.stringify(body),
     });
     return { status: res.status, body: await res.json().catch(() => null) };
   },
 };
+
+/**
+ * The bearer token for this device, from whoever already has one.
+ *
+ * **`HostSession` first, always.** It and this module were doing the same
+ * three-request handshake — register the certificate, take a nonce, sign it —
+ * independently, and both fired on every app start, so every load spent two
+ * device registrations, two nonces and two sessions to end up with two tokens
+ * for one device. On a limiter that buckets by address, three reloads or two
+ * tabs was enough to run the account out of `auth` allowance and leave the app
+ * with no core at all.
+ *
+ * `ensure()` is also strictly better than what this module does on its own: it
+ * knows when the token expires, renews ahead of that, and collapses parallel
+ * callers into one sign-in. This module's copy is a one-shot that never
+ * expires as far as it knows.
+ *
+ * The local fallback stays for the one case that is not redundant: sign-up,
+ * where a passkey has to be enrolled before any stack exists.
+ */
+async function token(): Promise<string | null> {
+  const host = await hostSession();
+  if (host) return (await host.ensure().catch(() => null))?.token ?? null;
+  return deviceToken;
+}
+
+/** The running stack's session, if there is a running stack. */
+async function hostSession() {
+  try {
+    const { live } = await import('./live.svelte.js');
+    return live.stack?.session ?? null;
+  } catch {
+    // Only reachable if the module fails to load at all, which is not a thing
+    // this function should turn into a failure to authenticate.
+    return null;
+  }
+}
 
 /**
  * The bearer token for this device, once it has one.
@@ -62,7 +100,10 @@ export async function authenticateDevice(session: {
   device?: { certificate: Uint8Array; deviceSecret: Uint8Array };
 }): Promise<string | null> {
   if (!session.device) return null;
-  if (deviceToken) return deviceToken;
+  // Whoever already did this. See `token()` — running the handshake twice per
+  // start is what was emptying the rate limiter.
+  const shared = await token();
+  if (shared) return shared;
 
   const [{ authPayload, decodeDeviceCert, toAccountId, toBase64, fromBase64 }, wasm] =
     await Promise.all([import('@revel/protocol'), cryptoWasm()]);

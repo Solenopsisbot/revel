@@ -144,7 +144,22 @@ export class RateLimiter {
  *   people do, and then a sustained rate well above anybody typing.
  */
 export const LIMITS = {
-  auth: { capacity: 10, refillPerSecond: 0.2 },
+  /**
+   * OPAQUE and the device challenge-response.
+   *
+   * Raised from `10 / 0.2`, which was sized against a single attacker guessing
+   * passwords and forgot that the bucket is keyed by *address*. Everybody
+   * behind one address shares it: a household, a university, a phone on
+   * carrier NAT, or one person with a second account open in another tab. Ten
+   * tokens refilling at one per five seconds meant a couple of reloads was
+   * enough to lock a legitimate person out of their own app, and the failure
+   * did not look like a limit — it looked like the app was broken.
+   *
+   * Still tight in the way that matters. Guessing a password at one attempt a
+   * second gets nowhere against OPAQUE, and the burst is what real use looks
+   * like: a sign-in is several requests in a second and then nothing for hours.
+   */
+  auth: { capacity: 30, refillPerSecond: 1 },
   /**
    * Registering a device certificate.
    *

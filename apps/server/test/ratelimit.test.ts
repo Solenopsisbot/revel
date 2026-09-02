@@ -137,7 +137,22 @@ describe('classifying a request', () => {
     // ordinary.
     expect(classify('GET', '/idp/devices')).toBe('read');
     expect(classify('DELETE', '/idp/devices/abc')).toBe('write');
-    expect(LIMITS.device.refillPerSecond).toBeGreaterThan(LIMITS.auth.refillPerSecond);
+  });
+
+  it('leaves room for more than one person behind an address', async () => {
+    // The buckets are keyed by address, so everybody behind one shares them: a
+    // household, a university, carrier NAT, or one person with a second
+    // account open in another tab. `auth` was 10 capacity refilling at one
+    // token per five seconds, which a couple of reloads exhausted — and the
+    // failure did not read as a limit, it read as the app being broken.
+    //
+    // Stated as a floor rather than an exact value, so tuning is free and
+    // going back under "a few normal sign-ins in a row" is not.
+    const signInCost = 4;
+    expect(LIMITS.auth.capacity).toBeGreaterThanOrEqual(signInCost * 4);
+    expect(LIMITS.auth.refillPerSecond).toBeGreaterThanOrEqual(0.5);
+    // One per app start, so this is many starts in a burst.
+    expect(LIMITS.device.capacity).toBeGreaterThanOrEqual(15);
   });
 
   it('treats handle resolution as its own thing', async () => {

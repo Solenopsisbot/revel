@@ -78,14 +78,30 @@ await context.route('**/auth/**', (route) =>
 );
 
 await page.goto(`${APP}/app`, { waitUntil: 'load' });
-// Long enough for the bounded retry to give up — three attempts, clamped waits.
-await page.waitForTimeout(16000);
+// Waited for, not slept through. `HostSession` retries a refusal three times
+// with clamped backoff before it gives up, and both `register` and `ensure` do
+// it — so how long this takes is a property of the retry policy, and a fixed
+// sleep is a number that goes stale the moment that policy is tuned.
+await page
+  .locator('text=/Not connected|Showing what/')
+  .first()
+  .waitFor({ state: 'visible', timeout: 60_000 })
+  .catch(() => {});
 
 const seen = await page.evaluate(() => document.body.innerText);
 
 ok(
-  'it says it is not connected, rather than showing nothing and no reason',
-  /Not connected to your provider/i.test(seen),
+  'it says so, rather than showing nothing and no reason',
+  /Not connected to your provider|Showing what/i.test(seen),
+  seen.slice(0, 200),
+);
+// The distinction that matters. The local database opens before the Host is
+// asked anything, so this device *has* its history — the honest sentence is
+// "showing what's on this device", not "nothing loaded". Getting that wrong is
+// how somebody concludes their messages are gone.
+ok(
+  'and says the local data is what it is showing, not that there is none',
+  /Showing what/i.test(seen),
   seen.slice(0, 200),
 );
 ok('and names the reason, which is not the wifi', /slow down/i.test(seen), seen.slice(0, 300));

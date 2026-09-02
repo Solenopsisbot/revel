@@ -81,6 +81,15 @@ export interface LiveStack {
   stream: WebSocketStream;
   session: HostSession;
   /**
+   * Why the Host would not authenticate this device at startup, if it would
+   * not. Null is the normal case.
+   *
+   * The stack exists either way — this is the difference between "you can read
+   * what is on this device" and "you can also send". A caller that needs to
+   * know which shows the banner; nothing else has to care.
+   */
+  hostError: unknown;
+  /**
    * Take anything waiting and bind what it opens.
    *
    * Exposed because it is not only an internal reaction to a socket frame: a
@@ -148,15 +157,42 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
       token = granted.token;
     },
   });
-  await session.register();
   const headers = session.headers;
-  // Force one now, so the socket has something to connect with. Everything else
-  // asks `headers()` per request and never needs to think about expiry.
-  await session.ensure();
 
   const transport = new HttpTransport({ baseUrl: HOST, headers });
   const groupTransport = new HttpGroupTransport({ baseUrl: HOST, headers });
+  // **Before the Host is asked anything.** This is the device's own database —
+  // sealed group state, materialised rooms, every message already decrypted —
+  // and it used to be opened *after* two network calls that can throw. So a
+  // rate limit or an unreachable Host meant `startLive` threw before the local
+  // store existed, `live.stack` stayed null, and the app rendered as though
+  // this device had never been used, with all of it sitting on disk.
+  //
+  // Nothing below this line needs the network to exist, only to be useful.
   const store = await IndexedDbStore.open({ name: `revel-${account.slice(0, 12)}` });
+
+  /**
+   * Say hello to the Host, and carry on if it will not answer.
+   *
+   * Registering the certificate and taking a token are how this device becomes
+   * able to *send*; they are not how it becomes able to *read*. Treating them
+   * as fatal conflated the two and cost the whole app for a failure that only
+   * affects half of it.
+   *
+   * `HostSession` retries a transient refusal on its own before this sees it,
+   * so arriving here means it is properly not working rather than briefly
+   * busy. `live.retry()` is what tries again, and the banner is what offers it.
+   */
+  let hostError: unknown = null;
+  try {
+    await session.register();
+    // Force one now, so the socket has something to connect with. Everything
+    // else asks `headers()` per request and never needs to think about expiry.
+    await session.ensure();
+  } catch (err) {
+    hostError = err;
+    console.error('revel: not authenticated to the Host — running on local data', err);
+  }
 
   /**
    * Declared before the stream and assigned after, because the wiring is
@@ -383,6 +419,10 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
     transport,
     stream,
     attachments: new Attachments({ transport }),
+    // So the room list survives a Host that will not answer — see
+    // `Directory.refresh`. Without it an offline start has every message on
+    // disk and no way to reach any of them.
+    store,
     // Which face speaks in a room. Asked per send rather than captured here,
     // because the answer is per room and changes while the app runs — and
     // because the book belongs to the session, not to the sync engines.
@@ -409,6 +449,7 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
     store,
     stream,
     session,
+    hostError,
     sync: syncGroups,
     socketStatus: () => socketStatus,
     account,

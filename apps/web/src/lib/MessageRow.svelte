@@ -23,6 +23,8 @@ import { core } from './fake/core.svelte.js';
 import type { Face } from './fake/data.js';
 import { ago, clock, names } from './format.js';
 import Icon from './Icon.svelte';
+import InviteCard from './InviteCard.svelte';
+import { inviteIn } from './invite.js';
 import { layout } from './layout.svelte.js';
 import Menu from './Menu.svelte';
 import Attachments from './media/Attachments.svelte';
@@ -103,6 +105,16 @@ let pickerOpen = $state(false);
 let menuOpen = $state(false);
 let draft = $state('');
 let editor = $state<HTMLTextAreaElement>();
+
+/**
+ * An invite link in this message, if there is one.
+ *
+ * Read off the body rather than carried as a field, because an invite is
+ * something somebody *types* — there is no compose-time step that could attach
+ * it, and a message that arrived from any other client would not have it.
+ * Redacted messages are skipped: the body is gone and there is nothing to find.
+ */
+const invite = $derived(m.redacted || m.purged ? null : inviteIn(m.text ?? ''));
 
 const target = $derived(m.replyTo ? conversation.find(m.replyTo) : undefined);
 
@@ -438,6 +450,12 @@ function who(by: string[], key: string) {
       {#if m.attachments?.length}
         <Attachments list={m.attachments} />
       {/if}
+
+      <!-- An invite to a space on this Host renders as an invitation rather
+           than as a URL. The link itself is still in the body above — this is
+           a card attached to it, the same relationship `m.link` has, and not a
+           replacement for what somebody typed. -->
+      {#if invite}<InviteCard code={invite.code} url={invite.url} />{/if}
 
       {#if m.link}
         <!-- Rendered by the sender's client. The server never fetches a link,

@@ -10,10 +10,10 @@
 import type { CryptoEngine, Member } from '@revel/crypto';
 import {
   type AccountProfile,
+  type BanInfo,
   type BlobRef,
   type CreateSpaceRoom,
   type DeviceInfo,
-  type BanInfo,
   type FaceCard,
   type FaceRef,
   fromBase64,
@@ -23,9 +23,9 @@ import {
   type RoleInfo,
   type RoleInput,
   type RoomInfo,
-  signInviteRedemption,
   type SpaceInfo,
   type SpaceMemberInfo,
+  signInviteRedemption,
   toAccountId,
   toBase64,
   type UpdateProfile,
@@ -34,6 +34,7 @@ import { Attachments } from '../blobs/attachments.js';
 import type { Message, RoomState } from '../rooms/state.js';
 import { type ThreadSummary, threadsIn } from '../rooms/threads.js';
 import { type Hit, type Query, type SearchOptions, search } from '../search/search.js';
+import type { LocalStore } from '../store/types.js';
 import type { RoomSync, TypingPerson } from '../sync/engine.js';
 import type { GroupSync } from '../sync/groups.js';
 import type { WebSocketStream } from '../sync/socket.js';
@@ -60,6 +61,13 @@ export interface LiveCoreOptions {
   /** Shared, so an attachment is decrypted once per app rather than per view. */
   attachments?: Attachments;
   /**
+   * The local database, so the room list survives an unreachable Host.
+   *
+   * Optional because plenty of callers — tests, the conformance harness — have
+   * no interest in caching and should not have to supply one.
+   */
+  store?: LocalStore;
+  /**
    * Which face speaks in a room, if this account has any.
    *
    * A function rather than a value because the answer is per room and changes
@@ -69,6 +77,12 @@ export interface LiveCoreOptions {
    */
   faceFor?: (roomId: string) => FaceCard | undefined;
 }
+
+/**
+ * Where the room list is cached. One key, in the account-level namespace the
+ * store already has — no schema change and nothing to migrate.
+ */
+const ROOMS_CACHE = 'directory.rooms';
 
 class LiveConversation implements ConversationCore {
   #rooms: RoomSync;
@@ -328,6 +342,7 @@ class LiveDirectory implements DirectoryCore {
   #known: RoomInfo[] = [];
   #listeners = new Set<(rooms: RoomInfo[]) => void>();
   #account: string;
+  #store: LocalStore | undefined;
   /**
    * Say the roster again, injected rather than reached for.
    *
@@ -349,20 +364,48 @@ class LiveDirectory implements DirectoryCore {
     this.#groups = options.groups;
     this.#crypto = options.crypto;
     this.#account = options.account;
+    this.#store = options.store;
   }
 
   rooms(): RoomInfo[] {
     return this.#known;
   }
 
+  /**
+   * The room list, from the Host if it will answer and from disk if it will not.
+   *
+   * Which rooms exist is the one thing standing between a device and the
+   * conversations it has already decrypted and stored. Everything else survives
+   * an offline start — the sealed MLS state, the materialised rooms, every
+   * message — and none of it is *reachable*, because the sidebar is built from
+   * this and this was network-only. A rate limit therefore looked exactly like
+   * a device that had never been used.
+   *
+   * Written through on every success, so the cache is never staler than the
+   * last time the Host was up. Read back only on failure, so a working client
+   * has one source of truth and no chance of preferring an old answer.
+   */
   async refresh(): Promise<RoomInfo[]> {
-    this.#known = await this.#transport.listRooms();
+    try {
+      this.#known = await this.#transport.listRooms();
+      // Not awaited into the failure path: a cache that cannot be written is a
+      // worse next start, not a broken this one.
+      void this.#store?.put(ROOMS_CACHE, this.#known).catch(() => {});
+    } catch (err) {
+      const cached = await this.#store?.get<RoomInfo[]>(ROOMS_CACHE).catch(() => null);
+      // Nothing cached means this really is a client with nothing, and the
+      // caller should hear the original error rather than an empty list that
+      // looks like an answer.
+      if (!cached?.length) throw err;
+      this.#known = cached;
+    }
     // Bound here rather than at open time: a `RoomInfo` carries the group id,
     // and it is the only thing that says which MLS group opens which
     // conversation. A client that skipped this could join a group and not know
-    // what it had joined.
+    // what it had joined. Runs for the cached list too — binding is local, and
+    // it is what makes an offline room openable at all.
     for (const room of this.#known) {
-      if (room.group) await this.#rooms.bind(room.id, room.group);
+      if (room.group) await this.#rooms.bind(room.id, room.group).catch(() => {});
     }
     for (const listener of this.#listeners) listener(this.#known);
     return this.#known;
@@ -882,7 +925,7 @@ class LiveDirectory implements DirectoryCore {
         const was = named.get(roleId);
         named.set(roleId, {
           name: name ?? was?.name ?? roleId,
-          ...(colour ?? was?.colour ? { colour: colour ?? was?.colour } : {}),
+          ...((colour ?? was?.colour) ? { colour: colour ?? was?.colour } : {}),
         });
       });
     }

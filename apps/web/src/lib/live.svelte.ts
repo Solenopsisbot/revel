@@ -41,6 +41,9 @@ export interface LiveSpace {
   roles: RoleInfo[];
 }
 
+/** Where the assembled space list is kept for an offline start. */
+const SPACES_CACHE = 'directory.spaces';
+
 class Live {
   /** The stack, once a signed-in device has started one. */
   stack = $state<LiveStack | null>(null);
@@ -56,6 +59,19 @@ class Live {
 
   get running(): boolean {
     return this.stack !== null;
+  }
+
+  /**
+   * The stack is up but the Host has not accepted this device.
+   *
+   * A real state and, until recently, an impossible one: the handshake was
+   * fatal to `startLive`, so "cannot reach the Host" and "has no local
+   * database" were the same outcome. They are not remotely the same thing —
+   * everything already on this device is readable without a Host, and the only
+   * thing missing is what has happened since.
+   */
+  get localOnly(): boolean {
+    return this.stack !== null && this.error !== '';
   }
 
   /**
@@ -94,16 +110,25 @@ class Live {
       const stack = await startLive(session);
       this.stack = stack;
       this.#poll();
+      // The stack comes up whether or not the Host answered, so the failure
+      // arrives as a value rather than as a throw. Recorded before the
+      // refreshes below, which will not work either — and would otherwise
+      // report the same problem as an anonymous empty list.
+      if (stack.hostError) this.#failed(stack.hostError);
       await this.refreshRooms();
       await this.refreshSpaces();
     } catch (err) {
       console.error('could not start the real core', err);
-      this.error = String((err as Error)?.message ?? err);
-      const { reasonOf } = await import('./startErrors.js');
-      this.reason = reasonOf(err);
+      await this.#failed(err);
     } finally {
       this.starting = false;
     }
+  }
+
+  async #failed(err: unknown): Promise<void> {
+    this.error = String((err as Error)?.message ?? err) || 'unreachable';
+    const { reasonOf } = await import('./startErrors.js');
+    this.reason = reasonOf(err);
   }
 
   /**
@@ -115,7 +140,33 @@ class Live {
    * and the whole bootstrap; this costs one attempt.
    */
   async retry(): Promise<void> {
-    if (!this.#session || this.stack || this.starting) return;
+    if (this.starting) return;
+
+    // The stack is already up and only the Host handshake failed — which is
+    // the common case now that a refusal is no longer fatal to startup. Redo
+    // that part alone rather than tearing down a working crypto worker, an
+    // open database and a restored MLS session to rebuild them identically.
+    const stack = this.stack;
+    if (stack) {
+      this.starting = true;
+      try {
+        await stack.session.register();
+        await stack.session.ensure();
+        this.error = '';
+        this.reason = '';
+        // Whatever happened while this device could not ask.
+        await stack.sync().catch(() => {});
+        await this.refreshRooms();
+        await this.refreshSpaces();
+      } catch (err) {
+        await this.#failed(err);
+      } finally {
+        this.starting = false;
+      }
+      return;
+    }
+
+    if (!this.#session) return;
     await this.start(this.#session);
   }
 
@@ -279,7 +330,22 @@ class Live {
         return [];
       });
 
-    const infos = await orNone('your spaces', dir.spaces());
+    const infos = await dir.spaces().catch((err) => {
+      console.error('revel: could not load your spaces', err);
+      return null;
+    });
+    // Same reasoning as the room list (`Directory.refresh`): the spaces a
+    // person is in is the frame everything else hangs off, and losing it to an
+    // unreachable Host hides conversations that are entirely on this device.
+    if (!infos) {
+      const cached = await stack.store.get<LiveSpace[]>(SPACES_CACHE).catch(() => null);
+      if (cached?.length) {
+        this.spaces = cached;
+        for (const space of cached) for (const room of space.rooms) this.#subscribe(room.id);
+        this.version++;
+      }
+      return;
+    }
     const loaded = await Promise.all(
       infos.map(async (info): Promise<LiveSpace> => {
         const [rooms, members, roles] = await Promise.all([
@@ -296,6 +362,7 @@ class Live {
       }),
     );
     this.spaces = loaded;
+    void stack.store.put(SPACES_CACHE, loaded).catch(() => {});
     this.version++;
   }
 
