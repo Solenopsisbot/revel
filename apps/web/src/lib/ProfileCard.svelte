@@ -11,9 +11,11 @@
  * - **An agent's card leads with what it can read**, not with its badge. The
  *   badge is flavour its owner picked; "can read this room" is the security
  *   statement and is never customisable.
- * - **Faces on your own account** say so, but only to you. Whether your
- *   faces are publicly linked is off by default, so this line is drawn from
- *   your own account rather than from anything the other person can see.
+ * - **Faces on your own account** say so. Drawn from your own book rather than
+ *   from the roster, because it is a fact about you — but it is not a secret
+ *   the way this once claimed: anyone in the room can attribute both faces to
+ *   your account, so the line says something they could work out, not
+ *   something only you know.
  * - **Nothing here is fetched.** Everything on the card is already on this
  *   device — including somebody else's note, which arrived on the room's
  *   roster (`room.faces`) rather than being asked for. That is why the card
@@ -117,7 +119,10 @@ const STATUS: Record<string, string> = {
         <Icon name="user" size={15} />
         <div>
           <b>Another of your faces</b>
-          <span>Only you see this line. Your faces aren't linked publicly.</span>
+          <span>
+            Anyone here who has seen both of them speak can tell they're both
+            yours — a message is attributed to your account, not to the face.
+          </span>
         </div>
       </div>
     {/if}

@@ -167,47 +167,53 @@ function add() {
   </section>
 {/if}
 
+<!--
+  A statement, not a switch.
+
+  There was a "link my faces publicly" checkbox here, off by default, and it
+  could not do what its name said. Being in an MLS group means holding every
+  member's leaf credential — a device certificate carrying their account public
+  key — and `RoomState.faces` records the announcing account against every
+  face. `GET /idp/accounts/key/<accountPub>` then turns that key into a handle
+  with no authentication. Anyone in the room can follow those three steps, and
+  `docs/26` treats custom clients as a supported thing to write.
+
+  So the switch hid the connection from the one person running a client that
+  honoured it. What faces genuinely separate is *audiences*, and that survives
+  intact, because an account key is only ever visible to people in rooms with
+  you. Saying which of the two you get is worth more than a control that
+  implies the other one.
+-->
 <section>
-  <label class="row">
-    <input
-      type="checkbox"
-      checked={core.facesLinked}
-      onchange={(e) => core.setFacesLinked(e.currentTarget.checked)}
-    />
-    <span>
-      <b>Link my faces publicly</b>
-      <span class="sub">
-        With this off, your faces appear as unrelated people and nothing in the
-        app connects them. Because faces live inside the encryption, the server
-        never learns the connection either. Some systems are out; some very
-        much aren't.
-      </span>
-      {#if !core.demo}
-        <!--
-          Both limits, next to the switch rather than in a doc somebody has to
-          go and find. The first is what turning it off cannot do; the second
-          is what leaving it off was never protecting against. `docs/11` states
-          both, and a control that overstates itself is worse than one that is
-          honest about being partial.
-        -->
-        <span class="sub">
-          Turning it on adds your address to your faces from then on. Turning it
-          back off stops adding it — it can't take back what rooms already have,
-          because those messages can't be rewritten.
-        </span>
-        <span class="sub">
-          It also can't hide two of your faces from someone who has seen both
-          post in one room: who sent a message is attributed to the account, not
-          the face. What it protects is faces used in different rooms, and faces
-          that have never spoken.
-        </span>
-      {/if}
-    </span>
-  </label>
+  <h3>What a face does and doesn't hide</h3>
+  <p class="note">
+    <b>In one room, your faces are not separate people.</b> Anyone in a room
+    where two of your faces have spoken can tell they're both yours — who sent a
+    message is attributed to your account, and the room's own roster records
+    which account each face belongs to. A client that chooses to show you that
+    is not breaking anything.
+  </p>
+  <p class="note">
+    <b>Across rooms, they are.</b> Your account is only visible to people in
+    rooms with you, so a face you use somewhere they aren't tells them nothing —
+    and the server never learns any of it, because faces live inside the
+    encryption.
+  </p>
+  <p class="note">
+    If you need two identities that genuinely cannot be connected, that's two
+    accounts, not two faces. Faces are how you appear; accounts are what the
+    cryptography actually separates.
+  </p>
 </section>
 
 <style>
   h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }
+  h3 { font-size: var(--text-base); font-weight: 700; margin: 0 0 10px; }
+  .note {
+    margin: 0 0 10px; font-size: var(--text-sm); line-height: 1.6;
+    color: var(--text-dim); max-width: 62ch;
+  }
+  .note b { color: var(--text); font-weight: 600; }
   .lede { color: var(--text-mute); margin: 0 0 28px; font-size: var(--text-sm); max-width: 56ch; }
   section { margin-bottom: 30px; }
 
@@ -273,7 +279,4 @@ function add() {
   }
   .seg button.sel { background: var(--brand); color: #fff; }
 
-  .row { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; max-width: 60ch; }
-  .row input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--face-mint); cursor: pointer; flex: none; }
-  .row b { display: block; font-weight: 600; margin-bottom: 3px; }
 </style>

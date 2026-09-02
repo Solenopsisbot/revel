@@ -725,42 +725,30 @@ class Core {
     return handle.includes('@') ? handle : `${handle}@${session.provider}`;
   }
 
-  /** `docs/11`'s linking control. The fixture bool in the demo, the book live. */
-  get facesLinked(): boolean {
-    return this.demo ? this.account.facesLinkedPublicly : myFaces.linked;
-  }
-
-  setFacesLinked(on: boolean): void {
-    if (this.demo) {
-      this.account.facesLinkedPublicly = on;
-      return;
-    }
-    void myFaces.setLinked(on);
-  }
-
   /**
    * The address to show on a face's profile card, or empty.
    *
-   * **Conditional, because an address on a face card is a linkage.**
-   * `docs/11` §"Linking faces" makes that off by default in as many words: with
-   * it off, "each face appears as an independent person… no shared profile".
-   * Two faces of one system both showing `rae@revel.chat` is precisely the
-   * connection that control exists to withhold.
+   * **Unconditional now, and the change is an admission rather than a feature.**
    *
-   * So it appears in the two places where it discloses nothing new:
+   * This used to be gated behind "link my faces publicly", off by default, on
+   * the stated ground that an address on a face card is a linkage the sender
+   * gets to withhold. They never could. Being in an MLS group means holding
+   * every member's leaf credential, which is a device certificate carrying
+   * their **account public key**; `RoomState.faces` records the announcing
+   * account against every face; and `GET /idp/accounts/key/<accountPub>` turns
+   * an account key into a handle with no authentication at all. Three steps, no
+   * privileges beyond being in the room, and `docs/26` says custom clients are
+   * a supported thing to write.
    *
-   *   * **Your own faces.** It is your address and you are the one person
-   *     entitled to it without qualification.
-   *   * **A 1:1 DM.** The room is two accounts by construction and you are one
-   *     of them, so the other is already known — you typed the handle, or they
-   *     typed yours. Showing it back is not a new fact.
+   * So the control withheld the fact from exactly one person: whoever was using
+   * the client that respected it. A setting that protects nobody but implies it
+   * protects you is worse than no setting, which is the whole argument this
+   * project makes everywhere else.
    *
-   * Anywhere with more than two accounts in it — a group DM, a space — it stays
-   * hidden, and stays hidden until "link my faces publicly" exists to turn it
-   * on. `docs/11` is honest that this protects nothing against a determined
-   * member of a room you have used two faces in, because per-account
-   * attribution is already in every message they hold. It is still the stated
-   * default, and a default is not less real for having a known limit.
+   * What faces *do* still separate is audiences, and that part is real: an
+   * account key is only visible to people in rooms with you, so a face used in
+   * a room somebody is not in tells them nothing. `docs/11` now says which of
+   * the two it is.
    */
   addressFor(faceId: string): string {
     if (this.demo || !live.running) return '';
@@ -768,11 +756,25 @@ class Core {
     const mine = this.myFaces.some((f) => f.id === faceId);
     if (mine) return this.addressOf(this.myAccountId);
 
-    // Announced by them, because they turned linking on. The one case where
-    // somebody else's address is theirs to have given rather than ours to
-    // infer — so it needs no other condition.
+    /*
+     * From the roster's account, unconditionally.
+     *
+     * This used to be gated on the sender having *announced* their address, on
+     * the theory that it was theirs to give. It was never theirs to withhold.
+     * The roster is `Map<faceId, FaceCard & { account }>` — every face in a
+     * room is recorded against the account that announced it — and
+     * `GET /idp/accounts/key/<accountPub>` turns that account into a handle
+     * without authentication. Anyone in the room can do both, and a custom
+     * client is an explicitly supported thing to write.
+     *
+     * So hiding it here hid it from the one person who had already decided to
+     * be honest. The card may still carry an `address` from an older client;
+     * it is preferred only because it is the sender's own spelling of the same
+     * fact, not because it grants anything.
+     */
     const card = live.running ? live.room(this.currentRoomId)?.faces.get(faceId) : undefined;
     if (card?.address) return card.address;
+    if (card?.account) return this.addressOf(card.account);
 
     // The other account in a 1:1 DM. `kind === 'dm'` is the derived-id room —
     // exactly two accounts — and a group DM is `kind === 'group'`, which this

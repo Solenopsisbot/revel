@@ -201,14 +201,22 @@ describe('storage', () => {
   });
 });
 
-describe('linking faces publicly', () => {
-  // `docs/11` §"Linking faces — an explicit, off-by-default privacy control".
-  // The mechanism is that the disclosed thing is *absent* when the control is
-  // off, rather than a flag on the wire asking readers not to look — so these
-  // are assertions about what a card does and does not carry.
+describe('the address a face card may carry', () => {
+  // These used to be about "link my faces publicly", an off-by-default privacy
+  // control. It was removed (`docs/11`): every member of a room holds every
+  // other member's leaf credential, which carries their account public key; the
+  // roster records the announcing account against every face; and
+  // `GET /idp/accounts/key/<accountPub>` resolves that to a handle with no
+  // authentication. The switch withheld the connection only from a client that
+  // had chosen to honour it.
+  //
+  // The *shape* still matters and is what these now pin. `FaceCard.address`
+  // stays in the schema — encrypted history cannot be rewritten (`docs/29` §1)
+  // and older clients wrote it — so a card must still be able to carry one and
+  // must still not grow one by accident.
   const june: Face = { id: '1', name: 'June', colour: 'mint' };
 
-  it('carries no address by default, because off is the default', () => {
+  it('carries none unless a caller asks for one', () => {
     expect(cardOf(june)).toEqual({ id: '1', name: 'June', colour: 'mint' });
     expect('address' in cardOf(june)).toBe(false);
   });
@@ -217,9 +225,10 @@ describe('linking faces publicly', () => {
     expect(cardOf(june, 'viola@revel.chat')).toMatchObject({ address: 'viola@revel.chat' });
   });
 
-  it('fails towards silence when a caller forgets', () => {
-    // A caller that omits the argument discloses nothing. The opposite default
-    // — read it from somewhere and omit on request — makes forgetting a leak.
+  it('never grows one from an empty or missing argument', () => {
+    // Not a disclosure question any more, a shape one: `address: ''` on the
+    // wire is a field that parses and means nothing, and every reader would
+    // have to special-case it.
     expect(cardOf(june, undefined)).not.toHaveProperty('address');
     expect(cardOf(june, '')).not.toHaveProperty('address');
   });
@@ -231,7 +240,10 @@ describe('linking faces publicly', () => {
     expect(refOf({ ...june, note: 'a note' })).not.toHaveProperty('note');
   });
 
-  it('is off for a book that has never been asked', () => {
+  it('leaves the retired `linked` field alone rather than migrating it away', () => {
+    // The book is a sealed, versioned blob. Dropping a field from it would mean
+    // a migration to delete something that costs nothing to leave, so the field
+    // simply stops being read.
     expect(book().linked).toBeUndefined();
   });
 });

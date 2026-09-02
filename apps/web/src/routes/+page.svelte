@@ -136,8 +136,9 @@ const costs: [string, string][] = [
           second face.
         </p>
         <p class="micro">
-          Whether your faces are publicly linked is off by default. Some
-          systems are out; some very much aren't.
+          Faces separate you across rooms, not inside one: anyone in a room where
+          two of yours have spoken can tell they're both yours. For identities
+          that genuinely can't be connected, use two accounts.
         </p>
       </div>
       <div class="feature">

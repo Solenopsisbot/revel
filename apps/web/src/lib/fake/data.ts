@@ -1089,8 +1089,6 @@ export interface Account {
   /** This browser can do WebAuthn. */
   passkeySupported: boolean;
   passkeyEnrolled: boolean;
-  /** Faces linked publicly to each other (`docs/11`). Off by default. */
-  facesLinkedPublicly: boolean;
 }
 
 export const account: Account = {
@@ -1100,7 +1098,6 @@ export const account: Account = {
   recoveryCodeConfirmed: false,
   passkeySupported: true,
   passkeyEnrolled: false,
-  facesLinkedPublicly: false,
 };
 
 /**

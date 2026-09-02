@@ -42,24 +42,38 @@ We are not going to teach singlets plural terminology as a precondition for usin
 a chat app, and we are not going to make plural people use flattened corporate
 words for themselves. Neutral chrome, personal content.
 
-### Linking faces — an explicit, off-by-default privacy control
+### Linking faces — a control that was removed, and why
 
-Some systems are openly plural; some very much are not. So:
+There was a **"link my faces publicly"** switch here, off by default, described
+as an explicit privacy control. It is gone. The analysis below is why, and it
+was already in this document before the switch was deleted — what changed is
+that the conclusion now follows from it.
 
-**"Link my faces publicly"** — off by default.
+The short version: within a room, a face is presentation and nothing more.
+Across rooms, faces genuinely separate you. The switch claimed the first and
+only delivered the second, which the second did on its own anyway.
 
-- **Off:** each face appears as an independent person. Nothing in the UI connects
-  them. No badge, no shared profile, no "also known as". This is the safe default
-  and it must stay the default.
-- **On:** a face's profile card shows the account it belongs to and its other
-  faces, and messages can carry a relationship badge whose **label the account
-  owner writes themselves** — "same system", "same account", "alt", or nothing.
+Concretely, three steps, available to any member of the room with no privileges
+beyond membership:
 
-Because faces live inside the ciphertext (`03-identity-and-crypto.md` §7), this
-is genuinely a privacy control and not a display preference: with linking off,
-the server never learns the connection either, since it never sees faces at all.
+1. Being in an MLS group means holding **every member's leaf credential**, which
+   is a device certificate carrying their account public key. You cannot be in
+   the group without it.
+2. `RoomState.faces` records the **announcing account against every face**.
+3. `GET /idp/accounts/key/<accountPub>` resolves an account key to a handle,
+   **unauthenticated**.
 
-#### What linking-off does not protect against
+`26-platform-and-stack.md` treats custom clients as a supported thing to write,
+so "our client does not show it" is not a property. The switch withheld the
+connection from exactly one person: whoever was running a client that honoured
+it. A setting that protects nobody while implying it protects you is worse than
+no setting — which is the argument this project makes about everything else.
+
+What replaces it is a sentence in the Faces screen saying which of the two
+properties you actually get, and a pointer to the feature that delivers the
+other one.
+
+#### The analysis this rests on
 
 The sentence above is true and it is not the whole picture, so the limit belongs
 next to the promise rather than in a results doc somebody has to go and find.
@@ -84,11 +98,19 @@ No UI change fixes either. Per-account attribution is what makes a message
 attributable at all, and a room where you cannot tell who is talking is not a
 room.
 
-So the honest statement is much narrower than it reads. Linking off protects
-against **the server**, and against a client that carelessly renders two faces
-as one person — a real failure mode, and one this codebase committed and then
-fixed (`31` §23). Against a member of a room you have used two faces in, it
-protects against nothing at all.
+So the honest statement is much narrower than it reads. Against a member of a
+room you have used two faces in, linking off protects against nothing at all.
+
+It does not protect against the server either, though it long claimed to. The
+server never learns the connection because **faces live inside the ciphertext**
+(`03-identity-and-crypto.md` §7) — that is true with or without a switch, and
+the switch was never what delivered it. What the switch actually governed was
+one optional field, `FaceCard.address`, and an address is derivable from the
+account key that every member of the room already holds.
+
+That leaves a client that carelessly renders two faces as one person — a real
+failure mode, and one this codebase committed and then fixed (`31` §23). A bug
+to not have, not a control to ship.
 
 For anyone who needs the stronger property, the answer is already in the design
 and it is a different feature: `17-identity-ux.md`'s **multiple accounts**,
@@ -134,8 +156,7 @@ Clicking any face opens one card, and it's the same card everywhere:
 │            she/her · mint                │
 │            "does the actual work"        │
 │                                          │
-│  ── if faces are linked publicly ──      │
-│  Part of  Viola's account                │  ← owner-written label
+│  ── not built ──                         │
 │  Other faces here:  [V] Viola  [A] Ash   │  ← only faces present in THIS room
 │                                          │
 │  ── always ──                            │
@@ -144,6 +165,13 @@ Clicking any face opens one card, and it's the same card everywhere:
 │  [ Message ]  [ Verify encryption ]      │
 └──────────────────────────────────────────┘
 ```
+
+The "other faces here" block was gated on the linking switch, and both the
+switch and the owner-written "part of X's account" label went with it. What is
+left is a design decision nobody has taken: the information is no longer secret
+— any member can derive it, see above — so the question is only whether *this*
+client is the one to surface it, and for whom. Today the card says "another of
+your faces" about your own faces, to you, and says nothing about anybody else's.
 
 Design notes that matter:
 

@@ -98,30 +98,21 @@ class MyFaces {
     await this.#commit(removeFace(this.book, id));
   }
 
-  /**
-   * `docs/11`'s "link my faces publicly". Off unless it has been turned on.
+  /*
+   * `linked` and `setLinked` are gone.
    *
-   * Reading it is what decides whether `cardOf` carries an address, and that
-   * is the entire mechanism — there is no flag on the wire, only the presence
-   * or absence of the thing it would have guarded.
-   */
-  get linked(): boolean {
-    return this.book.linked === true;
-  }
-
-  /**
-   * Turn linking on or off.
+   * They backed "link my faces publicly", which could not do what it said.
+   * Being in an MLS group means holding every member's leaf credential — a
+   * device certificate carrying their account public key — the roster records
+   * the announcing account against every face, and
+   * `GET /idp/accounts/key/<accountPub>` resolves that to a handle
+   * unauthenticated. Any member could follow all three steps; the switch only
+   * ever withheld the fact from a client that had chosen to respect it.
    *
-   * **Turning it off does not un-say anything.** Every roster event already
-   * sent carries the address, and encrypted history cannot be rewritten
-   * (`docs/29` §1) — so this changes what is announced from here on and
-   * nothing about what a room already holds. The setting's own copy has to say
-   * that, because a switch that looks like it retracts something is worse than
-   * no switch.
+   * `FaceBook.linked` stays in the stored shape and is simply ignored. It is a
+   * sealed, versioned blob and dropping a field from it would mean a migration
+   * to delete something that costs nothing to leave.
    */
-  async setLinked(linked: boolean): Promise<void> {
-    await this.#commit({ ...this.book, linked });
-  }
 
   /** Choose a face for one room. Per room — see `identity/faces.ts` for why. */
   async speak(roomId: string, faceId: string): Promise<void> {

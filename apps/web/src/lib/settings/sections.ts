@@ -37,7 +37,7 @@ export const SECTIONS: Section[] = [
   {
     id: 'faces',
     name: 'Faces',
-    blurb: 'The ways you appear, and who can link them',
+    blurb: 'The names, avatars and pronouns you appear under',
     built: true,
     wired: true,
   },
