@@ -97,6 +97,26 @@ export interface SignUpResult extends Enrolled {
   recoveryCode: string;
 }
 
+/**
+ * The account id the key we just unwrapped actually is.
+ *
+ * **Derived, never taken from the response.** `accountPub` and `handle` come
+ * back from the IdP, and every flow here used to pass them straight through
+ * without checking they described the key in hand. A mismatch is not a
+ * cosmetic problem: `accountPub` becomes this device's identity everywhere —
+ * the `self` notification rule, who the reducer thinks authored what, and the
+ * challenge an invite redemption is signed over — so a device that believes it
+ * is somebody else is a device acting as them.
+ *
+ * It is also the cheapest check available: the key is right here, and deriving
+ * a public key from it is one call.
+ */
+function assertOwns(envelope: EnvelopeApi, accountKey: Uint8Array, claimed: string): void {
+  if (b64url(envelope.accountPublic(accountKey)) !== claimed) {
+    throw new EnrolError('account_mismatch');
+  }
+}
+
 export interface SignUpInput {
   handle: string;
   password: string;
@@ -221,6 +241,7 @@ export async function signIn(deps: EnrolDeps, input: SignInInput): Promise<Enrol
   // blob, or the wrong one — either way it throws rather than returning a key
   // that is not the account's.
   const accountKey = envelope.unwrap(unb64(wrap.blob), kek);
+  assertOwns(envelope, accountKey, body.accountPub);
 
   return {
     accountPub: body.accountPub,
@@ -266,6 +287,7 @@ export async function recover(deps: EnrolDeps, input: RecoverInput): Promise<Enr
   if (!wrap) throw new EnrolError('no_recovery_wrap');
 
   const accountKey = envelope.unwrap(unb64(wrap.blob), rk);
+  assertOwns(envelope, accountKey, body.accountPub);
   return {
     accountPub: body.accountPub,
     handle: body.handle,
@@ -372,7 +394,8 @@ function expect<T>(res: { status: number; body: unknown }, fallback: string): T 
 }
 
 /** OPAQUE speaks base64url; the envelope speaks bytes. */
-const b64url = (bytes: Uint8Array): string =>
+/** Base64url, unpadded — how an account id is spelled. Shared with `passkey.ts`. */
+export const b64url = (bytes: Uint8Array): string =>
   btoa(String.fromCharCode(...bytes))
     .replaceAll('+', '-')
     .replaceAll('/', '_')

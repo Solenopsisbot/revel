@@ -43,11 +43,13 @@ use mls_rs::{
     },
     crypto::{SignaturePublicKey, SignatureSecretKey},
     extension::built_in::ExternalSendersExt,
-    group::{ExportedTree, ReceivedMessage},
+    group::{
+        proposal::Proposal, ContentType, ExportedTree, ProposalSender, ReceivedMessage,
+    },
     identity::{basic::BasicCredential, Credential, SigningIdentity},
     mls_rules::{CommitOptions, DefaultMlsRules},
     CipherSuite, CipherSuiteProvider, Client as MlsClient, CryptoProvider, ExtensionList,
-    MlsMessage,
+    MlsMessage, MlsMessageDescription,
 };
 use mls_rs_crypto_rustcrypto::RustCryptoProvider;
 use wasm_bindgen::prelude::*;
@@ -530,6 +532,7 @@ pub struct Received {
     kind: String,
     data: Option<Vec<u8>>,
     sender: Option<u32>,
+    epoch: Option<u64>,
 }
 
 #[wasm_bindgen]
@@ -550,6 +553,18 @@ impl Received {
     #[wasm_bindgen(getter)]
     pub fn sender(&self) -> Option<u32> {
         self.sender
+    }
+
+    /// The epoch the message was sealed at, for an application message.
+    ///
+    /// A leaf index only means something *within an epoch*: MLS fills a freed
+    /// leaf with the next member added, so resolving the sender of an old
+    /// message against the current roster can name whoever inherited the index
+    /// rather than whoever wrote it. The layer above needs the epoch to look
+    /// the sender up in the right roster.
+    #[wasm_bindgen(getter)]
+    pub fn epoch(&self) -> Option<u64> {
+        self.epoch
     }
 }
 
@@ -751,15 +766,74 @@ impl Group {
     /// that a stored epoch secret is enough to re-derive anything. That is true
     /// for *reading* and false for *writing*, and the test named
     /// `a_group_survives_a_reload` is what noticed.
-    pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<Vec<u8>, JsError> {
+    /// `aad` is authenticated but not encrypted, and binds the ciphertext to
+    /// where it was sent.
+    ///
+    /// The layer above passes the room id. Without it, a message was sealed to
+    /// a *group* and nothing more — and a group serves every room in a space
+    /// that shares an audience (`docs/03` §4), so a Host could take a message
+    /// posted in one room and serve it in another. It decrypted, it verified,
+    /// it was attributed to whoever really wrote it, and it appeared somewhere
+    /// they never sent it.
+    pub fn encrypt(&mut self, plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, JsError> {
         let sealed = self
             .inner
-            .encrypt_application_message(plaintext, Default::default())
+            .encrypt_application_message(plaintext, aad.to_vec())
             .map_err(js)?
             .to_bytes()
             .map_err(js)?;
         self.save()?;
         Ok(sealed)
+    }
+
+    /// Open an application message, and refuse anything that is not one.
+    ///
+    /// Two checks the general [`Group::process`] cannot make, both of which
+    /// matter because the bytes arrive on the *event* channel, where a Host
+    /// chooses what to put:
+    ///
+    /// 1. **Content type, before the message is applied.** It is in the clear
+    ///    in both framings, so a commit or a proposal delivered as a room event
+    ///    is refused rather than quietly advancing this group's epoch behind
+    ///    `GroupSync`'s back — which stalled the group permanently, because the
+    ///    same commit then failed to apply when it arrived through the log.
+    /// 2. **The authenticated data**, which is the room the sender addressed.
+    ///    A message moved between two rooms of one group fails here.
+    pub fn decrypt(&mut self, message: &[u8], aad: &[u8]) -> Result<Received, JsError> {
+        let msg = MlsMessage::from_bytes(message).map_err(js)?;
+
+        // Decided before `process_incoming_message` touches anything.
+        let (content_type, epoch) = match msg.description() {
+            MlsMessageDescription::PrivateProtocolMessage {
+                content_type,
+                epoch_id,
+                ..
+            } => (content_type, epoch_id),
+            MlsMessageDescription::PublicProtocolMessage {
+                content_type,
+                epoch_id,
+                ..
+            } => (content_type, epoch_id),
+            _ => return Err(JsError::new("not a protocol message")),
+        };
+        if content_type != ContentType::Application {
+            return Err(JsError::new("handshake message on the event channel"));
+        }
+
+        match self.inner.process_incoming_message(msg).map_err(js)? {
+            ReceivedMessage::ApplicationMessage(m) => {
+                if m.authenticated_data != aad {
+                    return Err(JsError::new("message was not sealed for this room"));
+                }
+                Ok(Received {
+                    kind: "application".into(),
+                    sender: Some(m.sender_index),
+                    data: Some(m.data().to_vec()),
+                    epoch: Some(epoch),
+                })
+            }
+            _ => Err(JsError::new("not an application message")),
+        }
     }
 
     /// Process anything that arrived for this group: an application message, a
@@ -778,7 +852,45 @@ impl Group {
         // deduplicates on them. That is a much smaller thing to lose than the
         // cost of re-serialising a whole group's state on every message that
         // arrives, and unlike the sending side there is no key reuse in it.
-        if matches!(received, ReceivedMessage::Commit(_)) {
+        // A **proposal** is persisted too, and that is not symmetry for its own
+        // sake. mls-rs keeps a received proposal only inside the group
+        // snapshot, so a reload between a proposal arriving and the commit that
+        // references it left the commit unapplicable — `ProposalNotFound` — and
+        // the layer above deliberately does not advance its cursor past a
+        // record it could not apply. The device then skipped every later
+        // handshake as out of order and sat one epoch behind the room forever,
+        // with `leave()` and rejoin the only way out.
+        // **An external sender may propose a Remove, and nothing else.**
+        //
+        // `docs/03` §5 configures the Host as an MLS external sender for one
+        // reason: so a moderator's "remove this device" becomes an actual
+        // Remove rather than a request. Nothing in the design gives it a reason
+        // to propose an *Add* — and until this check existed, one could:
+        // mint an account, propose adding its device, nudge whichever member
+        // is the designated committer, and be committed in by a client that
+        // commits whatever is pending. A leaf in the group, reading everything
+        // from that epoch on, visible only to somebody who opened the member
+        // list.
+        //
+        // Refused *and* cleared, because refusing alone is not refusing: a
+        // by-reference proposal is cached in the group the moment it is
+        // processed, and the next commit anybody builds sweeps up the cache.
+        if let ReceivedMessage::Proposal(p) = &received {
+            if matches!(p.sender, ProposalSender::External(_))
+                && !matches!(p.proposal, Proposal::Remove(_))
+            {
+                self.inner.clear_proposal_cache();
+                self.save()?;
+                return Err(JsError::new(
+                    "an external sender may only propose a removal",
+                ));
+            }
+        }
+
+        if matches!(
+            received,
+            ReceivedMessage::Commit(_) | ReceivedMessage::Proposal(_)
+        ) {
             self.save()?;
         }
 
@@ -787,21 +899,25 @@ impl Group {
                 kind: "application".into(),
                 sender: Some(m.sender_index),
                 data: Some(m.data().to_vec()),
+                epoch: None,
             },
             ReceivedMessage::Commit(c) => Received {
                 kind: "commit".into(),
                 sender: Some(c.committer),
                 data: None,
+                epoch: None,
             },
             ReceivedMessage::Proposal(_) => Received {
                 kind: "proposal".into(),
                 sender: None,
                 data: None,
+                epoch: None,
             },
             _ => Received {
                 kind: "other".into(),
                 sender: None,
                 data: None,
+                epoch: None,
             },
         })
     }

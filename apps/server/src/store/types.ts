@@ -377,7 +377,22 @@ export interface Store {
    * dropped response cannot duplicate (`docs/04` §2).
    */
   appendEvent(e: Event): Promise<{ event: Event; deduped: boolean }>;
-  listEvents(roomId: string, opts?: { before?: string; limit?: number }): Promise<Event[]>;
+  /**
+   * A page of a room's events.
+   *
+   * `before` pages **backwards** (history, newest-first window) and `after`
+   * pages **forwards** (catch-up, oldest-first window). Both return ascending
+   * by id; they differ in which end of the room the window is taken from.
+   *
+   * `after` is what a client that has been away uses. Without it, catching up
+   * could only ask for the newest page over and over, so a device that missed
+   * more than one page lost everything between the two — permanently, because
+   * backfill only pages older than the oldest event it already holds.
+   */
+  listEvents(
+    roomId: string,
+    opts?: { before?: string; after?: string; limit?: number },
+  ): Promise<Event[]>;
   /** Delete the bytes, keep the tombstone so clients can drop their copies. */
   purgeEvent(roomId: string, eventId: string): Promise<boolean>;
 
@@ -526,6 +541,20 @@ export interface Store {
 
   /** Replace the OPAQUE record. What a password change actually is, server-side. */
   putRegistrationRecord(accountPub: string, record: string): Promise<void>;
+
+  /**
+   * Move an enrolment to a new handle, if it is free.
+   *
+   * A handle lives in **two** tables — `accounts` for the directory and
+   * `enrolments` for the login — and they have to agree. Renaming only the
+   * first is what `POST /idp/accounts/me/handle` used to do, which left the
+   * person logging in under a name the directory no longer knew and their old
+   * name reclaimable in one table while still answering in the other.
+   *
+   * `true` when there was nothing to move, which is the ordinary case for an
+   * account that claimed a handle without ever enrolling here.
+   */
+  renameEnrolment(accountPub: string, handle: string): Promise<boolean>;
 
   /**
    * A login exchange in flight.

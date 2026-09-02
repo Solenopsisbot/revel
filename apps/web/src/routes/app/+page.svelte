@@ -242,7 +242,13 @@ let ready = $state(demo);
 let routed = $state(false);
 afterNavigate(() => (routed = true));
 
-if (demo) session.demo = true;
+// **Set *and* cleared.** `session.demo` used to be latched on and never turned
+// off, and the store outlives an in-tab navigation — so opening `/app?demo=1`,
+// going to `/signin`, signing in and coming back left a real account looking at
+// fixture spaces and somebody else's address. A signed-in account is never
+// shown demo data; that means the flag has to be a function of this page load
+// rather than a thing that happened once.
+session.demo = demo;
 
 if (!demo) {
   void session.restore().then((restored) => {

@@ -17,10 +17,10 @@
  *   pnpm test:reload
  */
 import { chromium } from 'playwright';
+import { password } from './_password.mjs';
 
 const APP = process.env.REVEL_E2E_APP ?? 'http://localhost:5173';
 const stamp = Date.now().toString(36);
-const password = 'correct horse battery staple';
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let failures = 0;

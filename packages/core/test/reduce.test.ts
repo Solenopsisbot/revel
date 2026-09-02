@@ -221,7 +221,7 @@ describe('redactions', () => {
 
   it('honours one from a moderator, and says it was a moderator', () => {
     const s = reduce(room(), ev('4', 'b', { type: 'm.redact', target: '1' }), {
-      mayModerate: (account) => account === 'b',
+      may: (account) => account === 'b',
     });
     expect(s.byId.get('1')?.redacted).toMatchObject({ by: 'moderator' });
   });
@@ -300,37 +300,46 @@ describe('receipts', () => {
   });
 });
 
+/**
+ * Somebody who may moderate.
+ *
+ * Pinning, renaming a room and naming a space's roles are all inside the
+ * ciphertext, so the server cannot enforce them and the reducer has to — see
+ * `ReduceOptions.may`. Unwired means nobody may, so these tests say who does.
+ */
+const MOD = { may: () => true };
+
 describe('pins', () => {
   it('pins, newest first, and marks the message', () => {
-    let s = reduce(room(), ev('4', 'a', { type: 'm.pin', target: '1' }));
-    s = reduce(s, ev('5', 'a', { type: 'm.pin', target: '3' }));
+    let s = reduce(room(), ev('4', 'a', { type: 'm.pin', target: '1' }), MOD);
+    s = reduce(s, ev('5', 'a', { type: 'm.pin', target: '3' }), MOD);
     expect(s.pinned).toEqual(['3', '1']);
     expect(s.byId.get('3')?.pinned).toBe(true);
   });
 
   it('pinning twice does not double up', () => {
-    let s = reduce(room(), ev('4', 'a', { type: 'm.pin', target: '1' }));
-    s = reduce(s, ev('5', 'b', { type: 'm.pin', target: '1' }));
+    let s = reduce(room(), ev('4', 'a', { type: 'm.pin', target: '1' }), MOD);
+    s = reduce(s, ev('5', 'b', { type: 'm.pin', target: '1' }), MOD);
     expect(s.pinned).toEqual(['1']);
   });
 
   it('unpins', () => {
-    let s = reduce(room(), ev('4', 'a', { type: 'm.pin', target: '1' }));
-    s = reduce(s, ev('5', 'a', { type: 'm.pin', target: '1', unpin: true }));
+    let s = reduce(room(), ev('4', 'a', { type: 'm.pin', target: '1' }), MOD);
+    s = reduce(s, ev('5', 'a', { type: 'm.pin', target: '1', unpin: true }), MOD);
     expect(s.pinned).toEqual([]);
     expect(s.byId.get('1')?.pinned).toBeUndefined();
   });
 
   it('orders the board by when each was pinned, not by when we heard', () => {
     // Two devices that synced differently must show the same noticeboard.
-    let s = reduce(room(), ev('9', 'a', { type: 'm.pin', target: '1' }));
-    s = reduce(s, ev('4', 'a', { type: 'm.pin', target: '2' }));
+    let s = reduce(room(), ev('9', 'a', { type: 'm.pin', target: '1' }), MOD);
+    s = reduce(s, ev('4', 'a', { type: 'm.pin', target: '2' }), MOD);
     expect(s.pinned).toEqual(['1', '2']);
   });
 
   it('takes a redacted message off the board', () => {
-    let s = reduce(room(), ev('4', 'a', { type: 'm.pin', target: '1' }));
-    s = reduce(s, ev('5', 'a', { type: 'm.redact', target: '1' }));
+    let s = reduce(room(), ev('4', 'a', { type: 'm.pin', target: '1' }), MOD);
+    s = reduce(s, ev('5', 'a', { type: 'm.redact', target: '1' }), MOD);
     expect(s.pinned).toEqual([]);
   });
 });
@@ -370,14 +379,113 @@ describe('deferred events', () => {
     }
     let waiting = 0;
     for (const list of s.deferred.values()) waiting += list.length;
-    expect(waiting).toBe(10_000);
+    expect(waiting).toBeLessThanOrEqual(10_000);
+  });
+
+  it('still applies a real deferred event after the queue has been flooded', () => {
+    // The regression this guards. The cap used to *refuse* new entries once it
+    // was full, and the queue is persisted in the snapshot — so one member
+    // sending ten thousand reactions to ids that never arrive permanently
+    // silenced every legitimate deferred edit, reaction and pin in that room.
+    let s = emptyRoom('100');
+    for (let i = 0; i < 10_050; i++) {
+      s = reduce(s, ev(String(1000 + i), 'a', { type: 'm.reaction', target: 'never', key: 'x' }));
+    }
+
+    // A reaction that arrives before the message it is about, which is
+    // ordinary out-of-order delivery rather than an attack.
+    s = reduce(s, ev('90000', 'b', { type: 'm.reaction', target: '90001', key: '👍' }));
+    s = reduce(s, ev('90001', 'a', { type: 'm.message', body: 'the real one' }));
+
+    expect(s.byId.get('90001')?.reactions?.[0]).toMatchObject({ key: '👍', accounts: ['b'] });
+  });
+});
+
+describe('acts the server cannot see, and every reader has to police', () => {
+  // `docs/04` §4's client half. All four of these live inside the ciphertext,
+  // so the Host can neither enforce nor even observe them — and all four used
+  // to be honoured from whoever sent them.
+  const NOBODY = { may: () => false };
+
+  it('ignores a pin from somebody who may not moderate', () => {
+    const s = reduce(room(), ev('4', 'a', { type: 'm.pin', target: '1' }), NOBODY);
+    expect(s.pinned).toEqual([]);
+    expect(s.byId.get('1')?.pinned).toBeUndefined();
+  });
+
+  it('ignores a room rename from an ordinary member', () => {
+    const s = reduce(room(), ev('4', 'a', { type: 'room.name', name: 'hijacked' }), NOBODY);
+    expect(s.name).toBeUndefined();
+  });
+
+  it('ignores a space rename from an ordinary member', () => {
+    // The loudest of them: a space's name is the first thing every member sees,
+    // and it is published to the `everyone` audience — so literally any member
+    // could rename the community for everybody.
+    const s = reduce(
+      room(),
+      ev('4', 'a', { type: 'space.name', space: '77', name: 'hijacked' }),
+      NOBODY,
+    );
+    expect(s.spaceName).toBeUndefined();
+  });
+
+  it('ignores role names from somebody who may not manage roles', () => {
+    // The Host holds a role's bits and never its name, so nothing outside the
+    // ciphertext could stop a member relabelling `@everyone` as "Admin" — which
+    // is not a permission, and is exactly what a member list reader takes for
+    // one.
+    const s = reduce(
+      room(),
+      ev('4', 'a', { type: 'space.roles', space: '77', roles: [{ id: '9', name: 'Admin' }] }),
+      NOBODY,
+    );
+    expect(s.spaceRoles.size).toBe(0);
+  });
+
+  it("will not let one member overwrite another member's face", () => {
+    // The roster was keyed on `face.id` — a value the sender picks — so reusing
+    // somebody else's id overwrote their card: their name, their pronouns,
+    // their avatar, and the `address` that `docs/11` makes an opt-in
+    // disclosure.
+    let s = reduce(
+      room(),
+      ev('4', 'a', { type: 'room.faces', faces: [{ id: '4242', name: 'June' }] }),
+      MOD,
+    );
+    s = reduce(
+      s,
+      ev('5', 'b', {
+        type: 'room.faces',
+        faces: [{ id: '4242', name: 'June', address: 'june@revel.chat' }],
+      }),
+      MOD,
+    );
+
+    expect(s.faces.get('4242')).toMatchObject({ name: 'June', account: 'a' });
+    expect(s.faces.get('4242')?.address).toBeUndefined();
+  });
+
+  it('gives a face id to whoever announced it first in the log, not first to arrive', () => {
+    // Ownership has to be a function of the log. A rule that gave the id to
+    // whoever got here first would make the roster depend on sync order, and
+    // two devices that paged history differently would disagree about who
+    // somebody is.
+    const early = ev('4', 'a', { type: 'room.faces', faces: [{ id: '4242', name: 'June' }] });
+    const late = ev('5', 'b', { type: 'room.faces', faces: [{ id: '4242', name: 'Not June' }] });
+
+    const forwards = reduceAll(room(), [early, late], MOD);
+    const backwards = reduceAll(reduce(room(), late, MOD), [early], MOD);
+
+    expect(forwards.faces.get('4242')).toMatchObject({ name: 'June', account: 'a' });
+    expect(backwards.faces.get('4242')).toMatchObject({ name: 'June', account: 'a' });
   });
 });
 
 describe('room metadata is last-written, not last-applied', () => {
   it('keeps the newest name even when an older one arrives later', () => {
-    let s = reduce(room(), ev('9', 'a', { type: 'room.name', name: 'current' }));
-    s = reduce(s, ev('4', 'a', { type: 'room.name', name: 'ancient' }));
+    let s = reduce(room(), ev('9', 'a', { type: 'room.name', name: 'current' }), MOD);
+    s = reduce(s, ev('4', 'a', { type: 'room.name', name: 'ancient' }), MOD);
     // Paging far enough up must not rename the room to what it was called then.
     expect(s.name).toBe('current');
   });
@@ -441,7 +549,11 @@ describe('threads', () => {
 
 describe('room metadata', () => {
   it('takes the name and topic', () => {
-    const s = reduce(room(), ev('4', 'a', { type: 'room.name', name: 'design', topic: 'radii' }));
+    const s = reduce(
+      room(),
+      ev('4', 'a', { type: 'room.name', name: 'design', topic: 'radii' }),
+      MOD,
+    );
     expect(s.name).toBe('design');
     expect(s.topic).toBe('radii');
   });

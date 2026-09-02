@@ -177,6 +177,16 @@ if (scaledLimits) {
   console.warn(`rate limits: SCALED ${rateScale}x — development only, never a deployment`);
 }
 
+/**
+ * One limiter for the whole process, HTTP and socket alike.
+ *
+ * The socket used to be outside it entirely — `/socket` is answered before the
+ * Hono app is reached, so the middleware never ran — which left an
+ * unauthenticated, connection-establishing endpoint as the one door with no
+ * lock on it.
+ */
+const limiter = new RateLimiter();
+
 const trustProxy = process.env.REVEL_TRUST_PROXY === '1';
 const address = (req: Request): string => {
   if (trustProxy) {
@@ -215,10 +225,42 @@ if (!opaqueServer) {
   console.log('idp: not served (host key has no OPAQUE setup — write a new one to enable)');
 }
 
+/**
+ * A real registration record for an account nobody owns.
+ *
+ * `/idp/login/start` runs the OPAQUE exchange against this when the handle is
+ * unknown, which is what stops the route answering "does this person have an
+ * account here". Generated from a random password that is discarded on the next
+ * line — nothing can ever log in as the decoy, and nothing needs to.
+ *
+ * Fresh per boot on purpose: a real `loginResponse` carries fresh randomness
+ * every time, so a decoy that was stable across restarts would be the tell.
+ */
+const decoyRecord = hostIdentity.opaqueSetup
+  ? await (async () => {
+      const opaque = await import('@serenity-kit/opaque');
+      await opaque.ready;
+      const password = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64');
+      const registration = opaque.client.startRegistration({ password });
+      const { registrationResponse } = opaque.server.createRegistrationResponse({
+        serverSetup: hostIdentity.opaqueSetup as string,
+        userIdentifier: `decoy@${idp}`,
+        registrationRequest: registration.registrationRequest,
+      });
+      const { registrationRecord } = opaque.client.finishRegistration({
+        password,
+        registrationResponse,
+        clientRegistrationState: registration.clientRegistrationState,
+      });
+      return registrationRecord;
+    })()
+  : undefined;
+
 const app = createApp({
   store,
   ...(opaqueServer ? { opaque: opaqueServer } : {}),
   ...(hostIdentity.opaqueSetup ? { decoyKey: hostIdentity.opaqueSetup } : {}),
+  ...(decoyRecord ? { decoyRecord } : {}),
   hub,
   ids: new SnowflakeFactory(shard),
   authenticate,
@@ -226,7 +268,7 @@ const app = createApp({
   idp,
   externalSender: hostIdentity.certificate,
   rateLimit: {
-    limiter: new RateLimiter(),
+    limiter,
     address,
     ...(scaledLimits ? { limits: scaledLimits } : {}),
   },
@@ -276,6 +318,17 @@ export default {
   port,
   async fetch(req: Request, server: { upgrade(req: Request, opts?: unknown): boolean }) {
     if (new URL(req.url).pathname === '/socket') {
+      // Limited like everything else. This is an unauthenticated endpoint that
+      // does public-key-adjacent work and then holds a connection open, so it
+      // belongs in the same class as the other unauthenticated door.
+      const buckets = scaledLimits ?? LIMITS;
+      const verdict = limiter.take(`socket:${address(req)}`, buckets.auth);
+      if (!verdict.ok) {
+        return new Response('rate limited', {
+          status: 429,
+          headers: { 'retry-after': String(verdict.retryAfter) },
+        });
+      }
       // The socket carries its token as a query parameter: browsers cannot set
       // headers on a WebSocket handshake, and a subprotocol would be worse —
       // it ends up in the same places a query string does and is harder to

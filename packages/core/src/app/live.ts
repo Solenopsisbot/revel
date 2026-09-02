@@ -1000,10 +1000,16 @@ class LiveDirectory implements DirectoryCore {
     // they have devices (`docs/03` §5), and taking away three of four is
     // taking away nothing.
     if (group) {
-      const leaves = (await this.#crypto.members(group).catch(() => []))
-        .filter((m) => toAccountId(m.account) === account)
-        .map((m) => m.leaf);
-      if (leaves.length) await this.#groups.remove(group, leaves).catch(() => {});
+      // **Not swallowed.** A failed roster read used to read as "nobody to
+      // remove", and a failed Remove commit as "done" — so the membership row
+      // went, the keys did not, and the person carried on reading a room
+      // everybody believed they had been removed from. Nothing anywhere said
+      // otherwise. The row is already gone by this point, so the honest thing
+      // is to raise: the caller can retry the commit, and a moderator who is
+      // told it failed can go and do something about it.
+      const members = await this.#crypto.members(group);
+      const leaves = members.filter((m) => toAccountId(m.account) === account).map((m) => m.leaf);
+      if (leaves.length) await this.#groups.remove(group, leaves);
     }
     await this.refresh();
   }
@@ -1011,10 +1017,18 @@ class LiveDirectory implements DirectoryCore {
   async leave(roomId: string): Promise<void> {
     const group = this.#known.find((r) => r.id === roomId)?.group;
     await this.#transport.leaveRoom(roomId);
+
     // The membership row and the MLS leaf are different things and only one is
     // the server's. Dropping the local group state is what stops this device
     // pretending it is still in a conversation it has left.
-    if (group) await this.#groups.leave(group).catch(() => {});
+    //
+    // **Only when nothing else needs the group.** A group serves an *audience*,
+    // not a room (`docs/03` §4), so every room in a space with the same
+    // visibility shares one — and leaving a single room used to discard the MLS
+    // state for all of its siblings and tell the Host this device was out of
+    // the group entirely. One room left, a dozen rooms silently unreadable.
+    const siblings = this.#known.some((r) => r.id !== roomId && r.group === group);
+    if (group && !siblings) await this.#groups.leave(group).catch(() => {});
     await this.refresh();
   }
 

@@ -673,7 +673,20 @@ export class GroupSync {
     if (!current) return;
 
     const stale = record.kind === 'commit' && record.epoch < current.epoch;
-    const mine = record.sender === this.#device;
+    // **"Mine" is decided by the epoch, not by the Host's word for it.**
+    //
+    // `sender` is a field the Host fills in, and skipping on it alone let the
+    // Host mark somebody else's commit as ours and have us walk straight past
+    // it — including a Remove commit, leaving this device happily encrypting to
+    // an epoch the removed member still holds.
+    //
+    // It is also wrong in the benign direction: a commit of ours that the Host
+    // accepted but which never made it through `applyPending` — a crash in
+    // between — is genuinely ours *and* genuinely not applied, and skipping it
+    // stranded the device an epoch behind for good. A commit built at an epoch
+    // we have already left is one we have already applied; anything else gets
+    // processed, and MLS refuses it if it really was ours.
+    const mine = record.sender === this.#device && record.epoch < current.epoch;
 
     if (!stale && !mine) {
       try {

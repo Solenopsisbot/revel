@@ -23,24 +23,31 @@
  * else has a reference to yet, and `reduce` is the single-event case of it.
  * The contract callers see is unchanged.
  */
-import type { RoleName } from '@revel/protocol';
+import type { PermissionName, RoleName } from '@revel/protocol';
 import type { Annotation, LocalEvent, Message, Reaction, RoomState } from './state.js';
 import { compareIds, emptyRoom } from './state.js';
 
 export interface ReduceOptions {
   /**
-   * Whether an account may redact somebody else's message.
+   * Whether an account holds a permission in this room.
    *
-   * `docs/04` §4: `MANAGE_EVENTS` is enforced by the server on purge and **by
-   * the client on honouring redactions from non-authors**. Authors always may,
-   * in band, and that case never reaches this predicate.
+   * **The client half of `docs/04` §4.** Some acts are inside the ciphertext,
+   * so the server cannot enforce them and every reader has to: redacting
+   * somebody else's message, pinning, renaming the room, renaming the space,
+   * naming its roles. Each one used to be honoured from any member who sent
+   * it — so any member could rename a space or relabel a role "Admin", and the
+   * server could not see it happen.
    *
-   * Defaults to refusing. A missing permission check should fail closed: the
-   * cost of wrongly ignoring a moderator is a stale row until the next sync,
-   * and the cost of wrongly honouring a stranger is anyone being able to
-   * delete anything.
+   * Defaults to refusing. A missing permission check must fail closed: the cost
+   * of wrongly ignoring a moderator is a stale row until the next sync, and the
+   * cost of wrongly honouring a stranger is anyone being able to do anything.
    */
-  mayModerate?: (account: string) => boolean;
+  may?: (account: string, permission: PermissionName) => boolean;
+}
+
+/** Whether `account` holds `permission`, refusing when nothing was wired. */
+function allowed(options: ReduceOptions, account: string, permission: PermissionName): boolean {
+  return options.may?.(account, permission) ?? false;
 }
 
 /** Apply one event. See the note on `reduceAll` about why this delegates. */
@@ -154,7 +161,21 @@ const MAX_DEFERRED = 10_000;
 function defer(draft: RoomState, target: string, event: LocalEvent): void {
   let waiting = 0;
   for (const list of draft.deferred.values()) waiting += list.length;
-  if (waiting >= MAX_DEFERRED) return;
+
+  // **Evict the oldest rather than refuse the newest.**
+  //
+  // The cap used to be a floor somebody could stand on: ten thousand events
+  // aimed at ids that never arrive — one member, a loop of reactions to
+  // nothing — filled it permanently, and it is persisted in the snapshot, so
+  // from then on *every* legitimate deferred edit, reaction or pin in that room
+  // was dropped in silence. Insertion order is arrival order, so the oldest
+  // entry is the one least likely to still be waiting for something real.
+  while (waiting >= MAX_DEFERRED) {
+    const oldest = draft.deferred.keys().next().value;
+    if (oldest === undefined) break;
+    waiting -= draft.deferred.get(oldest)?.length ?? 0;
+    draft.deferred.delete(oldest);
+  }
 
   const list = draft.deferred.get(target);
   draft.deferred.set(target, list ? [...list, event] : [event]);
@@ -211,12 +232,16 @@ function apply(draft: RoomState, event: LocalEvent, options: ReduceOptions): voi
       receipt(draft, event, payload);
       return;
     case 'm.pin':
-      pin(draft, event, payload);
+      pin(draft, event, payload, options);
       return;
     case 'm.annotation':
       annotate(draft, event, payload);
       return;
     case 'room.name':
+      // `MANAGE_ROOMS`. Inside the ciphertext, so the server cannot enforce it
+      // and every reader must — without this any member could rename any room
+      // they were in, and the rename would stick for everybody.
+      if (!allowed(options, event.account, 'MANAGE_ROOMS')) return;
       // Newest by id wins, not newest to arrive. A backfill delivers old
       // events after new ones, and without this, paging far enough up renames
       // the room to whatever it was called back then.
@@ -227,6 +252,11 @@ function apply(draft: RoomState, event: LocalEvent, options: ReduceOptions): voi
       }
       return;
     case 'space.name':
+      // `MANAGE_SPACE`, and the loudest of the three: a space's name is the
+      // first thing every member sees, and this was honoured from anybody in
+      // the room it is published to — which is the `everyone` audience, so
+      // literally any member of the space.
+      if (!allowed(options, event.account, 'MANAGE_SPACE')) return;
       // Same last-writer-wins as `room.name`, and for the same reason: a
       // backfill delivers old events after new ones, so "newest to arrive"
       // would rename the space to whatever it was called last month.
@@ -241,27 +271,64 @@ function apply(draft: RoomState, event: LocalEvent, options: ReduceOptions): voi
       }
       return;
     case 'space.roles':
+      // `MANAGE_ROLES`. The Host holds a role's bits and never its name, so
+      // nothing outside the ciphertext could stop a member relabelling the
+      // `@everyone` role "Admin" — which is not a permission, and is exactly
+      // what somebody reading a member list would take for one.
+      if (!allowed(options, event.account, 'MANAGE_ROLES')) return;
       // Whole list, last writer wins — see the event's own comment. Replacing
       // the map rather than merging into it is the point: a role that is gone
       // from the newest list is a role that was deleted, and merging would keep
       // naming it forever.
       if (!draft.spaceRolesAt || compareIds(event.id, draft.spaceRolesAt) > 0) {
         draft.spaceRoles = new Map(
-          payload.roles.map((role: RoleName) => [role.id, { name: role.name, colour: role.colour }]),
+          payload.roles.map((role: RoleName) => [
+            role.id,
+            { name: role.name, colour: role.colour },
+          ]),
         );
         draft.spaceRolesAt = event.id;
       }
       return;
-    case 'room.faces':
-      // Per face, for the same reason: a face renamed last week must not be
-      // un-renamed by a page of history from last month.
+    case 'room.faces': {
+      // **Keyed by the account that published it, not by the face id alone.**
+      //
+      // `room.faces` is "this account's faces as present in this room", and the
+      // map was keyed on `face.id` — a value the sender chooses. So one member
+      // could reuse another's face id and overwrite their card: their name,
+      // their pronouns, their avatar, and the `address` that `docs/11` makes an
+      // opt-in disclosure. A roster anybody can write is not a roster.
       for (const face of payload.faces) {
+        // **A face belongs to whoever announced it first, by event id.**
+        //
+        // The roster used to be keyed on `face.id` alone — a value the sender
+        // picks — so one member could reuse another's id and overwrite their
+        // card: their name, their pronouns, their avatar, and the `address`
+        // that `docs/11` makes an opt-in disclosure. A roster anybody can write
+        // is not a roster.
+        //
+        // "First" has to mean first *in the log*, not first to arrive. A rule
+        // that gave the id to whoever got here first would make the roster a
+        // function of sync order, and two devices that paged history
+        // differently would disagree about who somebody is — which is the one
+        // thing this reducer is not allowed to do.
+        const held = draft.faces.get(face.id);
         const at = draft.facesAt.get(face.id);
-        if (at && compareIds(event.id, at) <= 0) continue;
-        draft.faces.set(face.id, face);
+        if (held && at) {
+          const owner = held.account === event.account;
+          // Same account: ordinary last-writer-wins, so a rename sticks and a
+          // page of old history does not undo it. Different account: only an
+          // *earlier* announcement takes the id, and anything later is somebody
+          // else's card and is ignored.
+          if (owner ? compareIds(event.id, at) <= 0 : compareIds(event.id, at) >= 0) continue;
+        }
+        // The publisher is recorded, so anything reading the roster can tell
+        // whose face this is rather than taking the card's word for it.
+        draft.faces.set(face.id, { ...face, account: event.account });
         draft.facesAt.set(face.id, event.id);
       }
       return;
+    }
     case 'm.thread': {
       // Last writer wins by event id, like `room.name` and for the same
       // reason: paging far enough back must not rename a thread to whatever it
@@ -445,7 +512,7 @@ function redact(
   if (target.redacted) return;
 
   const isAuthor = target.account === event.account;
-  if (!isAuthor && !(options.mayModerate?.(event.account) ?? false)) return;
+  if (!isAuthor && !allowed(options, event.account, 'MANAGE_EVENTS')) return;
 
   replace(draft, {
     ...target,
@@ -514,7 +581,23 @@ function receipt(draft: RoomState, event: LocalEvent, payload: KnownShape): void
   draft.receipts.set(event.account, payload.upTo);
 }
 
-function pin(draft: RoomState, event: LocalEvent, payload: KnownShape): void {
+function pin(
+  draft: RoomState,
+  event: LocalEvent,
+  payload: KnownShape,
+  options: ReduceOptions,
+): void {
+  // `MANAGE_EVENTS`, per `permissions.ts` — "purge others' events, and pin".
+  // A pinned message is the room's noticeboard, and this was honoured from
+  // anybody: any member could pin anything, or quietly unpin what a moderator
+  // had put up, and nothing outside the ciphertext could tell.
+  //
+  // Checked **before** the target is looked for. The permission does not depend
+  // on the target, and deferring a pin that will be refused anyway leaves a row
+  // in `deferred` whose presence depends on the order events arrived in — which
+  // is exactly the thing the reducer is not allowed to be a function of.
+  if (!allowed(options, event.account, 'MANAGE_EVENTS')) return;
+
   const target = draft.byId.get(payload.target);
   if (!target) return defer(draft, payload.target, event);
 

@@ -27,9 +27,11 @@
  * and "does this person have an account here" is exactly the question a
  * metadata-minimising product should not answer to strangers.
  */
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   DeliverToChannel,
+  decodeDeviceCert,
+  fromBase64,
   LoginFinish,
   LoginStart,
   OpenChannel,
@@ -40,12 +42,35 @@ import {
   RegisterStart,
   ResetPassword,
   TotpConfirm,
+  toAccountId,
+  verifyDeviceCert,
   type Wrap,
 } from '@revel/protocol';
 import type { Hono } from 'hono';
 import type { Actor } from './policy.js';
-import type { Store, StoredWrap } from './store/types.js';
+import type { Device, Store, StoredWrap } from './store/types.js';
 import { generateTotpSecret, totpUri, verifyTotp } from './totp.js';
+
+/**
+ * An unguessable identifier, for the things whose id *is* the credential.
+ *
+ * A snowflake is time-ordered and mostly sequential, which is exactly right for
+ * an event id and exactly wrong here: a login session and an enrol channel are
+ * addressed by strangers, and knowing roughly when one was minted narrows the
+ * space to something a fast loop covers. The enrol channel is the sharp end —
+ * its id is the only thing standing between a stranger and delivering an
+ * account key to somebody's new device.
+ */
+const randomId = (): string => randomBytes(24).toString('base64url');
+
+/**
+ * How long a real OPAQUE `loginResponse` is, in base64url characters.
+ *
+ * Pinned by a test against a genuine exchange, because the decoy below has to
+ * be the same length and a library that changed this would otherwise turn the
+ * decoy back into the oracle it exists to remove.
+ */
+export const OPAQUE_LOGIN_RESPONSE_CHARS = 427;
 
 /** The OPAQUE implementation, injected so the routes stay testable. */
 export interface OpaqueServer {
@@ -74,6 +99,24 @@ export interface EnrolmentDeps {
    * the OPAQUE setup, which is already exactly that.
    */
   decoyKey: string;
+  /**
+   * A real OPAQUE registration record for an account that does not exist.
+   *
+   * `/idp/login/start` runs against this when the handle is unknown, so an
+   * unknown handle takes **the same code path** as a known one: same shape,
+   * same response length, same behaviour on malformed bytes.
+   *
+   * That last part is why a synthesised response was not enough. Returning a
+   * plausible-looking blob for unknown handles while the real path still threw
+   * on unparseable `request` bytes left the oracle intact in a form an attacker
+   * could ask for directly — send deliberate garbage, and a 401 meant the
+   * handle existed while a 200 meant it did not.
+   *
+   * The entrypoint generates one at boot from a random password nobody keeps.
+   * Absent — in tests, against an injected OPAQUE double — falls back to a
+   * placeholder the double accepts.
+   */
+  decoyRecord?: string;
   /** This IdP's name. Goes in the TOTP issuer and the user identifier. */
   idp: string;
   authenticate?: (req: Request) => Promise<Actor | null>;
@@ -155,6 +198,41 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     const { record, accountPub, wraps, deviceCert } = body.data;
     const handle = fold(body.data.handle);
 
+    // **Prove the account key before binding a name to it.**
+    //
+    // This used to take `accountPub` from the body and believe it, which made
+    // the route a handle-transfer primitive for anybody who could type: claim
+    // an enrolment against somebody else's account key and `claimHandle` below
+    // would *move* their existing handle onto the name you asked for, free the
+    // old one for you to take, and leave them unable to ever enrol under their
+    // own key.
+    //
+    // The certificate is the proof, and it is already in the request. It is
+    // self-certifying — the account public key is inside it and signs the rest
+    // — so verifying it says "whoever sent this holds a certificate the account
+    // key signed", which is the thing that was missing.
+    //
+    // Residual, stated rather than papered over: a certificate is not a fresh
+    // signature, so somebody holding a *valid and never-registered* certificate
+    // for an account could still replay it here. Registering the device in the
+    // same breath is what closes the ordinary version of that — every
+    // certificate a co-member or a Host has seen belongs to a device that
+    // registered to get there, and one already registered to another account is
+    // refused below.
+    const cert = decodeDeviceCert(fromBase64(deviceCert));
+    if (!cert) return c.json({ error: 'invalid_certificate' }, 400);
+    if (!(await verifyDeviceCert(cert))) return c.json({ error: 'bad_signature' }, 403);
+    if (toAccountId(cert.accountPub) !== accountPub) {
+      return c.json({ error: 'certificate_account_mismatch' }, 403);
+    }
+
+    // A handle already bound to this account is not renamed here. Changing what
+    // you are called is `POST /idp/accounts/me/handle`, which needs a session.
+    const held = await deps.store.getAccount(accountPub);
+    if (held && held.handle !== handle) {
+      return c.json({ error: 'account_already_named' }, 409);
+    }
+
     // **Both wraps or no account.** A sign-up that skipped the recovery wrap
     // produces an account where forgetting the password is fatal, and it looks
     // completely fine until the day it isn't. Enforced here rather than trusted
@@ -177,6 +255,22 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     // it was is not a stranger's business.
     if (!enrolment) return c.json({ error: 'handle_taken' }, 409);
 
+    // The device goes in with the enrolment, so the certificate that proved the
+    // account key is spent rather than left replayable. Refused when that
+    // device already belongs to somebody else; idempotent when it is already
+    // this account's, so a retried sign-up still works.
+    const device: Device = {
+      pub: toAccountId(cert.devicePub),
+      accountId: accountPub,
+      label: cert.label,
+      registeredAt: now(),
+      revokedAt: null,
+    };
+    const { device: registered } = await deps.store.registerDevice(device);
+    if (registered.accountId !== accountPub) {
+      return c.json({ error: 'device_belongs_to_another_account' }, 403);
+    }
+
     for (const wrap of wraps) {
       await deps.store.putWrap(accountPub, {
         ...toStored(wrap),
@@ -185,7 +279,11 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
         ...(wrap.kind === 'recovery' ? { verifier: body.data.recoveryVerifier } : {}),
       });
     }
-    await deps.store.claimHandle({
+    // Checked rather than fired and forgotten. The two tables can disagree —
+    // somebody may have claimed this handle in the directory without ever
+    // enrolling — and an enrolment whose handle points at another account's row
+    // is an account you can log into and never be found as.
+    const { claimed, account } = await deps.store.claimHandle({
       id: accountPub,
       handle,
       displayName: null,
@@ -194,6 +292,9 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
       createdAt: now(),
       movedTo: null,
     });
+    if (!claimed && account.id !== accountPub) {
+      return c.json({ error: 'handle_taken' }, 409);
+    }
 
     return c.json({ handle, accountPub, deviceCert }, 201);
   });
@@ -208,17 +309,27 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
 
     const handle = fold(body.data.handle);
     const enrolment = await deps.store.getEnrolment(handle);
-    // An unknown handle gets `bad_credentials` — but only at `finish`, so that
-    // this route's timing and shape do not distinguish it either. Here it is
-    // simply a session that will fail later.
-    if (!enrolment) return c.json({ error: 'bad_credentials' }, 401);
+
+    // **An unknown handle runs the same exchange against a decoy record.**
+    //
+    // The comment here used to say this route's shape did not distinguish a
+    // handle that exists, directly above a line that returned 401 when it did
+    // not. It was the plainest membership oracle on the IdP, in the cheapest
+    // rate-limit class, and every other answer in this file is careful
+    // precisely so that this question cannot be asked.
+    //
+    // Running the real `startLogin` against a real-but-unowned record is what
+    // makes the two indistinguishable: same response length, same timing, and
+    // the same refusal for unparseable bytes. It fails at `finish`, where a
+    // wrong password fails too.
+    const record = enrolment?.record ?? deps.decoyRecord ?? 'decoy-registration-record';
 
     let serverLoginState: string;
     let loginResponse: string;
     try {
       ({ serverLoginState, loginResponse } = deps.opaque.startLogin({
         userIdentifier: userIdentifier(handle),
-        registrationRecord: enrolment.record,
+        registrationRecord: record,
         startLoginRequest: body.data.request,
       }));
     } catch {
@@ -229,9 +340,12 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
       return c.json({ error: 'bad_credentials' }, 401);
     }
 
-    const session = deps.newId();
+    // Unguessable, because this id is spendable: it is the handle on the
+    // server's half of a live exchange.
+    const session = randomId();
     await deps.store.putLoginSession(session, {
-      accountPub: enrolment.accountPub,
+      // Empty marks a decoy. `finish` refuses it after doing the same work.
+      accountPub: enrolment?.accountPub ?? '',
       handle,
       state: serverLoginState,
       expiresAt: now() + LOGIN_SESSION_MS,
@@ -259,6 +373,10 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     } catch {
       return c.json({ error: 'bad_credentials' }, 401);
     }
+
+    // A decoy session from `start`: the handle never existed. Refused *after*
+    // the OPAQUE work above, so the answer costs the same as a wrong password.
+    if (!session.accountPub) return c.json({ error: 'bad_credentials' }, 401);
 
     // The password was right. **Now** the second factor, and only now — asking
     // for it before would tell somebody guessing passwords when they had got
@@ -296,6 +414,18 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
   const decoySalt = (handle: string): string =>
     createHmac('sha256', deps.decoyKey).update(`salt:${handle}`).digest('base64').slice(0, 24);
 
+  /**
+   * A verifier for a wrap that does not exist.
+   *
+   * The **same length** as a real one, which `decoySalt` was not: a verifier is
+   * base64 of 32 bytes — 44 characters — and comparing it against a 24-character
+   * decoy took the length-mismatch branch in `matches` and returned before
+   * `timingSafeEqual` ran at all. The constant-time compare was there and the
+   * length told you the answer anyway.
+   */
+  const decoyVerifier = (handle: string, kind: string): string =>
+    createHmac('sha256', deps.decoyKey).update(`verifier:${kind}:${handle}`).digest('base64');
+
   app.post('/idp/recover/start', async (c) => {
     const body = RecoverStart.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: 'bad_request' }, 400);
@@ -326,8 +456,7 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     // Compared in constant time, and against a fixed-length dummy when there is
     // no enrolment or no wrap of this kind — so an unknown handle, an account
     // with no passkey, and a wrong secret all take the same path.
-    const expected =
-      wraps.find((w) => w.kind === kind)?.verifier || decoySalt(`verifier:${kind}:${handle}`);
+    const expected = wraps.find((w) => w.kind === kind)?.verifier || decoyVerifier(handle, kind);
     if (!matches(expected, body.data.verifier) || !enrolment) {
       return c.json({ error: 'bad_credentials' }, 401);
     }
@@ -343,8 +472,7 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     const kind = body.data.kind ?? 'recovery';
     const enrolment = await deps.store.getEnrolment(handle);
     const wraps = enrolment ? await deps.store.wrapsFor(enrolment.accountPub) : [];
-    const expected =
-      wraps.find((w) => w.kind === kind)?.verifier || decoySalt(`verifier:${kind}:${handle}`);
+    const expected = wraps.find((w) => w.kind === kind)?.verifier || decoyVerifier(handle, kind);
     if (!matches(expected, body.data.verifier) || !enrolment) {
       return c.json({ error: 'bad_credentials' }, 401);
     }
@@ -379,7 +507,12 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     // has no credentials yet — that is what it is here to get. What stops this
     // being useful to a stranger is that nothing arrives unless somebody with
     // an enrolled device scans the QR and taps confirm.
-    const channel = deps.newId();
+    // Unguessable, and this is the sharpest case in the file: possession of
+    // this id is the *only* thing standing between a stranger and delivering an
+    // account key to somebody's new device. A snowflake is time-ordered and
+    // nearly sequential, so knowing roughly when a QR was shown narrowed it to
+    // a space a loop covers in seconds.
+    const channel = randomId();
     const expiresAt = now() + CHANNEL_MS;
     await deps.store.putChannel(channel, {
       transferPub: body.data.transferPub,
@@ -474,6 +607,25 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     const actor = await deps.authenticate?.(c.req.raw);
     if (!actor) return c.json({ error: 'unauthenticated' }, 401);
 
+    // **Replacing a confirmed second factor needs the current one.**
+    //
+    // Without this, a session token was enough to overwrite the secret and
+    // confirm a new one — so anybody holding a stolen token could swap the
+    // factor for their own and then use the phished password freely. A second
+    // factor you can replace with the first factor alone is not a second
+    // factor.
+    const held = await deps.store.getTotp(actor.accountId);
+    if (held?.confirmedAt) {
+      const body = TotpConfirm.safeParse(await c.req.json().catch(() => null));
+      if (!body.success) return c.json({ error: 'totp_required' }, 401);
+      const check = verifyTotp(held.secret, body.data.code, now(), held.lastCounter ?? undefined);
+      if (!check.ok) return c.json({ error: 'totp_invalid' }, 401);
+      await deps.store.putTotp(actor.accountId, {
+        ...held,
+        lastCounter: check.counter ?? held.lastCounter,
+      });
+    }
+
     // Unconfirmed. An enrolment that gated logins before a correct code proved
     // the authenticator was actually set up would lock somebody out of their
     // own account with a typo.
@@ -508,9 +660,35 @@ export function mountEnrolment(app: Hono, deps: EnrolmentDeps): void {
     return c.json({ confirmed: true });
   });
 
-  app.delete('/idp/2fa/totp', async (c) => {
+  /**
+   * Turn the second factor off. Needs a current code.
+   *
+   * `POST … /remove` rather than `DELETE`, matching the passkey wrap above and
+   * for the reason given there: every route on this IdP is a POST because the
+   * client transport has exactly one verb, and a `DELETE` carrying a required
+   * body is a shape half the HTTP stack has an opinion about.
+   *
+   * The check is the point. Removing a factor is exactly as sensitive as
+   * replacing one — a stolen session that could switch 2FA off has already
+   * beaten it — so it costs the same proof.
+   */
+  app.post('/idp/2fa/totp/remove', async (c) => {
     const actor = await deps.authenticate?.(c.req.raw);
     if (!actor) return c.json({ error: 'unauthenticated' }, 401);
+
+    const totp = await deps.store.getTotp(actor.accountId);
+    if (!totp) return c.body(null, 204);
+
+    // An unconfirmed secret gates nothing, so abandoning one needs no proof —
+    // and demanding a code from an authenticator that was never finished
+    // setting up would be a locked door with no key.
+    if (totp.confirmedAt) {
+      const body = TotpConfirm.safeParse(await c.req.json().catch(() => null));
+      if (!body.success) return c.json({ error: 'totp_required' }, 401);
+      const check = verifyTotp(totp.secret, body.data.code, now(), totp.lastCounter ?? undefined);
+      if (!check.ok) return c.json({ error: 'totp_invalid' }, 401);
+    }
+
     await deps.store.deleteTotp(actor.accountId);
     return c.body(null, 204);
   });

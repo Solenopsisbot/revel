@@ -74,7 +74,20 @@ export interface CommitOutput {
 
 /** The result of feeding the engine something that arrived. */
 export type Incoming =
-  | { kind: 'application'; sender: number; data: Uint8Array }
+  | {
+      kind: 'application';
+      sender: number;
+      data: Uint8Array;
+      /**
+       * The epoch the message was sealed at.
+       *
+       * A leaf index only means something within an epoch — MLS gives a freed
+       * leaf to the next member added — so resolving a sender against the
+       * *current* roster can name whoever inherited the index rather than
+       * whoever wrote the message.
+       */
+      epoch: number;
+    }
   | { kind: 'commit'; sender: number }
   | { kind: 'proposal' }
   | { kind: 'other' };
@@ -263,7 +276,27 @@ export interface CryptoEngine {
   applyPending(groupId: string): Promise<GroupState>;
 
   /** Encrypt an application message for a group. */
-  encrypt(groupId: string, plaintext: Uint8Array): Promise<Uint8Array>;
+  /**
+   * Seal a message for a group, bound to where it is being sent.
+   *
+   * `aad` is authenticated and not encrypted. The layer above passes the room
+   * id: rooms that share an audience share a group (`docs/03` §4), so without
+   * it a message was sealed to a *group* and a Host could serve one posted in
+   * one room inside a sibling room, correctly attributed and completely out of
+   * place.
+   */
+  encrypt(groupId: string, plaintext: Uint8Array, aad: Uint8Array): Promise<Uint8Array>;
+
+  /**
+   * Open an application message, refusing anything that is not one.
+   *
+   * For the **event channel**, which a Host fills. A handshake message
+   * delivered there used to be applied to group state before the caller could
+   * see what it was, moving the epoch behind `GroupSync`'s back and stalling
+   * the group permanently. This refuses it before it lands, and checks the
+   * message was sealed for `aad`.
+   */
+  decrypt(groupId: string, message: Uint8Array, aad: Uint8Array): Promise<Incoming>;
 
   /** Feed the engine something that arrived for a group. */
   process(groupId: string, message: Uint8Array): Promise<Incoming>;

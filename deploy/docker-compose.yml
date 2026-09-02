@@ -51,6 +51,18 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgres://revel:${POSTGRES_PASSWORD}@postgres:5432/revel
+      # **Set, because nginx is in front and rewrites the header.**
+      #
+      # Without it `address()` returns the same string for every caller, so the
+      # rate limiter becomes one global bucket: any single client hammering
+      # sign-in exhausts the `auth` allowance for everybody on the box, and a
+      # limit that locks out the innocent is one somebody turns off.
+      #
+      # It is only correct because `revel.chat.conf` sets `X-Forwarded-For` to
+      # `$remote_addr` rather than appending to what the client sent. Turning
+      # this on in front of anything that does not overwrite that header hands
+      # every caller their own bucket, which is worse than having no limiter.
+      REVEL_TRUST_PROXY: '1'
       REVEL_BLOB_DIR: /data/blobs
       REVEL_HOST_KEY_FILE: /data/secrets/host-key.json
       PORT: 8080

@@ -46,6 +46,29 @@ export interface HostSessionOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Called whenever a fresh token is obtained, for a caller that stores it. */
   onSession?: (session: SessionResponse) => void;
+  /**
+   * The Host's name, as it must appear in the challenge this device signs.
+   *
+   * Defaults to the hostname (and port) of `baseUrl`, which is the right answer
+   * for every ordinary deployment and is what the Host's own default computes.
+   * Set it explicitly when the Host is published under a name that is not the
+   * one you connect to.
+   */
+  host?: string;
+}
+
+/**
+ * The name we expect the Host to call itself.
+ *
+ * The origin the client was pointed at, which is the only name it has any
+ * business trusting — and the one a Host's own default computes for itself. An
+ * empty `baseUrl` means "same origin as this page", which is how the web client
+ * is deployed.
+ */
+function defaultHost(baseUrl: string): string {
+  if (baseUrl) return new URL(baseUrl).host;
+  if (typeof location !== 'undefined' && location.host) return location.host;
+  return '';
 }
 
 /**
@@ -63,6 +86,7 @@ export class HostSession {
   #now: () => number;
   #sleep: (ms: number) => Promise<void>;
   #onSession: ((session: SessionResponse) => void) | undefined;
+  #host: string;
 
   #session: SessionResponse | null = null;
   /** In-flight sign-in, so ten parallel requests produce one, not ten. */
@@ -75,6 +99,7 @@ export class HostSession {
     this.#now = options.now ?? (() => Date.now());
     this.#sleep = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.#onSession = options.onSession;
+    this.#host = (options.host ?? defaultHost(this.#baseUrl)).toLowerCase();
   }
 
   /** The account this session speaks for, once there is one. */
@@ -130,8 +155,22 @@ export class HostSession {
       device: devicePub,
     });
 
-    // The Host names itself in the challenge and that name is inside what we
-    // sign, so a signature collected here cannot be presented anywhere else.
+    // **The name has to be the one we came here for.**
+    //
+    // The host is inside what we sign precisely so a signature collected by one
+    // Host cannot be presented at another — and taking that name from the
+    // response, which is what this did, handed the choice to whoever answered.
+    // A rogue Host could fetch a nonce from the real one, pass it on with the
+    // real one's name attached, and replay the signature there: a device-bound
+    // session on a Host the user never spoke to. The field exists to be
+    // checked, not copied.
+    // An empty expectation is a misconfiguration, not a licence to skip: there
+    // is no name to check against, so there is nothing holding the signature to
+    // this Host.
+    if (!this.#host || challenge.host.toLowerCase() !== this.#host) {
+      throw new TransportError(0, 'wrong_host');
+    }
+
     const signature = await this.#crypto.signAuth(
       authPayload(challenge.host, fromBase64(challenge.nonce), await this.#devicePublicKey()),
     );

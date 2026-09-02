@@ -98,8 +98,12 @@ export class LocalCryptoEngine implements CryptoEngine {
     return this.#open().applyPending(groupId);
   }
 
-  async encrypt(groupId: string, plaintext: Uint8Array): Promise<Uint8Array> {
-    return this.#open().encrypt(groupId, plaintext);
+  async encrypt(groupId: string, plaintext: Uint8Array, aad: Uint8Array): Promise<Uint8Array> {
+    return this.#open().encrypt(groupId, plaintext, aad);
+  }
+
+  async decrypt(groupId: string, message: Uint8Array, aad: Uint8Array): Promise<Incoming> {
+    return this.#open().decrypt(groupId, message, aad);
   }
 
   async process(groupId: string, message: Uint8Array): Promise<Incoming> {

@@ -10,7 +10,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import init, { Envelope } from '@revel/crypto-wasm';
+import init, { Account, Device, Envelope } from '@revel/crypto-wasm';
 import { SnowflakeFactory } from '@revel/protocol';
 import { createApp, MemoryStore } from '@revel/server';
 import * as opaque from '@serenity-kit/opaque';
@@ -83,13 +83,20 @@ beforeEach(() => {
         return { status: res.status, body: await res.json().catch(() => null) };
       },
     },
-    // A stand-in device. The real one runs the wasm `Device`, which has its own
-    // tests in `crates/revel-crypto`; what this file is about is enrolment.
-    signDeviceCert: async (_seed, label) => ({
-      certificate: new TextEncoder().encode(`cert:${label}`),
-      devicePub: new Uint8Array(32).fill(1),
-      deviceSecret: new Uint8Array(32).fill(2),
-    }),
+    // The real wasm `Device`, not a stand-in.
+    //
+    // `register/finish` verifies this certificate and checks it names the
+    // account being enrolled — that check is what stops the route being a
+    // handle-transfer primitive — so a placeholder here would be testing
+    // against a server that no longer exists.
+    signDeviceCert: async (seed, label) => {
+      const device = new Device(Account.fromSecret(seed), label);
+      return {
+        certificate: device.certificate,
+        devicePub: device.publicKey,
+        deviceSecret: device.secretKey,
+      };
+    },
     deviceLabel: 'a test device',
   };
 });

@@ -232,7 +232,8 @@ describe('room switch', () => {
     await alice.createGroup('flat');
 
     const body = new TextEncoder().encode('a message of an ordinary sort of length');
-    const ms = await median(500, () => alice.encrypt('flat', body));
+    const ROOM_AAD = new TextEncoder().encode('revel/room/v1\nflat-room');
+    const ms = await median(500, () => alice.encrypt('flat', body, ROOM_AAD));
 
     report('MLS encrypt, one message', ms, 5);
     expect(ms).toBeLessThan(5);

@@ -42,6 +42,7 @@ import type { BlobBytes } from './blobstore.js';
 import { loadMigrations, type MigrateResult, migrate as runMigrations } from './migrate.js';
 import type {
   Account,
+  Ban,
   Blob,
   Challenge,
   ClaimedPackage,
@@ -52,7 +53,6 @@ import type {
   GroupMember,
   GroupMemberInput,
   HandshakeAppend,
-  Ban,
   HandshakeResult,
   Invite,
   LoginSession,
@@ -731,9 +731,22 @@ export class PostgresStore implements Store {
 
   async listEvents(
     roomId: string,
-    opts: { before?: string; limit?: number } = {},
+    opts: { before?: string; after?: string; limit?: number } = {},
   ): Promise<Event[]> {
     const limit = opts.limit ?? 50;
+
+    // Forwards, oldest first. No reverse afterwards — this window already
+    // starts at the caller's cursor, so ascending is the order it comes out in.
+    if (opts.after !== undefined) {
+      const rows = await this.sql`
+        SELECT * FROM events
+        WHERE room_id = ${roomId}
+          AND (length(id), id) > (length(${opts.after}::text), ${opts.after}::text)
+        ${ID_ORDER(this.sql, 'id', 'ASC')}
+        LIMIT ${limit}`;
+      return rows.map((r) => this.#event(r));
+    }
+
     // Newest `limit` first — which is what the index is for — then reversed, so
     // the caller gets ascending order like `MemoryStore`'s `slice(-limit)`.
     const rows = opts.before
@@ -1327,6 +1340,25 @@ export class PostgresStore implements Store {
   async getEnrolmentByAccount(accountPub: string): Promise<Enrolment | null> {
     const [row] = await this.sql`SELECT * FROM enrolments WHERE account_pub = ${accountPub}`;
     return row ? this.#enrolment(row) : null;
+  }
+
+  async renameEnrolment(accountPub: string, handle: string): Promise<boolean> {
+    return await this.sql.begin(async (sql) => {
+      // Serialise on the handle, like `claimHandle`, so two renames toward the
+      // same name cannot both read it free.
+      await sql`SELECT pg_advisory_xact_lock(hashtext('revel/handle'), hashtext(${handle}))`;
+
+      const [mine] = await sql`SELECT handle FROM enrolments WHERE account_pub = ${accountPub}`;
+      // Nothing to move: an account that claimed a handle but never enrolled.
+      if (!mine) return true;
+      if ((mine.handle as string) === handle) return true;
+
+      const [taken] = await sql`SELECT 1 FROM enrolments WHERE handle = ${handle}`;
+      if (taken) return false;
+
+      await sql`UPDATE enrolments SET handle = ${handle} WHERE account_pub = ${accountPub}`;
+      return true;
+    });
   }
 
   async putWrap(accountPub: string, wrap: StoredWrap): Promise<void> {

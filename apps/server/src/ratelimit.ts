@@ -51,7 +51,17 @@ export interface Verdict {
 const SWEEP_AT = 10_000;
 
 export class RateLimiter {
-  #buckets = new Map<string, { tokens: number; at: number }>();
+  /**
+   * The bucket's shape is held with it, so a sweep can judge each key by the
+   * class it belongs to.
+   *
+   * Without this, `sweep` judged every entry against whichever bucket happened
+   * to trigger it: a `read` request crossing the threshold measured exhausted
+   * `auth` and `upload` entries against `read`'s far larger capacity and
+   * cheerfully deleted them, which is the limiter forgiving exactly the
+   * callers it was holding down.
+   */
+  #buckets = new Map<string, { tokens: number; at: number; bucket: Bucket }>();
   #now: () => number;
 
   constructor(now: () => number = () => Date.now()) {
@@ -82,7 +92,7 @@ export class RateLimiter {
     if (tokens < cost) {
       // Not stored as a rejection, because storing rejections is how a limiter
       // becomes an attack log. The bucket is updated and that is all.
-      this.#buckets.set(key, { tokens, at: now });
+      this.#buckets.set(key, { tokens, at: now, bucket });
       const wait = (cost - tokens) / bucket.refillPerSecond;
       return { ok: false, retryAfter: Math.max(1, Math.ceil(wait)), remaining: 0 };
     }
@@ -93,8 +103,8 @@ export class RateLimiter {
       // remember.
       this.#buckets.delete(key);
     } else {
-      this.#buckets.set(key, { tokens: left, at: now });
-      if (this.#buckets.size > SWEEP_AT) this.sweep(bucket);
+      this.#buckets.set(key, { tokens: left, at: now, bucket });
+      if (this.#buckets.size > SWEEP_AT) this.sweep();
     }
     return { ok: true, retryAfter: 0, remaining: Math.floor(left) };
   }
@@ -106,12 +116,16 @@ export class RateLimiter {
    * enforcement at all — and it is the step that keeps this from being a record
    * of who was here.
    */
-  sweep(bucket: Bucket): number {
+  sweep(_bucket?: Bucket): number {
     const now = this.#now();
     let dropped = 0;
     for (const [key, held] of this.#buckets) {
-      const tokens = held.tokens + ((now - held.at) / 1000) * bucket.refillPerSecond;
-      if (tokens >= bucket.capacity) {
+      // Each entry against **its own** bucket. The argument is ignored and kept
+      // only so existing callers still read sensibly; judging an `auth` entry
+      // by `read`'s capacity is how a sweep forgives the callers it was there
+      // to hold down.
+      const tokens = held.tokens + ((now - held.at) / 1000) * held.bucket.refillPerSecond;
+      if (tokens >= held.bucket.capacity) {
         this.#buckets.delete(key);
         dropped += 1;
       }
@@ -225,6 +239,21 @@ export interface RateLimitDeps {
    * so a misconfiguration is a *different* limit rather than none at all.
    */
   limits?: Record<LimitClass, Bucket>;
+  /**
+   * Resolve a request to a **verified** caller, for the per-caller allowance.
+   *
+   * Returns a stable subject — a device key — for a request carrying a live
+   * session, and `null` for anything else. Absent means every caller is keyed
+   * by address, which is the safe default rather than a degraded one.
+   *
+   * This has to verify. Keying on the bearer token *as presented* is what the
+   * limiter used to do, and it inverted the whole mechanism: a caller who had
+   * proved nothing could mint a fresh token per request, land in a fresh
+   * bucket every time, and never be limited at all. The classes sized against
+   * exactly that — `auth`, guessing an OPAQUE password or a six-digit TOTP —
+   * were the ones it cost the most.
+   */
+  identify?(req: Request): Promise<string | null>;
   /** Off by default in tests, where 600 requests a minute is a Tuesday. */
   enabled?: boolean;
 }
@@ -281,11 +310,11 @@ export function rateLimit(deps: RateLimitDeps) {
 }
 
 async function subjectOf(deps: RateLimitDeps, req: Request): Promise<string> {
-  const header = req.headers.get('authorization');
-  if (header?.toLowerCase().startsWith('bearer ')) {
-    const token = header.slice(7).trim();
-    if (token) return `t:${await shortHash(token)}`;
-  }
+  // A *verified* session gets its own allowance, so one loud device cannot
+  // spend a whole building's quota. An unverified one gets nothing: the token
+  // is not a name until the store says it is.
+  const identified = await deps.identify?.(req).catch(() => null);
+  if (identified) return `d:${await shortHash(identified)}`;
   return `a:${deps.address(req)}`;
 }
 
@@ -293,7 +322,7 @@ async function subjectOf(deps: RateLimitDeps, req: Request): Promise<string> {
  * Enough hash to distinguish, not enough to be a credential.
  *
  * Truncated deliberately: the map only needs distinct keys, and a full digest
- * of a live token is a thing worth not having in a heap dump.
+ * of anything identifying is a thing worth not having in a heap dump.
  */
 async function shortHash(value: string): Promise<string> {
   const digest = new Uint8Array(

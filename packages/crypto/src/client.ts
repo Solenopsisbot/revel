@@ -182,8 +182,12 @@ export class WorkerCryptoEngine implements CryptoEngine {
     return this.#call('applyPending', groupId);
   }
 
-  encrypt(groupId: string, plaintext: Uint8Array): Promise<Uint8Array> {
-    return this.#call('encrypt', groupId, plaintext);
+  encrypt(groupId: string, plaintext: Uint8Array, aad: Uint8Array): Promise<Uint8Array> {
+    return this.#call('encrypt', groupId, plaintext, aad);
+  }
+
+  decrypt(groupId: string, message: Uint8Array, aad: Uint8Array): Promise<Incoming> {
+    return this.#call('decrypt', groupId, message, aad);
   }
 
   process(groupId: string, message: Uint8Array): Promise<Incoming> {

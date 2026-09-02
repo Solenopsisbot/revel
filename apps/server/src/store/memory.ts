@@ -3,6 +3,7 @@ import type { Event, HandshakeRecord, KeyPackageSupply, KeyPackageUpload } from 
 import { compareIds } from '@revel/protocol';
 import type {
   Account,
+  Ban,
   Blob,
   Challenge,
   ClaimedPackage,
@@ -13,7 +14,6 @@ import type {
   GroupMember,
   GroupMemberInput,
   HandshakeAppend,
-  Ban,
   HandshakeResult,
   Invite,
   LoginSession,
@@ -446,10 +446,19 @@ export class MemoryStore implements Store {
     return { event: e, deduped: false };
   }
 
-  async listEvents(roomId: string, opts: { before?: string; limit?: number } = {}) {
+  async listEvents(roomId: string, opts: { before?: string; after?: string; limit?: number } = {}) {
     const all = [...(this.events.get(roomId) ?? [])].sort((a, b) => compareIds(a.id, b.id));
-    const filtered = opts.before ? all.filter((e) => compareIds(e.id, opts.before!) < 0) : all;
     const limit = opts.limit ?? 50;
+
+    // Forwards, from the oldest thing the caller has not seen. Taken from the
+    // *start* of the window rather than the end, which is the whole difference
+    // between catching up and re-reading the newest page.
+    if (opts.after !== undefined) {
+      const after = opts.after;
+      return all.filter((e) => compareIds(e.id, after) > 0).slice(0, limit);
+    }
+
+    const filtered = opts.before ? all.filter((e) => compareIds(e.id, opts.before!) < 0) : all;
     return filtered.slice(-limit);
   }
 
@@ -732,6 +741,17 @@ export class MemoryStore implements Store {
 
   async deleteWrap(accountPub: string, kind: 'passkey') {
     this.wraps.get(accountPub)?.delete(kind);
+  }
+
+  async renameEnrolment(accountPub: string, handle: string) {
+    const existing = await this.getEnrolmentByAccount(accountPub);
+    // Nothing to move: an account that claimed a handle but never enrolled.
+    if (!existing) return true;
+    if (existing.handle === handle) return true;
+    if (this.enrolments.has(handle)) return false;
+    this.enrolments.delete(existing.handle);
+    this.enrolments.set(handle, { ...existing, handle });
+    return true;
   }
 
   async putRegistrationRecord(accountPub: string, record: string) {

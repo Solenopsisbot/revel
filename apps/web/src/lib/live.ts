@@ -44,7 +44,7 @@ import {
 } from '@revel/core';
 import { type CryptoEngine, spawnCryptoEngine } from '@revel/crypto';
 import cryptoWasmUrl from '@revel/crypto-wasm/revel_crypto_bg.wasm?url';
-import { has, Permission, parse } from '@revel/protocol';
+import { has, Permission, type PermissionName, parse } from '@revel/protocol';
 import { myFaces } from './faces.svelte.js';
 // A cycle on paper and not in practice: `live.svelte.ts` reaches this module
 // through a dynamic `import()` inside `start`, so it is always evaluated first
@@ -427,23 +427,63 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
        * implementation of it. A room whose space we have not loaded resolves to
        * nobody, which is quiet rather than exploitable.
        */
-      mayBroadcast: (roomId, sender) => {
-        const spaceId = directory?.rooms().find((r) => r.id === roomId)?.space;
-        if (!spaceId) return false;
-        const space = live.spaces.find((s) => s.info.id === spaceId);
-        if (!space) return false;
-        const held = new Set(space.members.find((m) => m.account === sender)?.roles ?? []);
-        // `@everyone` shares the space's id, and applies whether or not it is
-        // listed — leaving it out was the bug that made every member resolve
-        // to zero permissions at room level.
-        const bits = space.roles
-          .filter((r) => r.id === spaceId || held.has(r.id))
-          .reduce((acc, r) => acc | parse(r.bits), 0n);
-        return has(bits, Permission.MENTION_EVERYONE);
-      },
+      mayBroadcast: (roomId, sender) => has(bitsFor(roomId, sender), Permission.MENTION_EVERYONE),
       deliver: (roomId, event, decision) => notifications.deliver(roomId, event, decision),
     },
+    /**
+     * The client half of `docs/04` §4.
+     *
+     * Redactions from non-authors, pins, room and space renames, role names:
+     * all of them live inside the ciphertext, so the server cannot enforce any
+     * of them and every reader has to. This was never wired at all —
+     * `mayModerate` existed, was threaded through the engine, and no caller
+     * ever supplied it — which meant moderator redactions were silently dropped
+     * on every client while the other four acts were honoured from anybody who
+     * sent them.
+     */
+    may: (roomId: string, account: string, permission: PermissionName) =>
+      has(bitsFor(roomId, account), Permission[permission]),
+    /**
+     * A room's group is bound once, and the Host does not get to change it.
+     *
+     * Refused in `RoomSync.bind`; this is so it is visible rather than a
+     * swallowed rejection on the next refresh.
+     */
+    onRebind: (roomId, held, offered) =>
+      console.error(`refused to rebind room ${roomId} from group ${held} to ${offered}`),
   });
+  /**
+   * What an account may do in a room, from the same numbers the server used.
+   *
+   * `permissions.ts`'s `resolve` shape rather than a second implementation of
+   * it: `@everyone` shares the space's id and applies whether or not it is
+   * listed, which is the detail that once made every member resolve to zero.
+   *
+   * A room whose space has not been loaded resolves to nobody — quiet rather
+   * than exploitable. Room-level overrides are not applied here because the
+   * client is not sent them; the effect is that a client can be *stricter*
+   * than the Host, never looser.
+   */
+  function bitsFor(roomId: string, account: string): bigint {
+    const spaceId = directory?.rooms().find((r) => r.id === roomId)?.space;
+    // **A room with no space has no roles, and its members are peers.**
+    //
+    // `policy.ts` says the same thing server-side: a DM has no space, so
+    // membership *is* the permission. `MANAGE_EVENTS` is included because the
+    // acts it gates here — pinning, and redacting — have no other answer in a
+    // room with nobody in charge, and a redaction leaves a visible tombstone
+    // rather than a silent hole.
+    if (!spaceId) {
+      return Permission.VIEW | Permission.SEND | Permission.SEND_MEDIA | Permission.MANAGE_EVENTS;
+    }
+    const space = live.spaces.find((s) => s.info.id === spaceId);
+    if (!space) return 0n;
+    const held = new Set(space.members.find((m) => m.account === account)?.roles ?? []);
+    return space.roles
+      .filter((r) => r.id === spaceId || held.has(r.id))
+      .reduce((acc, r) => acc | parse(r.bits), 0n);
+  }
+
   groups = new GroupSync({
     crypto,
     store,
@@ -512,10 +552,14 @@ export async function startLive(signedIn: Session): Promise<LiveStack> {
     faceFor: (roomId) => {
       const face = myFaces.speaking(roomId);
       if (!face) return undefined;
-      // The address only when this account has asked to be linkable
-      // (`docs/11`). Off is the default and off means the field is simply
-      // absent — see `FaceCard.address`.
-      return cardOf(face, myFaces.linked ? addressOf() : undefined);
+      // No address on the card. Not because it is withheld — anyone in the room
+      // can resolve it from the account the roster already records against this
+      // face — but because carrying it is redundant, and a field that looks
+      // like a disclosure decision when it is not is how the old control came
+      // to imply something it could not do. `FaceCard.address` stays in the
+      // schema and is still read: encrypted history cannot be rewritten
+      // (`docs/29` §1) and older clients put it there.
+      return cardOf(face);
     },
   });
 

@@ -15,6 +15,7 @@
  *   pnpm test:livechat
  */
 import { chromium } from 'playwright';
+import { password } from './_password.mjs';
 
 // Defaults to the dev server; point it at a deployment to test the real thing.
 //
@@ -25,7 +26,6 @@ import { chromium } from 'playwright';
 // will be throttled rather than broken.
 const APP = process.env.REVEL_E2E_APP ?? 'http://localhost:5173';
 const stamp = Date.now().toString(36);
-const password = 'correct horse battery staple';
 
 let failures = 0;
 const ok = (label, cond, extra) => {

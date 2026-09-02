@@ -12,7 +12,7 @@
  *   password.
  */
 
-import { SnowflakeFactory } from '@revel/protocol';
+import { issueDeviceCert, SnowflakeFactory, toAccountId, toBase64 } from '@revel/protocol';
 import * as opaque from '@serenity-kit/opaque';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
@@ -20,10 +20,61 @@ import { MemoryStore } from '../src/store/memory.js';
 import { totpAt } from '../src/totp.js';
 
 let serverSetup: string;
+
+/**
+ * A real account key and a real certificate for one of its devices.
+ *
+ * `register/finish` verifies the certificate and checks it names the account
+ * being enrolled — without that, the route was a handle-transfer primitive for
+ * anybody who could type — so these have to be genuine rather than the two
+ * base64 strings that used to stand in for them.
+ */
+async function identity(label: string) {
+  const account = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, [
+    'sign',
+    'verify',
+  ])) as CryptoKeyPair;
+  const device = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, [
+    'sign',
+    'verify',
+  ])) as CryptoKeyPair;
+  const accountPub = new Uint8Array(await crypto.subtle.exportKey('raw', account.publicKey));
+  const devicePub = new Uint8Array(await crypto.subtle.exportKey('raw', device.publicKey));
+  return {
+    accountPub: toAccountId(accountPub),
+    devicePub: toAccountId(devicePub),
+    cert: toBase64(await issueDeviceCert(account.privateKey, accountPub, devicePub, label)),
+  };
+}
+
+type Identity = Awaited<ReturnType<typeof identity>>;
+let primary: Identity;
+let secondary: Identity;
+
 beforeAll(async () => {
   await opaque.ready;
   serverSetup = opaque.server.createSetup();
+  primary = await identity('viola laptop');
+  secondary = await identity('somebody else');
+
+  // A real record for an account nobody owns, so `/idp/login/start` can run the
+  // same exchange for an unknown handle as for a known one. Production builds
+  // this at boot; a test that skipped it would be testing a misconfiguration.
+  const password = 'a password nobody keeps';
+  const registration = opaque.client.startRegistration({ password });
+  const { registrationResponse } = opaque.server.createRegistrationResponse({
+    serverSetup,
+    userIdentifier: 'decoy@idp.example',
+    registrationRequest: registration.registrationRequest,
+  });
+  decoyRecord = opaque.client.finishRegistration({
+    password,
+    registrationResponse,
+    clientRegistrationState: registration.clientRegistrationState,
+  }).registrationRecord;
 });
+
+let decoyRecord: string;
 
 /** The `OpaqueServer` the routes take, bound to one setup. */
 const opaqueServer = () => ({
@@ -70,6 +121,7 @@ beforeEach(() => {
     idp: 'idp.example',
     opaque: opaqueServer(),
     decoyKey: 'a-long-lived-server-secret',
+    decoyRecord,
   });
 });
 
@@ -80,14 +132,16 @@ const post = (path: string, body: unknown) =>
     body: JSON.stringify(body),
   });
 
-const ACCOUNT = 'YWNjb3VudC1wdWJsaWMta2V5LWJhc2U2NHVybA';
-const CERT = btoa('a device certificate');
+// The real ones, filled in by `beforeAll`. Getters so the module-level names
+// still read the same at every call site.
+const account = () => primary.accountPub;
+const cert = () => primary.cert;
 /** Stands in for `HKDF(RK, …)`. The routes only ever compare it. */
 const VERIFIER = btoa('proof-of-recovery-code');
 const b64 = (s: string) => btoa(s);
 
 /** Register `handle` with `password`. Returns the client's exportKey. */
-async function register(handle: string, password: string, accountPub = ACCOUNT) {
+async function register(handle: string, password: string, who: Identity = primary) {
   const { clientRegistrationState, registrationRequest } = opaque.client.startRegistration({
     password,
   });
@@ -103,12 +157,12 @@ async function register(handle: string, password: string, accountPub = ACCOUNT) 
   const finish = await post('/idp/register/finish', {
     handle,
     record: registrationRecord,
-    accountPub,
+    accountPub: who.accountPub,
     wraps: [
       { kind: 'password', blob: b64('wrapped under KEK') },
       { kind: 'recovery', blob: b64('wrapped under RK'), salt: b64('salt') },
     ],
-    deviceCert: CERT,
+    deviceCert: who.cert,
     recoveryVerifier: VERIFIER,
   });
   return { finish, exportKey };
@@ -165,7 +219,7 @@ describe('signing up', () => {
     const enrolment = await store.getEnrolment('viola');
     expect(enrolment).not.toBeNull();
     expect(JSON.stringify(enrolment)).not.toContain('hunter2');
-    for (const wrap of await store.wrapsFor(ACCOUNT)) {
+    for (const wrap of await store.wrapsFor(account())) {
       expect(atob(wrap.blob)).not.toContain('hunter2');
     }
   });
@@ -191,17 +245,73 @@ describe('signing up', () => {
     const finish = await post('/idp/register/finish', {
       handle: 'nowayback',
       record: registrationRecord,
-      accountPub: ACCOUNT,
+      accountPub: account(),
       wraps: [
         { kind: 'password', blob: b64('a') },
         { kind: 'passkey', blob: b64('b') },
       ],
-      deviceCert: CERT,
+      deviceCert: cert(),
       recoveryVerifier: VERIFIER,
     });
     expect(finish.status).toBe(400);
     expect((await finish.json()).error).toBe('wraps_incomplete');
     expect(await store.getEnrolment('nowayback')).toBeNull();
+  });
+
+  it('refuses to bind a handle to an account key the caller cannot prove', async () => {
+    // The hijack this closes. `accountPub` used to be taken from the body and
+    // believed, so anybody could enrol against somebody else's account key —
+    // and `claimHandle` would then *move* that account's existing handle onto
+    // whatever name the attacker asked for, freeing the old one for them to
+    // take and leaving the owner unable to ever enrol under their own key.
+    const { clientRegistrationState, registrationRequest } = opaque.client.startRegistration({
+      password: 'attacker',
+    });
+    const start = await post('/idp/register/start', {
+      handle: 'stolen',
+      request: registrationRequest,
+    });
+    const { response } = await start.json();
+    const { registrationRecord } = opaque.client.finishRegistration({
+      clientRegistrationState,
+      registrationResponse: response,
+      password: 'attacker',
+    });
+
+    const finish = await post('/idp/register/finish', {
+      handle: 'stolen',
+      record: registrationRecord,
+      // Somebody else's account…
+      accountPub: primary.accountPub,
+      wraps: [
+        { kind: 'password', blob: b64('mine') },
+        { kind: 'recovery', blob: b64('mine'), salt: b64('salt') },
+      ],
+      // …with a certificate only the attacker's own key ever signed.
+      deviceCert: secondary.cert,
+      recoveryVerifier: VERIFIER,
+    });
+    expect(finish.status).toBe(403);
+    expect(await finish.json()).toMatchObject({ error: 'certificate_account_mismatch' });
+  });
+
+  it('refuses a certificate that is not a certificate', async () => {
+    const { finish } = await register('viola', 'pw', {
+      ...primary,
+      cert: b64('not a certificate'),
+    });
+    expect(finish.status).toBe(400);
+    expect(await finish.json()).toMatchObject({ error: 'invalid_certificate' });
+  });
+
+  it('will not rename an account that already has a handle', async () => {
+    // Renaming is `POST /idp/accounts/me/handle`, which needs a session. This
+    // route may only ever bind a name to an account that has none.
+    await register('viola', 'pw');
+    const { finish } = await register('viola-again', 'pw');
+    expect(finish.status).toBe(409);
+    expect(await finish.json()).toMatchObject({ error: 'account_already_named' });
+    expect((await store.getAccount(account()))?.handle).toBe('viola');
   });
 
   it('refuses a recovery wrap with no salt', async () => {
@@ -223,12 +333,12 @@ describe('signing up', () => {
     const finish = await post('/idp/register/finish', {
       handle: 'nosalt',
       record: registrationRecord,
-      accountPub: ACCOUNT,
+      accountPub: account(),
       wraps: [
         { kind: 'password', blob: b64('a') },
         { kind: 'recovery', blob: b64('b') },
       ],
-      deviceCert: CERT,
+      deviceCert: cert(),
       recoveryVerifier: VERIFIER,
     });
     expect(finish.status).toBe(400);
@@ -237,7 +347,7 @@ describe('signing up', () => {
   it('will not let a second account take a handle', async () => {
     // Overwriting would be an account takeover with no password in it.
     await register('viola', 'first');
-    const { finish } = await register('viola', 'second', 'ZGlmZmVyZW50LWFjY291bnQ');
+    const { finish } = await register('viola', 'second', secondary);
     expect(finish.status).toBe(409);
 
     // And the original still works.
@@ -263,7 +373,7 @@ describe('signing in', () => {
     const { finish } = await login('viola', 'correct horse battery staple');
     expect(finish.status).toBe(200);
     const body = await finish.json();
-    expect(body.accountPub).toBe(ACCOUNT);
+    expect(body.accountPub).toBe(account());
     expect(body.wraps.map((w: { kind: string }) => w.kind).sort()).toEqual([
       'password',
       'recovery',
@@ -285,6 +395,41 @@ describe('signing in', () => {
 
     const wrong = await login('viola', 'wrong');
     expect((await wrong.finish.json()).error).toBe('bad_credentials');
+  });
+
+  it('starts a login for an unknown handle exactly as it does for a real one', async () => {
+    // The oracle this closes: `/idp/login/start` used to answer 401 the moment
+    // the handle was unknown, in the cheapest rate-limit class on the box,
+    // directly beneath a comment claiming it did not distinguish them.
+    await register('viola', 'pw');
+
+    const attempt = async (handle: string) => {
+      const { startLoginRequest } = opaque.client.startLogin({ password: 'pw' });
+      const res = await post('/idp/login/start', { handle, request: startLoginRequest });
+      return { status: res.status, body: (await res.json()) as { response: string } };
+    };
+
+    const known = await attempt('viola');
+    const unknown = await attempt('nobody-here');
+
+    expect(unknown.status).toBe(known.status);
+    expect(unknown.body.response).toHaveLength(known.body.response.length);
+    expect(unknown.body).toHaveProperty('session');
+  });
+
+  it('refuses malformed login bytes identically whether or not the handle exists', async () => {
+    // The subtler half of the same oracle, and the reason a synthesised decoy
+    // response was not enough: an attacker who sends deliberate garbage learns
+    // the answer from *which* failure comes back, unless the unknown-handle
+    // path runs the same parser.
+    await register('viola', 'pw');
+    const garbage = 'AAAA';
+
+    const known = await post('/idp/login/start', { handle: 'viola', request: garbage });
+    const unknown = await post('/idp/login/start', { handle: 'nobody-here', request: garbage });
+
+    expect(unknown.status).toBe(known.status);
+    expect(await unknown.json()).toEqual(await known.json());
   });
 
   it('spends a login session exactly once', async () => {
@@ -329,7 +474,7 @@ describe('recovering', () => {
     const finish = await post('/idp/recover/finish', { handle: 'viola', verifier: VERIFIER });
     expect(finish.status).toBe(200);
     const body = await finish.json();
-    expect(body.accountPub).toBe(ACCOUNT);
+    expect(body.accountPub).toBe(account());
     expect(body.wraps.map((w: { kind: string }) => w.kind)).toContain('recovery');
   });
 
@@ -445,11 +590,11 @@ describe('adding a device from one you are holding', () => {
     const waiting = await app.request(`/idp/enrol/channel/${channel}`);
     expect((await waiting.json()).delivery).toBeNull();
 
-    actor = { accountId: ACCOUNT, devicePub: 'old-device' };
+    actor = { accountId: account(), devicePub: 'old-device' };
     const delivery = {
       sealed: btoa('the account key, sealed to the transfer key'),
-      deviceCert: CERT,
-      accountPub: ACCOUNT,
+      deviceCert: cert(),
+      accountPub: account(),
       handle: 'viola',
     };
     const sent = await post(`/idp/enrol/channel/${channel}`, delivery);
@@ -476,8 +621,8 @@ describe('adding a device from one you are holding', () => {
     actor = null;
     const sent = await post(`/idp/enrol/channel/${channel}`, {
       sealed: btoa('x'),
-      deviceCert: CERT,
-      accountPub: ACCOUNT,
+      deviceCert: cert(),
+      accountPub: account(),
       handle: 'viola',
     });
     expect(sent.status).toBe(401);
@@ -494,8 +639,8 @@ describe('adding a device from one you are holding', () => {
 
     const sent = await post(`/idp/enrol/channel/${channel}`, {
       sealed: btoa('my key, in your channel'),
-      deviceCert: CERT,
-      accountPub: ACCOUNT,
+      deviceCert: cert(),
+      accountPub: account(),
       handle: 'viola',
     });
     expect(sent.status).toBe(403);
@@ -510,11 +655,11 @@ describe('adding a device from one you are holding', () => {
     const { channel } = await (
       await post('/idp/enrol/channel', { transferPub: TRANSFER_PUB })
     ).json();
-    actor = { accountId: ACCOUNT, devicePub: 'old-device' };
+    actor = { accountId: account(), devicePub: 'old-device' };
     const body = {
       sealed: btoa('first'),
-      deviceCert: CERT,
-      accountPub: ACCOUNT,
+      deviceCert: cert(),
+      accountPub: account(),
       handle: 'viola',
     };
 
@@ -530,11 +675,11 @@ describe('adding a device from one you are holding', () => {
     const { channel } = await (
       await post('/idp/enrol/channel', { transferPub: TRANSFER_PUB })
     ).json();
-    actor = { accountId: ACCOUNT, devicePub: 'old-device' };
+    actor = { accountId: account(), devicePub: 'old-device' };
     await post(`/idp/enrol/channel/${channel}`, {
       sealed: btoa('x'),
-      deviceCert: CERT,
-      accountPub: ACCOUNT,
+      deviceCert: cert(),
+      accountPub: account(),
       handle: 'viola',
     });
 
@@ -560,7 +705,7 @@ describe('the passkey wrap', () => {
 
   beforeEach(async () => {
     await register('viola', 'pw');
-    actor = { accountId: ACCOUNT, devicePub: 'dev-a' };
+    actor = { accountId: account(), devicePub: 'dev-a' };
   });
 
   it('is added from a signed-in device, and then opens the account', async () => {
@@ -648,7 +793,7 @@ describe('the passkey wrap', () => {
 describe('the second factor', () => {
   beforeEach(async () => {
     await register('viola', 'pw');
-    actor = { accountId: ACCOUNT, devicePub: 'dev-a' };
+    actor = { accountId: account(), devicePub: 'dev-a' };
   });
 
   it('does not gate a login until it has been confirmed', async () => {
@@ -714,7 +859,7 @@ describe('the second factor', () => {
     const { secret } = await (await post('/idp/2fa/totp', {})).json();
     await post('/idp/2fa/totp/confirm', { code: totpAt(secret, clock) });
 
-    const removed = await app.request('/idp/2fa/totp', { method: 'DELETE' });
+    const removed = await post('/idp/2fa/totp/remove', { code: totpAt(secret, clock + STEP) });
     expect(removed.status).toBe(204);
 
     const after = await login('viola', 'pw');

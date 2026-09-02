@@ -23,6 +23,16 @@ export interface SocketDeps {
   hub: Hub;
 }
 
+/**
+ * How many rooms one `SUBSCRIBE` may name.
+ *
+ * Each one is a full policy resolution against the store, so this is a bound on
+ * the work a single frame can ask for rather than a statement about how many
+ * rooms somebody may be in — a client with more than this subscribes in
+ * batches, which it has to be able to do anyway after a reconnect.
+ */
+const MAX_SUBSCRIBE = 100;
+
 /** Who the socket authenticated as, established before the session starts. */
 export interface Actor {
   accountId: string;
@@ -97,6 +107,14 @@ export class SocketSession {
         return this.#send({ op: 'PONG' });
 
       case 'SUBSCRIBE': {
+        // Capped. The frame schema allows 500 room ids and each one costs a
+        // `canRead` — a room, a membership, roles, overrides and an ownership
+        // check — so one frame was up to a couple of thousand queries, repeated
+        // as fast as the socket could carry it. A client subscribes to what it
+        // is in; anything past this is not a client.
+        if (frame.d.rooms.length > MAX_SUBSCRIBE) {
+          return this.#send({ op: 'ERROR', d: { reason: 'too_many_rooms' } });
+        }
         // Checked one room at a time, and silently skipped when refused. A
         // client learns what it got, not what it was denied: telling somebody
         // which of the rooms they guessed at exist is a directory.

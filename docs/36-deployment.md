@@ -76,9 +76,38 @@ other domains from this box.
 
 ```
 sudo certbot certonly --webroot -w /var/www/certbot -d revel.chat -d www.revel.chat
+sudo install -m 644 deploy/nginx/revel-tls.conf \
+                    deploy/nginx/revel-security-headers.conf /etc/nginx/snippets/
 sudo cp deploy/nginx/revel.chat.conf /etc/nginx/sites-available/revel.chat
 sudo nginx -t && sudo systemctl reload nginx
 ```
+
+**The two snippets are not optional.** `certbot certonly` never writes an
+`options-ssl-nginx.conf`, so without `revel-tls.conf` the server runs on nginx
+1.18's defaults — `TLSv1 TLSv1.1 TLSv1.2`, which is TLS 1.0 accepted and 1.3 not
+offered. `revel-security-headers.conf` carries the CSP, HSTS and
+`frame-ancestors`; it is `include`d in each location rather than set once,
+because a location with its own `add_header` inherits none from above.
+
+## The address the rate limiter sees
+
+`REVEL_TRUST_PROXY=1` is set in `deploy/docker-compose.yml`, and it is only
+correct because `revel.chat.conf` sets
+
+```
+proxy_set_header X-Forwarded-For $remote_addr;
+```
+
+— **overwriting** the header rather than appending to it. The Host reads the
+first element of `X-Forwarded-For`, so with the appending form
+(`$proxy_add_x_forwarded_for`) every caller supplies their own address, a fresh
+one per request lands in a fresh bucket, and the limiter stops existing.
+
+Leaving the flag unset is not the safe fallback it looks like: `address()` then
+returns one shared string for every caller, so the limits become global and a
+single noisy client exhausts the `auth` allowance for everybody on the box.
+Either put something in front that overwrites the header and set the flag, or
+accept that the limiter is process-wide.
 
 ## The proxy's route list
 

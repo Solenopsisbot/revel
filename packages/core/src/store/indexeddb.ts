@@ -102,8 +102,17 @@ export class IndexedDbStore implements LocalStore {
       // `add` rather than `put`, so an event that is already here is left
       // alone rather than overwritten. Re-delivery is not new information.
       const req = store.add({ roomId, event } satisfies StoredEvent, key(roomId, event.id));
-      // A duplicate key is the expected case, not a failure.
+      // **Only a duplicate.** Re-delivery is not new information and a
+      // `ConstraintError` is the expected case, so it is swallowed and the
+      // transaction carries on.
+      //
+      // Everything else is allowed through to abort the transaction. This used
+      // to swallow every error, which meant `QuotaExceededError` — the disk
+      // being full, which is the one storage failure that actually happens —
+      // completed the transaction reporting success while writing nothing, and
+      // the message was gone with no trace anywhere.
       req.onerror = (e: Event) => {
+        if (req.error?.name !== 'ConstraintError') return;
         e.preventDefault();
         e.stopPropagation();
       };

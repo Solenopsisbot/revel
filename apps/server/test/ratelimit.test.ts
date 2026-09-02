@@ -178,7 +178,13 @@ describe('classifying a request', () => {
 });
 
 describe('as middleware', () => {
-  function host(address = () => 'one-caller') {
+  /**
+   * `sessions` maps a bearer token to the account it really belongs to.
+   *
+   * A token that is not in it authenticates as nobody, which is the case that
+   * matters: the limiter must not hand an unverified string its own bucket.
+   */
+  function host(address = () => 'one-caller', sessions: Record<string, string> = {}) {
     const store = new MemoryStore();
     const limits = new RateLimiter();
     const app = createApp({
@@ -186,8 +192,11 @@ describe('as middleware', () => {
       hub: new Hub(),
       ids: new SnowflakeFactory(1),
       rateLimit: { limiter: limits, address },
-      async authenticate() {
-        return null;
+      async authenticate(req: Request) {
+        const header = req.headers.get('authorization') ?? '';
+        const token = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
+        const account = sessions[token];
+        return account ? { accountId: account, devicePub: `${account}-device` } : null;
       },
     });
     return { app, limits };
@@ -231,15 +240,48 @@ describe('as middleware', () => {
   });
 
   it('gives a signed-in device its own allowance', async () => {
-    // Keyed by the session token, so one loud device cannot spend the whole
-    // building's quota.
-    const h = host();
+    // Keyed by the *verified* session, so one loud device cannot spend the
+    // whole building's quota.
+    const h = host(() => 'one-caller', { 'token-one': 'alice', 'token-two': 'bob' });
     const spend = (token?: string) =>
       h.app.request('/rooms', { headers: token ? { authorization: `Bearer ${token}` } : {} });
 
     for (let i = 0; i < LIMITS.read.capacity; i++) await spend('token-one');
     expect((await spend('token-one')).status).toBe(429);
-    expect((await spend('token-two')).status).toBe(401);
+    // A different device, still going.
+    expect((await spend('token-two')).status).toBe(200);
+  });
+
+  it('does not hand an unverified token its own bucket', async () => {
+    // The bypass this replaced: the subject was the bearer token *as
+    // presented*, so a caller who had proved nothing minted a fresh token per
+    // request, landed in a fresh bucket every time, and was never limited.
+    // Which made `auth` — the class sized against guessing a password or a
+    // six-digit code — the cheapest one in the table to defeat.
+    const h = host();
+    const spend = (token: string) =>
+      h.app.request('/rooms', { headers: { authorization: `Bearer ${token}` } });
+
+    for (let i = 0; i < LIMITS.read.capacity; i++) await spend(`made-up-${i}`);
+    expect((await spend('made-up-again')).status).toBe(429);
+  });
+
+  it('sweeps each bucket against its own class', async () => {
+    // A sweep judged every entry by whichever bucket happened to trigger it,
+    // so a `read` request crossing the threshold measured exhausted `auth`
+    // entries against `read`'s much larger capacity and deleted them —
+    // forgiving precisely the callers being held down.
+    let now = 0;
+    const limits = new RateLimiter(() => now);
+    const slow = { capacity: 1, refillPerSecond: 0.01 };
+    const fast = { capacity: 100, refillPerSecond: 100 };
+
+    limits.take('guesser', slow);
+    limits.take('reader', fast);
+    // A second later: `fast` has refilled, `slow` has not.
+    now = 1000;
+    expect(limits.sweep()).toBe(1);
+    expect(limits.take('guesser', slow).ok).toBe(false);
   });
 
   it('does not keep the token it keyed by', async () => {

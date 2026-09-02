@@ -13,7 +13,7 @@
  * five minutes is 150 requests against a route that reads one row, which is
  * cheap enough not to be worth the complexity of anything else.
  */
-import { transport } from './identity.js';
+import { loadEnvelope, transport } from './identity.js';
 import { cryptoWasm } from './wasm.js';
 
 /** How often to ask, and for how long. Matches the channel's own lifetime. */
@@ -85,6 +85,27 @@ class Pairing {
         if (body?.delivery) {
           const sealed = unb64(body.delivery.sealed);
           const accountKey = wasm.Transfer.open(secret as Uint8Array, sealed);
+
+          // **The key decides which account this is, not the delivery.**
+          //
+          // `accountPub` and `handle` are fields in a body the IdP relayed, and
+          // this used to pass them straight through. Anyone who learned a
+          // channel id could deliver their *own* account key labelled with
+          // somebody else's handle, and the new device would sign in as the
+          // attacker while showing the name it expected — typing into their
+          // rooms, in their name. The fingerprint on the other screen only ever
+          // covered the transfer key.
+          //
+          // Deriving the public key from what we just unsealed costs one call
+          // and makes the claim checkable rather than trusted.
+          const envelope = await loadEnvelope();
+          const derived = b64url(envelope.accountPublic(accountKey));
+          if (derived !== body.delivery.accountPub) {
+            this.status = 'failed';
+            console.error('pairing refused: the delivered key is not the account it claims');
+            return;
+          }
+
           this.status = 'done';
           onPaired({
             accountPub: body.delivery.accountPub,

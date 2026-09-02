@@ -26,7 +26,7 @@
  * ordinary tests. The untestable part is small enough to read.
  */
 import type { EnrolDeps, Enrolled } from './enrol.js';
-import { EnrolError } from './enrol.js';
+import { b64url, EnrolError } from './enrol.js';
 
 /**
  * A source of PRF bytes from an authenticator.
@@ -131,6 +131,11 @@ export async function unlockWithPasskey(
   if (!wrap) throw new EnrolError('no_passkey_wrap');
 
   const accountKey = envelope.unwrap(unb64(wrap.blob), key);
+  // Derived, never taken from the response — see `assertOwns` in `enrol.ts`.
+  // A device that believes it is somebody else is a device acting as them.
+  if (b64url(envelope.accountPublic(accountKey)) !== body.accountPub) {
+    throw new EnrolError('account_mismatch');
+  }
   // A passkey unlock is a sign-in on a device that has no device key yet, so it
   // mints one like every other path that produces an account key.
   // Minted, not registered — registering is the first step of authenticating,

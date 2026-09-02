@@ -220,19 +220,33 @@ function matchesHas(message: Message, has: NonNullable<Query['has']>): boolean {
  * anything string-shaped finds the words in those too, which is the difference
  * between a message from a newer client being unfindable and being findable.
  */
-export function textOf(body: unknown): string {
+export function textOf(body: unknown, depth = 0): string {
+  // **Bounded, because the tree comes off a wire.**
+  //
+  // The schema validates one level of `RichText` and the shape is open below
+  // that, so a member can send a body nested tens of thousands deep inside the
+  // 64 KiB an event allows. This runs for every message in every open room on
+  // each keystroke of a search, so an unbounded walk turned one message into a
+  // stack overflow that took the whole search with it.
+  //
+  // Deep enough that nothing anybody writes reaches it, shallow enough that
+  // nothing can be built to.
+  if (depth > MAX_BODY_DEPTH) return '';
   if (typeof body === 'string') return body;
-  if (Array.isArray(body)) return body.map(textOf).join('');
+  if (Array.isArray(body)) return body.map((node) => textOf(node, depth + 1)).join('');
   if (body && typeof body === 'object') {
     const node = body as Record<string, unknown>;
     // `text` and `content` are where a node's words live; `t` is its type.
     return [node.text, node.content, node.children]
       .filter((v) => v !== undefined)
-      .map(textOf)
+      .map((child) => textOf(child, depth + 1))
       .join('');
   }
   return '';
 }
+
+/** How deep a rich-text tree may be before the walk stops. */
+const MAX_BODY_DEPTH = 64;
 
 function occurrences(hay: string, needle: string): number[] {
   const out: number[] = [];

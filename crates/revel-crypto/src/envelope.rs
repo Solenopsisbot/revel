@@ -225,6 +225,16 @@ pub fn generate_recovery_code() -> Zeroizing<String> {
 pub fn normalise_recovery_code(code: &str) -> Result<String, EnvelopeError> {
     let mut out = String::with_capacity(CODE_LEN);
     for ch in code.chars() {
+        // Rejected before anything is folded. `mapped as u8` below truncates a
+        // multi-byte `char` to its low byte, so a character like `İ` (U+0130)
+        // arrived as `0x30` — `'0'` — passed the alphabet check, and was pushed
+        // whole. `out.len()` counts *bytes*, so thirty ASCII characters plus one
+        // two-byte character measured 32 and the code went to Argon2 as
+        // something nobody typed, failing later as "that wrap did not open"
+        // rather than "that is not a recovery code".
+        if !ch.is_ascii() {
+            return Err(EnvelopeError::BadRecoveryCode);
+        }
         let c = ch.to_ascii_uppercase();
         let mapped = match c {
             '-' | ' ' => continue,

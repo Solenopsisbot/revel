@@ -44,7 +44,9 @@ import init from '@revel/crypto-wasm';
 import type { BlobRef, FaceRef } from '@revel/protocol';
 import {
   DEFAULT_EVERYONE,
+  has,
   Permission,
+  parse,
   SnowflakeFactory,
   serialize,
   toBase64,
@@ -444,7 +446,16 @@ export class Client {
     client.device = toAccountId(identity.devicePublicKey);
 
     const fetch = world.fetch;
-    client.session = new HostSession({ crypto: client.crypto, baseUrl: 'http://host', fetch });
+    // `host` matches what the app is configured to call itself. The client
+    // pins it: the name is inside the signature so that a signature collected
+    // by one Host cannot be replayed at another, which only holds if the client
+    // checks the name rather than copying it out of the response.
+    client.session = new HostSession({
+      crypto: client.crypto,
+      baseUrl: 'http://host',
+      host: HOST,
+      fetch,
+    });
     await client.session.register();
 
     const headers = client.session.headers;
@@ -480,6 +491,44 @@ export class Client {
       nonce: () => `${label}-${++client.#counter}-nonce`,
       now: () => world.time,
       schedule: world.schedule,
+      // The client half of `docs/04` §4. Resolved from the roles the world's
+      // store actually holds, so a scenario that grants somebody `MANAGE_SPACE`
+      // gets a client that honours their rename and one that does not, does
+      // not. Wired the way `apps/web` wires it, rather than granted flatly —
+      // the whole point of these checks is that they can refuse.
+      may: (roomId, account, permission) => {
+        // The room's own space, which is not always the harness's synthetic
+        // one — a scenario that calls `createSpace` gets a real space with a
+        // real owner, and that owner short-circuits exactly as `resolve()` does.
+        const room = world.store.rooms.get(roomId);
+        // A room with no space has no roles and its members are peers, which
+        // is what `policy.ts` does server-side and what `apps/web` wires.
+        if (room && !room.spaceId) {
+          return has(
+            Permission.VIEW | Permission.SEND | Permission.SEND_MEDIA | Permission.MANAGE_EVENTS,
+            Permission[permission],
+          );
+        }
+        const spaceId = room?.spaceId ?? SPACE;
+        if (world.store.owners.has(`${spaceId}:${account}`)) return true;
+
+        const inSpace = world.store.spaceMembers.get(`${spaceId}:${account}`);
+        const member = world.store.memberships.get(`${roomId}:${account}`);
+        // `@everyone` shares the space's id on a real space and is
+        // `role-everyone` on the synthetic one; both are harmless to look up.
+        const roleIds = [
+          spaceId,
+          EVERYONE,
+          ...(inSpace?.roleIds ?? []),
+          ...(member?.roleIds ?? []),
+        ];
+        let bits = 0n;
+        for (const id of roleIds) {
+          const role = world.store.roles.get(id);
+          if (role) bits |= parse(role.bits);
+        }
+        return has(bits, Permission[permission]);
+      },
       // `docs/35`'s rules, wired the way a real client wires them. Off by
       // default in the sense that nothing here changes unless a test sets
       // `notifySettings`; every decision is recorded so a test can assert on

@@ -12,6 +12,10 @@
 # and architecture-independent, which is what makes this work unchanged on
 # astral's aarch64.
 
+# Digest-pinned. A floating tag means the image you tested and the image that
+# ships are only probably the same thing, and "probably" is the wrong word for
+# the base layer of a server holding an IdP's OPAQUE setup. Update deliberately:
+#   docker pull node:22-alpine && docker inspect --format='{{index .RepoDigests 0}}' node:22-alpine
 FROM node:22-alpine AS deps
 WORKDIR /app
 RUN corepack enable
@@ -38,6 +42,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/server/node_modules ./apps/server/node_modules
 COPY --from=deps /app/packages/protocol/node_modules ./packages/protocol/node_modules
 COPY pnpm-workspace.yaml package.json ./
+# `.dockerignore` keeps `.env`, `revel-host.json` and any `*host-key*.json` out
+# of the build context entirely — `pnpm host-key` writes one into `apps/server`
+# by default, and this line would otherwise bake it into the image. Neither key
+# in that file can be regenerated (`docs/36`).
 COPY apps/server ./apps/server
 COPY packages/protocol ./packages/protocol
 

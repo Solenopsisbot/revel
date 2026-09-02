@@ -9,3 +9,24 @@ packages/crypto-wasm
 bench
 docs
 *.log
+
+# Secrets, and the near-misses.
+#
+# The build context is the whole repository and the Dockerfile does
+# `COPY apps/server ./apps/server`, so a host key sitting in that directory —
+# which is exactly where `pnpm host-key` writes one by default — was copied into
+# the image. `docs/36` is blunt that neither key inside it can be regenerated,
+# so an image pushed anywhere is every account on that Host.
+#
+# The patterns mirror `.gitignore` deliberately: the same file must not be
+# committable *or* shippable, and two lists that disagree is how one of them
+# gets forgotten.
+.env
+.env.*
+!.env.example
+revel-host.json
+**/revel-host.json
+*host-key*.json
+**/*host-key*.json
+*.pem
+**/*.pem

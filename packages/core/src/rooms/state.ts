@@ -202,13 +202,18 @@ export interface RoomState {
   spaceRolesAt?: string;
 
   /**
-   * face id → the face, from `room.faces`.
+   * face id → the face, from `room.faces`, plus who published it.
    *
    * A `FaceCard` rather than a `FaceRef`: the roster is where a face's note
    * lives, because it is one event per face rather than a field on every
    * message. See `FaceCard` in `@revel/protocol`.
+   *
+   * `account` is the reducer's, not the sender's — it is the authenticated
+   * account the event came from. A face belongs to whoever first announced it
+   * and only they may change it, so this is both the ownership record and the
+   * thing to check an `address` claim against before showing it as a link.
    */
-  faces: Map<string, FaceCard>;
+  faces: Map<string, FaceCard & { account: string }>;
   /** face id → the id of the event that last set it. Same reason as `nameAt`. */
   facesAt: Map<string, string>;
   /** thread root id → reply ids, in order. */

@@ -20,10 +20,10 @@
  *   pnpm test:degraded
  */
 import { chromium } from 'playwright';
+import { password } from './_password.mjs';
 
 const APP = process.env.REVEL_E2E_APP ?? 'http://localhost:5173';
 const stamp = Date.now().toString(36);
-const password = 'correct horse battery staple';
 
 let failures = 0;
 const ok = (label, cond, extra) => {
@@ -82,10 +82,17 @@ await page.goto(`${APP}/app`, { waitUntil: 'load' });
 // with clamped backoff before it gives up, and both `register` and `ensure` do
 // it — so how long this takes is a property of the retry policy, and a fixed
 // sleep is a number that goes stale the moment that policy is tuned.
+// `waitForFunction` on the rendered text, not a `text=` locator: a malformed
+// selector throws, the `.catch` that was here swallowed it, and the assertions
+// then ran against a page that had been given no time at all. Measured, the
+// banner arrives about 25 seconds in — two retrying handshakes at three
+// attempts each — so the timeout has to be generous and the wait has to be
+// real.
 await page
-  .locator('text=/Not connected|Showing what/')
-  .first()
-  .waitFor({ state: 'visible', timeout: 60_000 })
+  .waitForFunction(
+    () => /Not connected to your provider|Showing what/i.test(document.body.innerText),
+    { timeout: 90_000 },
+  )
   .catch(() => {});
 
 const seen = await page.evaluate(() => document.body.innerText);

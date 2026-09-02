@@ -220,3 +220,24 @@ fn a_recovery_key_is_derived_from_the_normalised_form() {
         *recovery_key(&code.to_lowercase(), &salt).unwrap()
     );
 }
+
+/// A code with a non-ASCII character in it is refused as a code, not as a
+/// failed unwrap thirty seconds later.
+///
+/// `mapped as u8` truncated a multi-byte `char` to its low byte, so `İ`
+/// (U+0130) arrived as `0x30` — `'0'` — and passed the alphabet check. Length
+/// was measured in *bytes*, so thirty ASCII characters plus one two-byte
+/// character measured 32 and went through to Argon2 as something nobody typed.
+/// It failed closed, but it failed as "that wrap did not open", which is the
+/// wrong sentence to show somebody on the one screen that exists because
+/// everything else has already gone wrong.
+#[test]
+fn a_recovery_code_with_non_ascii_in_it_is_refused_as_a_code() {
+    // Thirty ASCII characters plus one two-byte character: 32 bytes, 31 chars.
+    let sneaky = format!("{}\u{0130}", "0123456789".repeat(3));
+    assert_eq!(sneaky.len(), 32, "the byte length that used to pass");
+    assert!(normalise_recovery_code(&sneaky).is_err());
+
+    // And the ordinary case: a letter that is simply not in the alphabet.
+    assert!(normalise_recovery_code("Ω123-4567-8901-2345-6789-0123-4567-8901").is_err());
+}

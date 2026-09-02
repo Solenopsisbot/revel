@@ -110,8 +110,16 @@ export interface ResolveInput {
 
 /**
  * Effective permissions: union the roles, then apply room overrides — all
- * denies before any allows, so a deny on one role cannot be silently undone by
- * an allow on another.
+ * denies first, then all allows, so an explicit allow on any role the account
+ * holds wins over a deny on another.
+ *
+ * **Allow wins.** That is Discord's rule and it is the one people expect from a
+ * permissions editor shaped like this: an override exists to make an exception,
+ * and an exception that could be silently cancelled by a deny somewhere else is
+ * not one. The comment here used to claim the opposite — "a deny cannot be
+ * undone by an allow" — while the code below did what it does now, which is the
+ * dangerous direction for a doc comment to be wrong in: somebody reading it
+ * would build a moderation setup on a guarantee that was never there.
  *
  * The client runs this exact function so its UI gating agrees with the server
  * (`docs/04` §4). If they disagree, users see buttons that then fail.

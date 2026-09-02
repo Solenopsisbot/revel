@@ -116,6 +116,14 @@ export function mountAccounts(app: Hono, deps: AccountDeps): void {
     const handle = normaliseHandle(parsed.data.handle);
     if (RESERVED.has(handle)) return c.json({ error: 'handle_reserved' }, 409);
 
+    // The login half moves first. A handle lives in two tables — `accounts` for
+    // the directory, `enrolments` for the login — and renaming only the
+    // directory left somebody signing in under a name it no longer knew, with
+    // their old name reclaimable in one table and still answering in the other.
+    if (!(await deps.store.renameEnrolment(actor.accountId, handle))) {
+      return c.json({ error: 'handle_taken' }, 409);
+    }
+
     const existing = await deps.store.getAccount(actor.accountId);
     const { account, claimed } = await deps.store.claimHandle({
       id: actor.accountId,
@@ -128,6 +136,9 @@ export function mountAccounts(app: Hono, deps: AccountDeps): void {
     });
 
     if (!claimed && account.id !== actor.accountId) {
+      // The directory refused after the login half had already moved. Put it
+      // back, or the two disagree in the other direction.
+      if (existing) await deps.store.renameEnrolment(actor.accountId, existing.handle);
       return c.json({ error: 'handle_taken' }, 409);
     }
     return c.json(profile(account, deps.idp), claimed ? 201 : 200);

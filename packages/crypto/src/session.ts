@@ -150,8 +150,18 @@ export class Session {
     return stateOf(groupId, group);
   }
 
-  encrypt(groupId: string, plaintext: Uint8Array): Uint8Array {
-    return this.#group(groupId).encrypt(plaintext);
+  encrypt(groupId: string, plaintext: Uint8Array, aad: Uint8Array): Uint8Array {
+    return this.#group(groupId).encrypt(plaintext, aad);
+  }
+
+  decrypt(groupId: string, message: Uint8Array, aad: Uint8Array): Incoming {
+    const got = this.#group(groupId).decrypt(message, aad);
+    return {
+      kind: 'application',
+      sender: got.sender ?? -1,
+      data: got.data ?? new Uint8Array(),
+      epoch: Number(got.epoch ?? 0),
+    };
   }
 
   process(groupId: string, message: Uint8Array): Incoming {
@@ -162,6 +172,7 @@ export class Session {
           kind: 'application',
           sender: got.sender ?? -1,
           data: got.data ?? new Uint8Array(),
+          epoch: Number(got.epoch ?? 0),
         };
       case 'commit':
         return { kind: 'commit', sender: got.sender ?? -1 };

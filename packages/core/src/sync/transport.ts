@@ -30,9 +30,27 @@ import type {
   UpdateProfile,
 } from '@revel/protocol';
 
+/**
+ * The largest attachment this client will hold in memory.
+ *
+ * Matches the Host's own default ceiling in `apps/server/src/blobs.ts`. A
+ * deployment that raises one should raise the other; a client that refuses
+ * early is better than a tab that dies.
+ */
+const MAX_BLOB_BYTES = 100 * 1024 * 1024;
+
 export interface FetchOptions {
   /** Page backwards: only events older than this id. */
   before?: string;
+  /**
+   * Page forwards: only events newer than this id.
+   *
+   * What catching up uses. Without it the only page a client could ask for was
+   * the newest one, so a device that missed more than a page lost the middle
+   * for good — backfill pages older than the oldest event it holds, so nothing
+   * ever went back for the gap.
+   */
+  after?: string;
   /** At most this many. The server caps it at 200. */
   limit?: number;
 }
@@ -237,6 +255,7 @@ export class HttpTransport implements Transport {
   async fetchEvents(roomId: string, options: FetchOptions = {}): Promise<Event[]> {
     const query = new URLSearchParams();
     if (options.before) query.set('before', options.before);
+    if (options.after) query.set('after', options.after);
     if (options.limit !== undefined) query.set('limit', String(options.limit));
     const suffix = query.size ? `?${query}` : '';
 
@@ -324,7 +343,21 @@ export class HttpTransport implements Transport {
 
   async downloadBlob(blobId: string): Promise<Uint8Array> {
     const response = await this.#request(`/blobs/${encodeURIComponent(blobId)}`, { method: 'GET' });
-    return new Uint8Array(await response.arrayBuffer());
+
+    // **Refused before it is buffered.** `arrayBuffer()` reads the whole body
+    // into memory, and the body is whatever the Host decides to send — so a
+    // Host answering a thumbnail request with a stream of zeroes could put the
+    // tab out of memory before anything downstream got a chance to check a
+    // size. The header is the Host's too and is not trusted for anything except
+    // this: it is a cheap way to refuse the honest case early.
+    const declared = Number(response.headers.get('content-length') ?? Number.NaN);
+    if (Number.isFinite(declared) && declared > MAX_BLOB_BYTES) {
+      throw new TransportError(0, 'blob_too_large');
+    }
+
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length > MAX_BLOB_BYTES) throw new TransportError(0, 'blob_too_large');
+    return bytes;
   }
 
   async purgeBlob(blobId: string): Promise<void> {

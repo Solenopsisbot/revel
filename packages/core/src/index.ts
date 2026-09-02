@@ -23,6 +23,7 @@ export { LiveCore, type LiveCoreOptions } from './app/live.js';
 export { Attachments, type AttachmentsOptions } from './blobs/attachments.js';
 export { openBlob, type SealedBlob, type SealOptions, sealBlob } from './blobs/seal.js';
 export {
+  b64url,
   type DeviceMaterial,
   type EnrolDeps,
   EnrolError,

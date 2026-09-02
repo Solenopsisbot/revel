@@ -130,7 +130,7 @@ function corpus(seed: number, count: number): LocalEvent[] {
 }
 
 const apply = (events: LocalEvent[]) =>
-  reduceAll(emptyRoom('room'), events, { mayModerate: (a) => a === 'carol' });
+  reduceAll(emptyRoom('room'), events, { may: (a) => a === 'carol' });
 
 /** Compared by value: `toEqual` walks Maps and Sets, which this state is full of. */
 const same = (a: RoomState, b: RoomState) => expect(a).toEqual(b);
@@ -164,7 +164,7 @@ describe('the reducer, as a function of its log', () => {
         let state = emptyRoom('room');
         for (let i = 0; i < events.length; i += size) {
           state = reduceAll(state, events.slice(i, i + size), {
-            mayModerate: (a) => a === 'carol',
+            may: (a) => a === 'carol',
           });
         }
         same(state, expected);
@@ -186,10 +186,10 @@ describe('the reducer, as a function of its log', () => {
         const newer = events.slice(split);
 
         // Live first, then page backwards through what came before.
-        let state = reduceAll(emptyRoom('room'), newer, { mayModerate: (a) => a === 'carol' });
+        let state = reduceAll(emptyRoom('room'), newer, { may: (a) => a === 'carol' });
         for (let i = older.length; i > 0; i -= 17) {
           state = reduceAll(state, older.slice(Math.max(0, i - 17), i), {
-            mayModerate: (a) => a === 'carol',
+            may: (a) => a === 'carol',
           });
         }
         same(state, expected);
@@ -212,10 +212,10 @@ describe('the reducer, as a function of its log', () => {
       let state = emptyRoom('room');
       const seen: LocalEvent[] = [];
       for (const event of events) {
-        state = reduceAll(state, [event], { mayModerate: (a) => a === 'carol' });
+        state = reduceAll(state, [event], { may: (a) => a === 'carol' });
         seen.push(event);
         const again = seen[Math.floor(random() * seen.length)] as LocalEvent;
-        state = reduceAll(state, [again], { mayModerate: (a) => a === 'carol' });
+        state = reduceAll(state, [again], { may: (a) => a === 'carol' });
       }
       same(state, expected);
     }
@@ -228,7 +228,7 @@ describe('the reducer, as a function of its log', () => {
       const history: RoomState[] = [state];
 
       for (const event of events) {
-        state = reduce(state, event, { mayModerate: (a) => a === 'carol' });
+        state = reduce(state, event, { may: (a) => a === 'carol' });
         history.push(state);
       }
 
@@ -238,7 +238,7 @@ describe('the reducer, as a function of its log', () => {
       let replay = emptyRoom('room');
       expect(history[0]).toEqual(replay);
       for (const [index, event] of events.entries()) {
-        replay = reduce(replay, event, { mayModerate: (a) => a === 'carol' });
+        replay = reduce(replay, event, { may: (a) => a === 'carol' });
         expect(history[index + 1]).toEqual(replay);
       }
     }

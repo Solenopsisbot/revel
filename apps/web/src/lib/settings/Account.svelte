@@ -12,9 +12,30 @@
  * So: the address is real, and everything not yet connected reads as unknown
  * rather than as a number somebody might act on.
  */
+import { goto } from '$app/navigation';
 import { session } from '$lib/session.svelte.js';
 
 let moving = $state(false);
+let signingOut = $state(false);
+let confirming = $state(false);
+
+/**
+ * Sign this device out.
+ *
+ * `session.signOut()` existed and nothing called it. `Devices` hides the button
+ * for the current device with a comment saying it "lives under Account", and
+ * under Account there was nothing — so on a shared or borrowed machine there
+ * was no way to end a session at all.
+ */
+async function signOut() {
+  signingOut = true;
+  try {
+    await session.signOut();
+    await goto('/signin');
+  } finally {
+    signingOut = false;
+  }
+}
 </script>
 
 <h2>Account</h2>
@@ -76,8 +97,56 @@ let moving = $state(false);
   </p>
 </section>
 
+<section class="leaving">
+  <h3>This device</h3>
+  <p class="note">
+    Signing out removes your key from this device and deletes the copy of your
+    conversations stored here. Nothing is removed from the Host, and the other
+    devices you are signed in on are untouched — sign one of those out from
+    <em>Devices</em>.
+  </p>
+  {#if confirming}
+    <p class="warn">
+      You will need your password and second factor to sign in again. If you
+      have forgotten your password, make sure you still have your recovery code
+      before you do this.
+    </p>
+    <div class="row">
+      <button class="out" onclick={signOut} disabled={signingOut}>
+        {signingOut ? 'Signing out…' : 'Yes, sign out'}
+      </button>
+      <button class="cancel" onclick={() => (confirming = false)} disabled={signingOut}>
+        Cancel
+      </button>
+    </div>
+  {:else}
+    <button class="out" onclick={() => (confirming = true)}>Sign out of this device</button>
+  {/if}
+</section>
+
 <style>
   .lede { color: var(--text-2); margin: 0 0 22px; }
+  .leaving { margin-top: 28px; }
+  .leaving .row { display: flex; gap: 8px; }
+  .leaving .warn { color: var(--text-2); font-size: 14px; margin: 0 0 12px; }
+  .out {
+    background: var(--ground-3);
+    color: var(--danger, var(--text-1));
+    border: 1px solid var(--edge);
+    border-radius: var(--radius-2, 8px);
+    padding: 8px 14px;
+    cursor: pointer;
+  }
+  .out:hover:not(:disabled) { background: var(--ground-4); }
+  .out:disabled { opacity: .5; cursor: not-allowed; }
+  .cancel {
+    background: none;
+    color: var(--text-2);
+    border: 1px solid var(--edge);
+    border-radius: var(--radius-2, 8px);
+    padding: 8px 14px;
+    cursor: pointer;
+  }
   .provider { background: var(--ground-2); border-radius: var(--r-md); padding: 18px 20px; }
   .grid { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; }
   .k { color: var(--text-3); font-size: var(--text-sm); }

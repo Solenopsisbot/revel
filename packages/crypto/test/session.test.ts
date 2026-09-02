@@ -25,6 +25,8 @@ if (!built) {
 }
 
 const enc = new TextEncoder();
+/** The room binding an application message is sealed under. */
+const ROOM = new TextEncoder().encode('revel/room/v1\nroom-1');
 const HELLO = enc.encode('the buttons need to feel pressable');
 
 /**
@@ -57,7 +59,7 @@ describeIfBuilt('Session', () => {
     const joined = bob.joinGroup(out.welcome as Uint8Array, out.tree);
     expect(joined.groupId).toBe('g-general');
 
-    const got = bob.process('g-general', alice.encrypt('g-general', HELLO));
+    const got = bob.decrypt('g-general', alice.encrypt('g-general', HELLO, ROOM), ROOM);
     expect(got.kind).toBe('application');
     expect(got.kind === 'application' && new TextDecoder().decode(got.data)).toBe(
       'the buttons need to feel pressable',
@@ -124,7 +126,7 @@ describeIfBuilt('Session', () => {
     alice.createGroup('g-one');
     alice.createGroup('g-two');
 
-    expect(() => alice.encrypt('g-nope', HELLO)).toThrow(/g-one, g-two/);
+    expect(() => alice.encrypt('g-nope', HELLO, ROOM)).toThrow(/g-one, g-two/);
     alice.close();
   });
 
@@ -203,7 +205,7 @@ describeIfBuilt('Session', () => {
     laptop.applyPending('g-reload');
     const theirs = phone.joinGroup(out.welcome as Uint8Array, out.tree);
 
-    const before = laptop.encrypt('g-reload', HELLO);
+    const before = laptop.encrypt('g-reload', HELLO, ROOM);
 
     // Exported *after* the send. The other order is a hazard with its own test
     // in `crates/revel-crypto/tests/wasm.rs`.
@@ -233,9 +235,9 @@ describeIfBuilt('Session', () => {
 
     // The far side never reloaded. It can read what was sent before, and what
     // is sent after — which is only true because the device key came back too.
-    expect(phone.process('g-reload', before).kind).toBe('application');
-    const after = reloaded.encrypt('g-reload', HELLO);
-    expect(phone.process('g-reload', after).kind).toBe('application');
+    expect(phone.decrypt('g-reload', before, ROOM).kind).toBe('application');
+    const after = reloaded.encrypt('g-reload', HELLO, ROOM);
+    expect(phone.decrypt('g-reload', after, ROOM).kind).toBe('application');
 
     void theirs;
     reloaded.close();
@@ -274,7 +276,7 @@ describeIfBuilt('Session', () => {
     expect(back.importKeyPackages(stored.packages)).toBe(1);
     expect(back.joinGroup(out.welcome as Uint8Array, out.tree).groupId).toBe('g-invited');
 
-    const got = back.process('g-invited', host.encrypt('g-invited', HELLO));
+    const got = back.decrypt('g-invited', host.encrypt('g-invited', HELLO, ROOM), ROOM);
     expect(got.kind).toBe('application');
 
     // The join consumed it, which is itself a change worth persisting.
@@ -330,7 +332,7 @@ describeIfBuilt('Session', () => {
     alice.close();
 
     expect(() => alice.keyPackage()).toThrow(/closed/);
-    expect(() => alice.encrypt('g-gone', HELLO)).toThrow(/closed/);
+    expect(() => alice.encrypt('g-gone', HELLO, ROOM)).toThrow(/closed/);
     // Closing twice is a no-op, not a double free.
     expect(() => alice.close()).not.toThrow();
   });
@@ -377,8 +379,12 @@ describeIfBuilt('Dispatcher', () => {
     });
     expect(joined).toMatchObject({ groupId: 'g-wire' });
 
-    const sealed = d.handle({ id: 6, op: 'encrypt', args: ['g-wire', HELLO] }) as Uint8Array;
-    const got = other.handle({ id: 4, op: 'process', args: ['g-wire', sealed] });
+    const sealed = d.handle({
+      id: 6,
+      op: 'encrypt',
+      args: ['g-wire', HELLO, ROOM],
+    }) as Uint8Array;
+    const got = other.handle({ id: 4, op: 'decrypt', args: ['g-wire', sealed, ROOM] });
     expect(got).toMatchObject({ kind: 'application' });
 
     d.handle({ id: 7, op: 'close', args: [] });

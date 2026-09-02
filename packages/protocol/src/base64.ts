@@ -33,7 +33,13 @@ export function fromBase64(s: string): Uint8Array {
   let buf = 0;
   let bits = 0;
   for (let i = 0; i < clean.length; i++) {
-    const v = LOOKUP[clean.charCodeAt(i)]!;
+    // `charCodeAt` can exceed the table, and an index past a `Uint8Array` is
+    // `undefined` rather than a throw — so a non-Latin character used to sail
+    // through the `=== 255` check and shift garbage into the output instead of
+    // being rejected. Zod's `.base64()` covers anything that came off a wire;
+    // `fromAccountId` does not, which is where this would have been felt.
+    const code = clean.charCodeAt(i);
+    const v = code < 256 ? (LOOKUP[code] as number) : 255;
     if (v === 255) throw new SyntaxError(`invalid base64 at index ${i}`);
     buf = (buf << 6) | v;
     bits += 6;

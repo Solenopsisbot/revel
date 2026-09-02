@@ -21,29 +21,17 @@
          SVG so it is sharp at every size the mark was designed for — 48 down
          to 12 — without shipping five PNGs. -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght,SOFT@9..144,500..700,50&family=JetBrains+Mono:wght@400;600&display=swap"
-      rel="stylesheet"
-    />
-    <script>
-      // Runs before first paint: reads the stored appearance and stamps the
-      // attributes the token layer reads. Doing this in a component would mean
-      // a frame of the default theme first.
-      (() => {
-        try {
-          var q = new URLSearchParams(location.search);
-          var a = JSON.parse(localStorage.getItem('revel.appearance') || '{}');
-          var el = document.documentElement;
-          el.dataset.theme = q.get('theme') || a.theme || 'dusk';
-          el.dataset.density = q.get('density') || a.density || 'cozy';
-          el.dataset.personality = q.get('personality') || a.personality || 'full';
-        } catch (e) {
-          /* storage unavailable; the defaults in the markup stand */
-        }
-      })();
-    </script>
+    <!--
+      The type faces are served from this origin — see `src/fonts.css`. They
+      used to come from Google's CDN, which told a third party the address and
+      user agent of everybody who opened any page, including the invite page
+      somebody follows before they have an account. That is a poor footnote on a
+      product whose claim is that even the server it talks to cannot read
+      anything.
+    -->
+    <!-- Appearance before first paint. A file rather than an inline script so
+         the CSP can say `script-src 'self'` without a nonce or a hash. -->
+    <script src="/theme-init.js"></script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

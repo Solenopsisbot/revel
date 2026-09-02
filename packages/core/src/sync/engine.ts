@@ -30,6 +30,7 @@ import {
   encodePayload,
   type FaceRef,
   frankingKey,
+  type PermissionName,
   parseEncrypted,
   payloadBytes,
   toAccountId,
@@ -59,6 +60,26 @@ const groupKey = (roomId: string) => `room:group:${roomId}`;
 /** The device-wide key package blob has no natural id; this is it. */
 const KEY_PACKAGES = 'self';
 
+/**
+ * How many epochs of roster to keep, for naming the sender of a late message.
+ *
+ * Enough for ordinary out-of-order delivery and reconnects. Past that the
+ * sender is reported as a leaf rather than guessed at.
+ */
+const ROSTER_EPOCHS = 8;
+
+/**
+ * The bytes that bind a message to the room it was sent in.
+ *
+ * Carried as MLS authenticated data — signed, not encrypted — so a Host that
+ * moves a message between two rooms of one group produces something that fails
+ * to open rather than something that opens in the wrong place. Domain-prefixed
+ * so these bytes can never be confused with any other use of a room id.
+ */
+function roomBinding(roomId: string): Uint8Array {
+  return new TextEncoder().encode(`revel/room/v1\n${roomId}`);
+}
+
 export interface RoomSyncOptions {
   crypto: CryptoEngine;
   store: LocalStore;
@@ -70,7 +91,26 @@ export interface RoomSyncOptions {
   account: string;
 
   /** `docs/04` §4: the client honours redactions from non-authors only here. */
-  mayModerate?: (account: string) => boolean;
+  /**
+   * Whether an account holds a permission in a room.
+   *
+   * The client half of `docs/04` §4 — redactions from non-authors, pins, room
+   * and space renames, role names. All of them live inside the ciphertext, so
+   * the server cannot enforce any of them and every reader has to.
+   *
+   * Unwired means nobody may, which is quiet rather than exploitable.
+   */
+  may?: (roomId: string, account: string, permission: PermissionName) => boolean;
+
+  /**
+   * Called when the Host reports a different group for a room than the one it
+   * is already bound to.
+   *
+   * Refused either way — see `bind`. This is so a client can say so rather than
+   * failing silently, because the benign cause and the hostile one look
+   * identical from here.
+   */
+  onRebind?: (roomId: string, held: string, offered: string) => void;
 
   /**
    * How to decide whether an incoming event deserves a notification.
@@ -161,16 +201,36 @@ export class RoomSync {
   #stream?: EventStream;
   #account: string;
   #notify: NotifyDeps | undefined;
-  #mayModerate: ((account: string) => boolean) | undefined;
+  #may: ((roomId: string, account: string, permission: PermissionName) => boolean) | undefined;
+  #onRebind: ((roomId: string, held: string, offered: string) => void) | undefined;
   #nonce: () => string;
   #now: () => number;
   #schedule: (fn: () => void, ms: number) => () => void;
 
   #rooms = new Map<string, RoomState>();
   #groups = new Map<string, string>();
+  /**
+   * This device's key, so an echo can be checked against who really sent it.
+   *
+   * Resolved lazily from the crypto core the first time an echo is considered —
+   * the engine is constructed before a session is necessarily open, so reading
+   * it in the constructor would be reading it too early.
+   */
+  #device: string | null = null;
+  #devicePending: Promise<string> | null = null;
   #listeners = new Map<string, Set<RoomListener>>();
   #unsubscribes = new Map<string, () => void>();
-  /** `groupId:epoch` → leaf → account. Rebuilt when the epoch moves. */
+  /**
+   * `groupId:epoch` → leaf → account, snapshotted while we were at that epoch.
+   *
+   * Kept for a few epochs rather than only the current one, because a leaf
+   * index only means something *within* an epoch: MLS gives a freed leaf to the
+   * next member added, so a message from an earlier epoch resolved against the
+   * current roster names whoever inherited the index rather than whoever wrote
+   * it. A Host that delays delivery across a removal picks the moment.
+   *
+   * A snapshot we no longer hold is not guessed at — see `#accountFor`.
+   */
   #roster = new Map<string, Map<number, string>>();
   /**
    * Nonce → the payload we sent under it, until the echo comes back.
@@ -204,7 +264,8 @@ export class RoomSync {
     this.#transport = options.transport;
     this.#stream = options.stream;
     this.#account = options.account;
-    this.#mayModerate = options.mayModerate;
+    this.#may = options.may;
+    this.#onRebind = options.onRebind;
     this.#notify = options.notify;
     this.#nonce = options.nonce ?? (() => crypto.randomUUID());
     this.#now = options.now ?? (() => Date.now());
@@ -228,7 +289,33 @@ export class RoomSync {
    * a narrower room gets its own. The mapping is policy the server decides, so
    * it is told to us rather than derived here.
    */
+  /**
+   * Say which MLS group opens a room.
+   *
+   * **A room's group is bound once.** `docs/29` §1 has the reason in another
+   * context — changing ciphersuite means a new group rather than an upgraded
+   * one — and it is the same here: the history already in this room is sealed
+   * under the group it was written in, and pointing the room at a different one
+   * does not move it, it abandons it.
+   *
+   * Which is also why a *change* is refused rather than applied. `RoomInfo`
+   * comes from the Host, and this used to take its word on every refresh: a
+   * Host could mint a group containing only its own leaf, Welcome the device
+   * into it, re-point an existing room at it, and the next message that room
+   * sent would be encrypted to the Host. Nothing said anything, because
+   * rebinding looked exactly like binding.
+   *
+   * `onRebind` is how a client surfaces it. There is no honest automatic
+   * answer: the device cannot tell a Host that has genuinely re-keyed a room
+   * from one that is helping itself, and quietly picking either is how you get
+   * a security property nobody can rely on.
+   */
   async bind(roomId: string, groupId: string): Promise<void> {
+    const held = this.#groups.get(roomId) ?? (await this.#store.get<string>(groupKey(roomId)));
+    if (held && held !== groupId) {
+      this.#onRebind?.(roomId, held, groupId);
+      throw new Error(`room ${roomId} is already bound to group ${held}, not ${groupId}`);
+    }
     this.#groups.set(roomId, groupId);
     await this.#store.put(groupKey(roomId), groupId);
   }
@@ -288,7 +375,9 @@ export class RoomSync {
     // No snapshot: rebuild from the log, which is the thing that is actually
     // authoritative. A snapshot is a cache and is allowed to be missing.
     const events = await this.#store.listEvents(roomId);
-    const state = reduceAll(emptyRoom(roomId), events, { mayModerate: this.#mayModerate });
+    const state = reduceAll(emptyRoom(roomId), events, {
+      may: (account, permission) => this.#may?.(roomId, account, permission) ?? false,
+    });
     this.#rooms.set(roomId, state);
     if (events.length) await this.#store.putRoom(state);
     return state;
@@ -321,31 +410,42 @@ export class RoomSync {
     let cursor = await this.#store.lastEventId(roomId);
 
     for (;;) {
-      const page = await this.#transport.fetchEvents(roomId, { limit: pageSize });
-      // Hoisted so the closure sees a `string`, not a `string | null` that
-      // TypeScript will not narrow across a function boundary.
-      const since = cursor;
-      // A purge tombstone carries the **id of the event it erased**, so it is
-      // never "newer than the cursor" and an id-filtered catch-up walks
-      // straight past it. A device that was offline when a message was purged
-      // would then keep its decrypted copy forever while everybody else
-      // dropped theirs — the client silently diverging from the room, which is
-      // the one outcome a tombstone exists to prevent. Re-applying one is
-      // idempotent, so letting them through costs nothing.
-      const fresh = since
-        ? page.filter((e) => compare(e.id, since) > 0 || e.purgedAt != null)
-        : page;
-      if (fresh.length === 0) break;
+      // **With the cursor.** It was computed here, updated at the bottom of the
+      // loop, and never sent — so every iteration asked for the newest page and
+      // the loop ended as soon as that page was fully applied. A device that
+      // missed more than one page never saw the middle of the gap, and never
+      // would: `backfill` only pages *older* than the oldest event held, so
+      // nothing ever went looking for it.
+      const page = await this.#transport.fetchEvents(roomId, {
+        ...(cursor ? { after: cursor } : {}),
+        limit: pageSize,
+      });
+      if (page.length === 0) break;
 
-      await this.receive(roomId, fresh);
-      const newest = fresh.reduce((a, b) => (compare(a.id, b.id) >= 0 ? a : b));
-      // Only messages move the cursor. A tombstone that came through the
-      // filter above is older than the cursor by construction, and letting one
-      // set it would walk the catch-up backwards.
+      await this.receive(roomId, page);
+      const newest = page.reduce((a, b) => (compare(a.id, b.id) >= 0 ? a : b));
+      // A Host that ignores `after` hands back the newest page forever. The
+      // guard turns that into one wasted round trip rather than a loop.
       if (compare(newest.id, cursor ?? '') <= 0) break;
       cursor = newest.id;
       if (page.length < pageSize) break;
     }
+
+    // A purge tombstone carries the **id of the event it erased**, so it is
+    // older than the cursor by construction and forward paging walks straight
+    // past it. A device that was offline when a message was purged would keep
+    // its decrypted copy forever while everybody else dropped theirs — the
+    // client silently diverging from the room, which is the one outcome a
+    // tombstone exists to prevent.
+    //
+    // One look at the newest page catches the ordinary case: a purge somebody
+    // performed recently. It does **not** catch a purge of something far back
+    // in history, which needs the Host to be able to say "what changed since",
+    // and it cannot. Re-applying a tombstone is idempotent, so this costs a
+    // request and nothing else.
+    const recent = await this.#transport.fetchEvents(roomId, { limit: pageSize });
+    const tombstones = recent.filter((e) => e.purgedAt != null);
+    if (tombstones.length) await this.receive(roomId, tombstones);
 
     return this.state(roomId);
   }
@@ -424,12 +524,23 @@ export class RoomSync {
     }
 
     if (decrypted.length) await this.#store.putEvents(roomId, decrypted);
-    if (this.#notify && decrypted.length) this.#decideNotifications(roomId, batch, decrypted);
 
-    let state = reduceAll(this.state(roomId), decrypted, { mayModerate: this.#mayModerate });
+    let state = reduceAll(this.state(roomId), decrypted, {
+      may: (account, permission) => this.#may?.(roomId, account, permission) ?? false,
+    });
     for (const purge of purges) {
       state = markPurged(state, purge.id, purge.purgedAt ?? this.#now());
     }
+
+    // **After the batch has been reduced, against the room it produced.**
+    //
+    // `docs/35` rule 7 asks whether a message is a reply to *you*, which means
+    // looking the parent up — and this used to run against the state from
+    // before the batch. So a reply whose parent arrived in the same batch found
+    // nothing and never fired: ordinary on any catch-up, and every single time
+    // on a cold sync, where the whole conversation arrives at once.
+    if (this.#notify && decrypted.length)
+      this.#decideNotifications(roomId, batch, decrypted, state);
 
     // Crypto state moved: processing anything advances the ratchet, and a
     // commit moves the epoch outright.
@@ -718,7 +829,12 @@ export class RoomSync {
    * is durable by the time anything is told about it, so a notification can
    * never point at something a reload would lose.
    */
-  #decideNotifications(roomId: string, batch: Event[], decrypted: LocalEvent[]): void {
+  #decideNotifications(
+    roomId: string,
+    batch: Event[],
+    decrypted: LocalEvent[],
+    state: RoomState,
+  ): void {
     const deps = this.#notify;
     if (!deps) return;
     const place = deps.place(roomId);
@@ -729,7 +845,6 @@ export class RoomSync {
 
     const settings = deps.settings();
     const classes = new Map(batch.map((e) => [e.id, e.class]));
-    const state = this.state(roomId);
 
     for (const local of decrypted) {
       const payload = local.payload;
@@ -804,10 +919,23 @@ export class RoomSync {
   }
 
   async #decrypt(roomId: string, event: Event): Promise<LocalEvent | null> {
-    // Our own echo. See `#outbox`.
-    const mine = event.clientNonce ? this.#outbox.get(event.clientNonce) : undefined;
-    if (mine) {
-      this.#outbox.delete(event.clientNonce as string);
+    // **The Host does not get to say which room this belongs to.**
+    //
+    // Every room in a space that shares an audience shares a group, so a
+    // message from a sibling room decrypts perfectly here. The only thing that
+    // ever said otherwise was the envelope, and the envelope is the Host's.
+    // Checked against the room we asked about, which is ours.
+    if (event.room !== roomId) return null;
+
+    // Our own echo. Keyed by room *and* nonce, and only accepted from this
+    // device: the Host sees every nonce we send, and matching on the nonce
+    // alone let it place our own message in a room of its choosing, at an id
+    // and a time of its choosing, while the real echo was then dropped as an
+    // undecryptable duplicate.
+    const outboxKey = event.clientNonce ? `${roomId}:${event.clientNonce}` : undefined;
+    const mine = outboxKey ? this.#outbox.get(outboxKey) : undefined;
+    if (mine && event.sender === (await this.#deviceKey())) {
+      this.#outbox.delete(outboxKey as string);
       return {
         id: event.id,
         account: this.#account,
@@ -819,7 +947,13 @@ export class RoomSync {
     }
 
     const groupId = await this.groupFor(roomId);
-    const incoming = await this.#crypto.process(groupId, payloadBytes(event));
+    // `decrypt`, not `process`: this is the event channel, which the Host
+    // fills. A handshake message delivered here used to be applied to group
+    // state before anything could look at what it was — advancing the epoch
+    // behind `GroupSync`'s back, so the same commit then failed to apply when
+    // it arrived through the log and the device sat an epoch behind for good.
+    // It also checks the message was sealed for *this* room.
+    const incoming = await this.#crypto.decrypt(groupId, payloadBytes(event), roomBinding(roomId));
     if (incoming.kind !== 'application') return null;
 
     let json: unknown;
@@ -834,7 +968,7 @@ export class RoomSync {
 
     return {
       id: event.id,
-      account: await this.#accountFor(groupId, incoming.sender),
+      account: await this.#accountFor(groupId, incoming.sender, incoming.epoch),
       at: event.createdAt,
       clientNonce: event.clientNonce,
       purgedAt: event.purgedAt,
@@ -842,26 +976,56 @@ export class RoomSync {
     };
   }
 
-  /** Which account a leaf belongs to, cached per epoch. */
-  async #accountFor(groupId: string, leaf: number): Promise<string> {
-    const { epoch } = await this.#crypto.state(groupId);
-    const key = `${groupId}:${epoch}`;
+  /** This device's public key, as the Host spells it on an event's `sender`. */
+  async #deviceKey(): Promise<string> {
+    if (this.#device) return this.#device;
+    this.#devicePending ??= this.#crypto
+      .identity()
+      .then((id) => toAccountId(id.devicePublicKey))
+      .then((key) => {
+        this.#device = key;
+        return key;
+      })
+      .finally(() => {
+        this.#devicePending = null;
+      });
+    return this.#devicePending;
+  }
 
-    let roster = this.#roster.get(key);
-    if (!roster) {
-      roster = new Map();
+  /**
+   * Which account a leaf belonged to **at the epoch the message was sealed**.
+   *
+   * The epoch is the whole point. Resolving against the current roster was
+   * wrong in a way that is worse than not knowing: MLS fills a freed leaf with
+   * the next member added, so a message sent by somebody who has since been
+   * removed gets attributed to whoever took their index — and the reducer then
+   * honours that person's edits, redactions and receipts under the wrong name.
+   */
+  async #accountFor(groupId: string, leaf: number, epoch: number): Promise<string> {
+    const current = (await this.#crypto.state(groupId)).epoch;
+
+    // Snapshot the epoch we are actually at, which is the only one the crypto
+    // core can describe.
+    const currentKey = `${groupId}:${current}`;
+    if (!this.#roster.has(currentKey)) {
+      const roster = new Map<number, string>();
       for (const member of await this.#crypto.members(groupId)) {
         roster.set(member.leaf, toAccountId(member.account));
       }
-      // One epoch's roster is enough; the previous one is not coming back.
-      this.#roster.clear();
-      this.#roster.set(key, roster);
+      this.#roster.set(currentKey, roster);
+      // Bounded. A handful of epochs covers ordinary out-of-order delivery;
+      // holding every roster a long-lived group ever had is a leak.
+      if (this.#roster.size > ROSTER_EPOCHS) {
+        const oldest = this.#roster.keys().next().value;
+        if (oldest !== undefined) this.#roster.delete(oldest);
+      }
     }
 
-    // A leaf we have no name for is still a real sender — the roster may have
-    // moved on since. Naming it by leaf keeps the message rather than dropping
-    // it, and reads as "someone" rather than as somebody wrong.
-    return roster.get(leaf) ?? `leaf:${leaf}`;
+    // A message from an epoch whose roster we no longer hold is not guessed
+    // at. `leaf:n` reads as "someone" and is honest; a name from the wrong
+    // epoch reads as a person and is not.
+    const named = this.#roster.get(`${groupId}:${epoch}`)?.get(leaf);
+    return named ?? `leaf:${leaf}`;
   }
 
   // -- sending --------------------------------------------------------------
@@ -907,7 +1071,7 @@ export class RoomSync {
       // rule that has to stay right forever.
       const plaintext = new TextEncoder().encode(JSON.stringify(body));
       const commits = frank ? await commitment(frank, plaintext) : undefined;
-      const sealed = await this.#crypto.encrypt(groupId, plaintext);
+      const sealed = await this.#crypto.encrypt(groupId, plaintext, roomBinding(roomId));
       await this.persistCrypto();
       const { epoch } = await this.#crypto.state(groupId);
       await this.#transport.send(roomId, {
@@ -990,10 +1154,10 @@ export class RoomSync {
       // rule that has to stay right forever.
       const plaintext = new TextEncoder().encode(JSON.stringify(body));
       const commits = frank ? await commitment(frank, plaintext) : undefined;
-      const sealed = await this.#crypto.encrypt(groupId, plaintext);
+      const sealed = await this.#crypto.encrypt(groupId, plaintext, roomBinding(roomId));
       // Remembered so the echo can be applied without decrypting it, which MLS
       // will not let this device do for its own messages.
-      this.#outbox.set(clientNonce, body);
+      this.#outbox.set(`${roomId}:${clientNonce}`, body);
 
       // 3. Persist, before anything leaves. If this throws we have burned a
       //    generation and sent nothing, which is the safe way to fail.
@@ -1014,7 +1178,7 @@ export class RoomSync {
       this.#unsent.delete(clientNonce);
       return await this.receive(roomId, result.event);
     } catch (error) {
-      this.#outbox.delete(clientNonce);
+      this.#outbox.delete(`${roomId}:${clientNonce}`);
       // Kept so `retry` has something to send. Only for messages: nothing
       // else has a row on screen to retry *from*, and a read receipt that
       // failed is one the next one supersedes anyway.

@@ -60,6 +60,13 @@ export interface AppDeps {
   /** A long-lived server secret, for answers about accounts that do not exist. */
   decoyKey?: string;
   /**
+   * A real OPAQUE registration record for an account nobody owns.
+   *
+   * `/idp/login/start` runs against it when the handle is unknown, so that an
+   * unknown handle is indistinguishable from a known one. See `enrolment.ts`.
+   */
+  decoyRecord?: string;
+  /**
    * Rate limiting. Absent means none, which is right for a test and wrong for
    * anything reachable — `docs/29` §6.
    */
@@ -113,7 +120,18 @@ export function createApp(deps: AppDeps) {
 
   // First, before anything reads a body or touches the store. A limiter that
   // runs after the work it is limiting is decoration.
-  if (deps.rateLimit) app.use('*', rateLimit(deps.rateLimit));
+  if (deps.rateLimit) {
+    app.use(
+      '*',
+      rateLimit({
+        // Resolved through the same authenticator the routes use, so the
+        // per-caller allowance is only ever given to a caller the store has
+        // actually vouched for.
+        identify: async (req) => (await deps.authenticate(req))?.devicePub ?? null,
+        ...deps.rateLimit,
+      }),
+    );
+  }
 
   app.get('/health', (c) => c.json({ ok: true }));
 
@@ -179,8 +197,12 @@ export function createApp(deps: AppDeps) {
     if (denial) return c.json({ error: denial }, denialStatus[denial] ?? 403);
 
     const before = c.req.query('before') ?? undefined;
+    // `after` pages forward, for a client catching up. Without it the only
+    // question a client could ask was "the newest page", so anybody who missed
+    // more than one page had no way to ask for the middle.
+    const after = c.req.query('after') ?? undefined;
     const limit = Math.min(Number(c.req.query('limit') ?? 50) || 50, 200);
-    return c.json({ events: await deps.store.listEvents(roomId, { before, limit }) });
+    return c.json({ events: await deps.store.listEvents(roomId, { before, after, limit }) });
   });
 
   app.delete('/rooms/:room/events/:id', async (c) => {
@@ -218,6 +240,15 @@ export function createApp(deps: AppDeps) {
   // the routes are simply not mounted — the same shape as `security.txt` with
   // no contact: a missing capability rather than a broken one.
   if (deps.opaque) {
+    // Loud, like the store and the shard. Without a decoy record,
+    // `/idp/login/start` cannot run the OPAQUE exchange for a handle that does
+    // not exist, so it answers differently for one that does — and the whole
+    // point of the rest of this file is that the question cannot be asked.
+    if (!deps.decoyRecord) {
+      console.warn(
+        'idp: no decoy OPAQUE record — /idp/login/start will distinguish an unknown handle',
+      );
+    }
     mountEnrolment(app, {
       store: deps.store,
       opaque: deps.opaque,
@@ -227,6 +258,7 @@ export function createApp(deps: AppDeps) {
       // The OPAQUE setup doubles as the decoy key: it is already a long-lived
       // server secret, and this needs nothing more than that.
       decoyKey: deps.decoyKey ?? 'revel-decoy',
+      ...(deps.decoyRecord ? { decoyRecord: deps.decoyRecord } : {}),
       ...(deps.now ? { now: deps.now } : {}),
     });
   }

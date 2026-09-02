@@ -161,8 +161,8 @@ fn the_binding_carries_a_full_exchange() {
     let mut theirs = phone.join_group(&welcome, &out.tree()).ok().unwrap();
     assert_eq!(theirs.id(), b"room-general");
 
-    let sealed = group.encrypt(b"the buttons need to feel pressable").ok().unwrap();
-    let got = theirs.process(&sealed).ok().unwrap();
+    let sealed = group.encrypt(b"the buttons need to feel pressable", b"room-1").ok().unwrap();
+    let got = theirs.decrypt(&sealed, b"room-1").ok().unwrap();
     assert_eq!(got.kind(), "application");
     assert_eq!(got.data().unwrap(), b"the buttons need to feel pressable");
     assert_eq!(got.sender(), Some(group.own_leaf()));
@@ -283,7 +283,7 @@ fn a_group_survives_a_reload() {
     let mut theirs = phone.join_group(&out.welcome().unwrap(), &out.tree()).ok().unwrap();
 
     // A message sent before the reload, which must still be readable after.
-    let sealed_message = group.encrypt(b"sent before the reload").ok().unwrap();
+    let sealed_message = group.encrypt(b"sent before the reload", b"room-1").ok().unwrap();
 
     // Everything a client would have persisted, and nothing else. Exported
     // *after* the send, which is the order a client has to use — see
@@ -315,11 +315,11 @@ fn a_group_survives_a_reload() {
 
     // The other side, which never reloaded, can still read what we sent before
     // the reload, and we can still talk to it afterwards.
-    let got = theirs.process(&sealed_message).ok().unwrap();
+    let got = theirs.decrypt(&sealed_message, b"room-1").ok().unwrap();
     assert_eq!(got.data().unwrap(), b"sent before the reload");
 
-    let after = group.encrypt(b"and after it").ok().unwrap();
-    assert_eq!(theirs.process(&after).ok().unwrap().data().unwrap(), b"and after it");
+    let after = group.encrypt(b"and after it", b"room-1").ok().unwrap();
+    assert_eq!(theirs.decrypt(&after, b"room-1").ok().unwrap().data().unwrap(), b"and after it");
 }
 
 /// Restoring is only possible with the same account. A sealed group is not a
@@ -415,8 +415,8 @@ fn restoring_behind_the_last_send_is_refused_by_the_far_side() {
     let device_secret = laptop.secret_key();
 
     // Then a message goes out, and the far side reads it.
-    let first = group.encrypt(b"the first message").ok().unwrap();
-    assert_eq!(theirs.process(&first).ok().unwrap().data().unwrap(), b"the first message");
+    let first = group.encrypt(b"the first message", b"room-1").ok().unwrap();
+    assert_eq!(theirs.decrypt(&first, b"room-1").ok().unwrap().data().unwrap(), b"the first message");
 
     // The page dies before that state reached disk.
     drop(group);
@@ -430,11 +430,11 @@ fn restoring_behind_the_last_send_is_refused_by_the_far_side() {
 
     // It looks fine from here — same epoch, same leaf, encrypts happily.
     assert_eq!(group.epoch(), 1);
-    let reused = group.encrypt(b"a different message").ok().unwrap();
+    let reused = group.encrypt(b"a different message", b"room-1").ok().unwrap();
 
     // And the far side throws it away, because that generation is spent.
     assert!(
-        theirs.process(&reused).is_err(),
+        theirs.decrypt(&reused, b"room-1").is_err(),
         "a rewound sender's message was accepted; replay protection is not working"
     );
 }
@@ -482,8 +482,8 @@ fn a_pending_invite_survives_a_reload() {
     let mut ours = laptop.join_group(&out.welcome().unwrap(), &out.tree()).ok().unwrap();
     assert_eq!(ours.id(), b"g-invited");
 
-    let sealed = group.encrypt(b"welcome in").ok().unwrap();
-    assert_eq!(ours.process(&sealed).ok().unwrap().data().unwrap(), b"welcome in");
+    let sealed = group.encrypt(b"welcome in", b"room-1").ok().unwrap();
+    assert_eq!(ours.decrypt(&sealed, b"room-1").ok().unwrap().data().unwrap(), b"welcome in");
 
     // Joining consumed it, so there is nothing left outstanding — and that
     // deletion is itself a change the store must persist.
@@ -567,8 +567,8 @@ fn the_welcome_does_not_carry_the_tree() {
     let mut joined = phones[0].join_group(&welcome, &tree).ok().unwrap();
     assert_eq!(joined.id(), b"g-wide");
 
-    let sealed = group.encrypt(b"out of band").ok().unwrap();
-    assert_eq!(joined.process(&sealed).ok().unwrap().data().unwrap(), b"out of band");
+    let sealed = group.encrypt(b"out of band", b"room-1").ok().unwrap();
+    assert_eq!(joined.decrypt(&sealed, b"room-1").ok().unwrap().data().unwrap(), b"out of band");
 }
 
 /// A tree from the wrong epoch is refused, not quietly accepted.
@@ -651,10 +651,95 @@ fn a_blob_from_the_previous_format_is_refused_clearly() {
     let account = Account::new();
     let laptop = Device::new(&account, "laptop").ok().unwrap();
     let mut group = laptop.create_group(b"g-old", None).ok().unwrap();
-    group.encrypt(b"anything").ok().unwrap();
+    group.encrypt(b"anything", b"room-1").ok().unwrap();
 
     let mut sealed = laptop.export_group(b"g-old").ok().unwrap();
     sealed[7] = 1; // the version byte inside the magic
 
     assert!(laptop.import_group(&sealed).is_err(), "a v1 blob was accepted");
+}
+
+/// A message sealed for one room does not open in another.
+///
+/// Rooms that share an audience share a group (`docs/03` §4), so "sealed to the
+/// group" was never enough on its own: a Host could take a message posted in
+/// one room and serve it in a sibling, where it decrypted, verified, and was
+/// attributed to whoever really wrote it. The room id rides as authenticated
+/// data, and this is the check that it is actually enforced.
+#[wasm_bindgen_test]
+fn a_message_cannot_be_moved_between_rooms() {
+    let account = Account::new();
+    let laptop = Device::new(&account, "laptop").ok().unwrap();
+    let phone = Device::new(&account, "phone").ok().unwrap();
+
+    let mut group = laptop.create_group(b"audience-everyone", None).ok().unwrap();
+    group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
+    let out = group.commit().ok().unwrap();
+    group.apply_pending().ok().unwrap();
+    let mut theirs = phone
+        .join_group(&out.welcome().unwrap(), &out.tree())
+        .ok()
+        .unwrap();
+
+    // Two ciphertexts, not one offered twice. The room check happens after
+    // mls-rs has opened the message — the authenticated data of a private
+    // message is not readable before that — so a refused message has already
+    // spent its place in the sender's ratchet and cannot be re-offered. That is
+    // the right trade: the message is discarded either way, and a Host that
+    // moved it gains nothing.
+    let moved = group.encrypt(b"only for general", b"room-general").ok().unwrap();
+    let kept = group.encrypt(b"only for general", b"room-general").ok().unwrap();
+
+    assert!(
+        theirs.decrypt(&moved, b"room-moderators").is_err(),
+        "a sibling room must not open a message addressed to another"
+    );
+    assert_eq!(
+        theirs.decrypt(&kept, b"room-general").ok().unwrap().data().unwrap(),
+        b"only for general",
+        "and the room it was addressed to still opens it"
+    );
+}
+
+/// A commit delivered as a room event is refused before it touches the group.
+///
+/// The event channel is the Host's to fill. Feeding a handshake message through
+/// it used to advance this device's epoch behind `GroupSync`'s back, and the
+/// same commit then failed to apply when it arrived through the log — leaving
+/// the device a permanent epoch behind the room.
+#[wasm_bindgen_test]
+fn a_commit_on_the_event_channel_is_refused() {
+    let account = Account::new();
+    let laptop = Device::new(&account, "laptop").ok().unwrap();
+    let phone = Device::new(&account, "phone").ok().unwrap();
+    let tablet = Device::new(&account, "tablet").ok().unwrap();
+
+    let mut group = laptop.create_group(b"audience-everyone", None).ok().unwrap();
+    group.stage_add(&phone.key_package().ok().unwrap()).ok().unwrap();
+    let first = group.commit().ok().unwrap();
+    group.apply_pending().ok().unwrap();
+    let mut theirs = phone
+        .join_group(&first.welcome().unwrap(), &first.tree())
+        .ok()
+        .unwrap();
+
+    // A real commit, which `theirs` has not seen yet.
+    group.stage_add(&tablet.key_package().ok().unwrap()).ok().unwrap();
+    let second = group.commit().ok().unwrap();
+    group.apply_pending().ok().unwrap();
+
+    let before = theirs.epoch();
+    assert!(
+        theirs.decrypt(&second.commit(), b"room-general").is_err(),
+        "a commit is not an application message"
+    );
+    assert_eq!(
+        theirs.epoch(),
+        before,
+        "and refusing it must leave the group exactly where it was"
+    );
+
+    // It still applies through the path that owns the handshake log.
+    theirs.process(&second.commit()).ok().unwrap();
+    assert_eq!(theirs.epoch(), before + 1);
 }

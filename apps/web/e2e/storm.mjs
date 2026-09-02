@@ -23,6 +23,7 @@
  *   pnpm test:storm
  */
 import { chromium } from 'playwright';
+import { password } from './_password.mjs';
 
 const APP = 'http://localhost:5173';
 const stamp = Date.now().toString(36);
@@ -32,7 +33,7 @@ const ctx = await b.newContext();
 const p = await ctx.newPage({ viewport: { width: 1200, height: 860 } });
 await p.goto(`${APP}/signup`, { waitUntil: 'networkidle' });
 await p.fill('input[type=text]', `fl${stamp}`);
-await p.fill('input[type=password]', 'correct horse battery staple');
+await p.fill('input[type=password]', password);
 await p.waitForFunction(
   () =>
     ![...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Continue')

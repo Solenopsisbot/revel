@@ -134,6 +134,30 @@ describe('signing in', () => {
     expect(calls[1]).toContain('/auth/session');
     expect(calls[2]).toContain('/auth/session');
   });
+
+  it('refuses a challenge that names a different Host', async () => {
+    // The name is inside what the device signs precisely so a signature
+    // collected by one Host cannot be presented at another — and this used to
+    // take the name straight out of the response, which handed the choice to
+    // whoever answered.
+    //
+    // The attack it allowed: a rogue Host fetches a nonce from the victim's
+    // real Host, relays it with the real Host's name attached, and replays the
+    // resulting signature there. A device-bound session on a Host the person
+    // never spoke to.
+    const { host, calls } = session([ok({ host: 'evil.example', nonce: 'bm9uY2U=' })]);
+    await expect(host.ensure()).rejects.toThrow(/wrong_host/);
+    // And it stopped before signing anything.
+    expect(calls).toHaveLength(1);
+  });
+
+  it('signs when the Host calls itself what we came here for', async () => {
+    const { host } = session([
+      ok({ host: 'revel.chat', nonce: 'bm9uY2U=' }),
+      ok({ token: 't', account: 'a', device: 'd', expiresAt: Date.now() + 60_000 }),
+    ]);
+    expect((await host.ensure()).token).toBe('t');
+  });
 });
 
 describe('the ordinary transport, when the Host is limiting', () => {

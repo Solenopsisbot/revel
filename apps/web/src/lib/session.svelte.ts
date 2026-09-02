@@ -116,16 +116,65 @@ class DeviceSession {
     return this.current;
   }
 
+  /**
+   * Sign this device out, and leave nothing behind that reads the account.
+   *
+   * Clearing the sealed session row is what stops the *key* being restorable,
+   * and on its own it used to be all this did. Everything else stayed: the
+   * per-account IndexedDB with every decrypted message in it, the last room,
+   * the notification preferences, a pending invite. On a shared or lent
+   * machine that is the whole conversation still sitting there under a sign-in
+   * screen — which is the one thing somebody pressing this button believes they
+   * have prevented.
+   *
+   * The plaintext database is the design (`docs/04` §1: "the local store is the
+   * real database"), so signing out is the moment it has to go.
+   */
   async signOut(): Promise<void> {
+    const account = this.current?.accountPub ?? null;
     const { clearSession } = await import('@revel/core');
     const { forgetDeviceToken } = await import('./identity.js');
     const { myFaces } = await import('./faces.svelte.js');
     const { live } = await import('./live.svelte.js');
+
     await live.stop();
     await clearSession();
     forgetDeviceToken();
     myFaces.forget();
+
+    if (account) await forgetAccountData(account);
     this.current = null;
+  }
+}
+
+/**
+ * Everything on this device that is about one account.
+ *
+ * Named here rather than scattered, because the failure mode of a list like
+ * this is that somebody adds a fifth thing and forgets the sixth. Each entry
+ * says what it is so the next person can tell whether theirs belongs.
+ */
+async function forgetAccountData(account: string): Promise<void> {
+  // The decrypted room database: messages, reducer state, the search index.
+  await new Promise<void>((resolve) => {
+    // The same name `live.ts` opens it under, truncated the same way. Two
+    // spellings of one database name is a sign-out that clears nothing.
+    const request = indexedDB.deleteDatabase(`revel-${account.slice(0, 12)}`);
+    // Resolve either way. A blocked delete — another tab still holding the
+    // database open — must not leave the caller hanging on a promise, and the
+    // session row is already gone by this point.
+    request.onsuccess = () => resolve();
+    request.onerror = () => resolve();
+    request.onblocked = () => resolve();
+  });
+
+  try {
+    localStorage.removeItem(`revel:last-room:${account}`);
+    localStorage.removeItem(`revel:notify:${account}`);
+    sessionStorage.removeItem('revel.invite');
+  } catch {
+    // Storage unavailable, or a browser refusing it in private mode. Nothing
+    // here is worth failing a sign-out over.
   }
 }
 

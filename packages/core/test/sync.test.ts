@@ -50,16 +50,24 @@ class FakeHost implements Transport, EventStream {
 
   async fetchEvents(
     roomId: string,
-    options: { before?: string; limit?: number } = {},
+    options: { before?: string; after?: string; limit?: number } = {},
   ): Promise<Event[]> {
     this.log.push(`fetch ${roomId}`);
     let all = [...(this.events.get(roomId) ?? [])];
+    // Forwards, from the oldest thing the caller has not seen — taken from the
+    // *start* of the window, which is the whole difference between catching up
+    // and re-reading the newest page.
+    if (options.after) {
+      const after = options.after as string;
+      all = all.filter((e) => e.id > after);
+      return options.limit === undefined ? all : all.slice(0, options.limit);
+    }
     if (options.before) all = all.filter((e) => e.id < (options.before as string));
     if (options.limit !== undefined) all = all.slice(-options.limit);
     return all;
   }
 
-  async send(roomId: string, input: EventInput): Promise<SendResult> {
+  async send(roomId: string, input: EventInput, sender = 'device'): Promise<SendResult> {
     this.log.push(`send ${roomId}`);
     if (this.failNext) {
       const { status, reason } = this.failNext;
@@ -74,7 +82,7 @@ class FakeHost implements Transport, EventStream {
       ...input,
       id: String(this.#next++),
       room: roomId,
-      sender: 'device',
+      sender,
       size: input.payload.length,
       createdAt: Date.now(),
       purgedAt: null,
@@ -149,18 +157,35 @@ interface Client {
 const ROOM = 'room-1';
 const GROUP = 'group-1';
 
+/**
+ * The host as one device sees it, stamping that device onto what it sends.
+ *
+ * The real server sets `sender` from the authenticated actor, and the engine
+ * checks its own echo against it — matching on the client nonce alone let a
+ * Host place this device's message in a room of its choosing. A shared fake
+ * that stamped one hardcoded name could not express that.
+ */
+function asDevice(host: FakeHost, devicePub: string): Transport & EventStream {
+  return {
+    fetchEvents: (roomId, options) => host.fetchEvents(roomId, options),
+    send: (roomId, input) => host.send(roomId, input, devicePub),
+    subscribe: (roomId, onEvent) => host.subscribe(roomId, onEvent),
+  };
+}
+
 async function client(host: FakeHost, label: string, log: string[] = []): Promise<Client> {
   const crypto = new LocalCryptoEngine();
   const identity = await crypto.open({ deviceLabel: label });
   const account = toAccountId(identity.accountPublicKey);
   const store = new LoggingStore(log);
+  const mine = asDevice(host, toAccountId(identity.devicePublicKey));
 
   let counter = 0;
   const sync = new RoomSync({
     crypto,
     store,
-    transport: host,
-    stream: host,
+    transport: mine,
+    stream: mine,
     account,
     nonce: () => `${label}-${++counter}`,
     now: () => 1_000_000,
@@ -371,7 +396,11 @@ describeIfBuilt('RoomSync', () => {
       await alice.sync.send(ROOM, { type: 'm.message', body: 'before' });
 
       // Something in the room sent a payload that is not our JSON at all.
-      await alice.crypto.encrypt(GROUP, new TextEncoder().encode('not json'));
+      await alice.crypto.encrypt(
+        GROUP,
+        new TextEncoder().encode('not json'),
+        new TextEncoder().encode(`revel/room/v1\n${ROOM}`),
+      );
       await alice.sync.persistCrypto();
 
       await alice.sync.send(ROOM, { type: 'm.message', body: 'after' });
@@ -421,6 +450,51 @@ describeIfBuilt('RoomSync', () => {
         account: alice.account,
       });
       expect((await fresh.open(ROOM)).messages.map(bodyOf)).toEqual(['from the log']);
+    });
+
+    it('catches up past a single page, rather than losing the middle', async () => {
+      // The bug: `catchUp` computed a cursor, updated it at the bottom of the
+      // loop, and never sent it — so every iteration asked for the newest page
+      // and the loop ended as soon as that page was applied. Anything older
+      // than the last page was lost for good, because `backfill` only pages
+      // *older* than the oldest event held, so nothing ever went looking.
+      const host = new FakeHost();
+      const { alice, bob } = await pair(host);
+
+      // Bob is up to date, so he has a cursor — which is the situation this is
+      // about. A client starting from nothing takes the newest page and pages
+      // *backwards* on scroll, which is `backfill`'s job.
+      await alice.sync.send(ROOM, { type: 'm.message', body: 'before' });
+      await bob.sync.catchUp(ROOM, 5);
+
+      // Then he goes away, and misses more than one page.
+      for (let i = 0; i < 12; i++) {
+        await alice.sync.send(ROOM, { type: 'm.message', body: `m${i}` });
+      }
+
+      await bob.sync.catchUp(ROOM, 5);
+      expect(bob.sync.state(ROOM).messages.map(bodyOf)).toEqual([
+        'before',
+        ...Array.from({ length: 12 }, (_, i) => `m${i}`),
+      ]);
+    });
+
+    it('refuses an event the Host serves under the wrong room', async () => {
+      // Every room in a space sharing an audience shares one MLS group, so a
+      // message from a sibling room decrypts perfectly here. The only thing
+      // that ever said which room it belonged to was the envelope, and the
+      // envelope is the Host's.
+      const host = new FakeHost();
+      const { alice, bob } = await pair(host);
+      await alice.sync.send(ROOM, { type: 'm.message', body: 'for this room only' });
+
+      const [sent] = host.events.get(ROOM) as [Event];
+      // The same ciphertext, relabelled.
+      const moved = { ...sent, id: '9999999999999999999', room: 'room-2' };
+      await bob.sync.bind('room-2', GROUP).catch(() => {});
+      await bob.sync.receive('room-2', moved);
+
+      expect(bob.sync.state('room-2').messages).toHaveLength(0);
     });
 
     it('catches up on everything sent while away', async () => {
