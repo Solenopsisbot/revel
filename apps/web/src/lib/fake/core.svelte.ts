@@ -341,6 +341,8 @@ class Core {
    * list, in one place, or it stops agreeing with itself.
    */
   speakingAsOpen = $state(false);
+  /** Whether the cryptographic privacy & key inspector sheet is open. */
+  privacyInspectorOpen = $state(false);
   /**
    * The face chosen in each room, by room id.
    *

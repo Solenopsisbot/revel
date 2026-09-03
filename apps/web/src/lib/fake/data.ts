@@ -603,6 +603,13 @@ export const spaces: Space[] = [
         audience: { kind: 'everyone' },
       },
       {
+        id: 'sketches',
+        name: 'sketches',
+        kind: 'text',
+        category: 'Build',
+        audience: { kind: 'everyone' },
+      },
+      {
         id: 'the-couch',
         name: 'the couch',
         kind: 'voice',
@@ -918,6 +925,7 @@ const recent: Record<string, Message[]> = {
     { id: 'g2', faceId: 'emeri', body: 'read this when you wake up', at: t(90) },
     { id: 'g3', faceId: 'emeri', body: 'actually never mind, fixed it', at: t(88) },
   ],
+  sketches: [],
   'off-topic': [],
   'crypto-review': [
     {

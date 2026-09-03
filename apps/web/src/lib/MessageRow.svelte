@@ -12,6 +12,7 @@ import Avatar from './Avatar.svelte';
 import { contextMenu } from './contextmenu.svelte.js';
 import { linkToMessage } from './deeplink.js';
 import EmojiPicker from './EmojiPicker.svelte';
+import { sound } from './sound.js';
 // The real shape, from `packages/core`, plus the handful of fields the
 // fixtures exercise that the protocol has not grown yet. The fixtures are
 // translated into it at the seam (`fake/conversation.svelte.ts`), so this
@@ -416,7 +417,7 @@ function who(by: string[], key: string) {
           <span class="badge agent" title="Software, run by {current.agent.by}">{current.agent.label}</span>
         {/if}
         {#if mine && face.id !== core.speakingAs}
-          <span class="badge same">same system</span>
+          <button class="badge same" onclick={() => (core.profileFor = face.id)} title="View system profiles">same system</button>
         {/if}
         <time class="at">{clock(m.at)}</time>
         {#if m.pinned}<span class="mark" title="Pinned"><Icon name="pin" size={12} /></span>{/if}
@@ -523,7 +524,7 @@ function who(by: string[], key: string) {
           <button
             class="rx"
             class:mine={mineToo}
-            onclick={() => core.react(m.id, r.key)}
+            onclick={() => { core.react(m.id, r.key); sound.react(); }}
             title={who(r.faces, r.key)}
             aria-pressed={mineToo}
           >
@@ -780,7 +781,11 @@ function who(by: string[], key: string) {
   .badge.same {
     border-color: color-mix(in oklab, var(--fc) 45%, transparent);
     color: var(--fc); background: color-mix(in oklab, var(--fc) 16%, transparent);
+    cursor: pointer;
+    transition: filter var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
   }
+  .badge.same:hover { filter: brightness(1.18); transform: translateY(-1px); }
+  .badge.same:active { transform: translateY(1px); }
 
   .text { position: relative; }
   .edited { font-size: 10px; color: var(--text-mute); margin-left: 4px; white-space: nowrap; }
@@ -835,20 +840,22 @@ function who(by: string[], key: string) {
   @keyframes drop { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 
   .card {
-    display: flex; flex-direction: column; gap: 2px; margin-top: 6px; max-width: 420px;
+    display: flex; flex-direction: column; gap: 4px; margin-top: 6px; max-width: 440px;
     text-decoration: none; color: inherit;
-    border-left: 3px solid var(--face-sky); background: var(--ground-2);
-    border-radius: 0 var(--r-sm) var(--r-sm) 0; padding: 9px 13px;
-    transition: background var(--t-fast) var(--ease);
+    background: var(--ground-2);
+    border: 1px solid var(--line); border-left: 3px solid var(--face-sky);
+    border-radius: 0 var(--r-sm) var(--r-sm) 0; padding: 10px 14px;
+    box-shadow: var(--shadow-subtle);
+    transition: background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
   }
-  .card:hover { background: var(--ground-3); }
-  .card-site { font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-mute); }
-  .card-title { font-weight: 700; font-size: var(--text-sm); color: var(--face-sky); }
+  .card:hover { background: var(--ground-3); transform: translateY(-1px); }
+  .card-site { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--face-sky); }
+  .card-title { font-weight: 700; font-size: var(--text-sm); color: var(--text); }
   .card-url {
     font-size: var(--text-xs); color: var(--text-mute);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .card-blurb { font-size: var(--text-sm); color: var(--text-dim); }
+  .card-blurb { font-size: var(--text-sm); color: var(--text-dim); line-height: 1.45; }
 
   .annot {
     margin-top: 6px; padding: 7px 12px; border-left: 3px solid var(--face-aqua);
@@ -863,19 +870,20 @@ function who(by: string[], key: string) {
 
   .reactions { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
   .rx {
-    /* `min-height` beats `height`, so the pill is 24px on a mouse and the
-       touch floor on a finger. Chunky on a phone, deliberately: docs/24's
-       44px is not negotiable per-control, and a reaction is a real target. */
-    display: inline-flex; align-items: center; gap: 5px; height: 24px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; height: 26px; cursor: pointer;
     min-height: var(--tap);
-    background: var(--ground-3); border: 1px solid var(--line);
-    border-radius: var(--r-pill); padding: 0 8px;
+    background: var(--ground-2); border: 1px solid var(--line-strong);
+    border-radius: var(--r-pill); padding: 0 9px;
+    box-shadow: var(--shadow-subtle);
     transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
       transform var(--t-fast) var(--ease);
   }
-  .rx:hover { border-color: var(--brand); transform: translateY(-1px); }
-  .rx:active { transform: none; }
-  .rx.mine { background: color-mix(in oklab, var(--brand) 24%, transparent); border-color: var(--brand); }
+  .rx:hover { border-color: var(--brand); transform: translateY(-1px); background: var(--ground-3); }
+  .rx:active { transform: translateY(1px); }
+  .rx.mine {
+    background: color-mix(in oklab, var(--brand) 20%, var(--ground-2));
+    border-color: var(--brand);
+  }
   .emote { font-size: 15px; line-height: 1; }
   /* A count change pops just enough to catch peripheral vision. */
   .rx .n {
@@ -890,47 +898,32 @@ function who(by: string[], key: string) {
   .rx.add:hover { color: var(--text); }
 
   .actions {
-    position: absolute; right: 14px; top: -12px; display: flex; gap: 1px; padding: 3px;
-    background: var(--ground-3); border: 1px solid var(--line); border-radius: var(--r-sm);
+    position: absolute; right: 16px; top: -14px; display: flex; gap: 2px; padding: 3px;
+    background: var(--ground-3); border: 1px solid var(--line-strong); border-radius: var(--r-sm);
     opacity: 0; pointer-events: none; transform: translateY(3px);
     transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
-    box-shadow: var(--shadow-ambient);
+    box-shadow: var(--shadow-ambient), var(--highlight-inset);
+    z-index: 5;
   }
   .row:hover .actions,
   .row.tapped .actions,
   .row:has(.actions button:focus-visible) .actions,
   .row:has(.actions button.on) .actions { opacity: 1; pointer-events: auto; transform: none; }
-  /*
-   * On a finger the bar is *toggled* rather than hovered (`docs/24`), so it
-   * stays put until something else is tapped — and at the hover position it
-   * stayed put directly on top of the author line of the message it belongs
-   * to. What is transient and forgivable under a cursor is a panel parked over
-   * the thing you are trying to act on.
-   *
-   * `bottom: 100%` hangs it off the row's top edge whatever height its 44px
-   * buttons come to, and the negative margin keeps the tucked-in overlap the
-   * hover version has. It now covers the message *above*, which is the trade
-   * the desktop bar already makes — and the row it belongs to is highlighted,
-   * so which one it means is never in doubt.
-   */
   @media (pointer: coarse) {
     .actions { top: auto; bottom: 100%; margin-bottom: -6px; }
-    /* Nothing above to hang it in — see `actionsBelow`. */
     .row.acts-below .actions { bottom: auto; top: 100%; margin: -6px 0 0; }
   }
-  /* Hover's job on a mouse; there is no hover to do it on a finger, and an
-     action bar floating between two messages has to say which one is its
-     own. */
   .row.tapped { background: var(--ground-2); }
   .row.tapped::before { opacity: .55; }
   .actions button { min-width: var(--tap); min-height: var(--tap); }
   .actions button {
     border: 0; background: transparent; color: var(--text-dim); cursor: pointer;
     width: 28px; height: 28px; border-radius: var(--r-xs); display: grid; place-items: center;
-    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+      transform var(--t-fast) var(--ease);
   }
   .actions button:hover, .actions button.on { background: var(--ground-4); color: var(--text); }
-  .actions button:active { transform: scale(0.9); }
+  .actions button:active { transform: scale(0.92); }
 
   .unread-line {
     display: flex; align-items: center; gap: 10px; padding: 6px 16px 2px;
@@ -944,16 +937,7 @@ function who(by: string[], key: string) {
   .unread-line::after { flex: 0 0 24px; }
   .unread-line span { flex: none; }
 
-  /* ---- bubbles -----------------------------------------------------------
-     A DM is a conversation between two or three people, so the useful visual
-     job is "who said this" rather than "scan a wall fast" — which is the job
-     rows are for. The bubble carries the sender's face colour, the same one
-     that names them everywhere else.
-
-     Own messages sit on the right. `docs/07` doesn't specify that, but a
-     two-person conversation where both sides are left-aligned makes you read
-     the name on every line to know who is talking, and the convention exists
-     because it works. */
+  /* ---- bubbles ----------------------------------------------------------- */
   .row.bubble {
     padding: 3px 16px;
     align-items: flex-end;
@@ -967,31 +951,28 @@ function who(by: string[], key: string) {
 
   .row.bubble .body {
     background: var(--ground-2);
+    border: 1px solid var(--line);
     border-radius: 16px 16px 16px 5px;
-    padding: 8px 13px;
+    padding: 9px 14px;
     max-width: min(74%, 46rem);
     width: fit-content;
-    /* Rows want `flex: 1` so the text column fills the width. A bubble wants
-       the opposite and has always said so — but `flex: 1` means
-       `flex-basis: 0%`, which beats `width: fit-content` outright, so every
-       bubble has silently been stretching the full width of the room since
-       they were built. Neither `fit-content` nor the max-width above ever got
-       a chance to apply. */
     flex: 0 1 auto;
+    box-shadow: var(--shadow-subtle);
   }
   .row.bubble.grouped .body { border-top-left-radius: 16px; }
 
-  /* Tinted in the sender's colour, lightly — enough to be theirs, not enough
-     to fight the text on top of it. */
+  /* Tinted in the sender's colour, lightly */
   .row.bubble:not(.mine) .body {
-    background: color-mix(in oklab, var(--fc) 14%, var(--ground-2));
+    background: color-mix(in oklab, var(--fc) 12%, var(--ground-2));
+    border-color: color-mix(in oklab, var(--fc) 25%, var(--line));
   }
 
   .row.bubble.mine {
     flex-direction: row-reverse;
   }
   .row.bubble.mine .body {
-    background: color-mix(in oklab, var(--brand) 26%, var(--ground-2));
+    background: color-mix(in oklab, var(--brand) 22%, var(--ground-2));
+    border-color: color-mix(in oklab, var(--brand) 38%, var(--line));
     border-radius: 16px 16px 5px 16px;
   }
   .row.bubble.mine.grouped .body { border-top-right-radius: 16px; }

@@ -168,20 +168,20 @@ const STATUS: Record<string, string> = {
   .centred { position: fixed; z-index: 77; left: 50%; top: 50%; translate: -50% -50%; }
 
   .card {
-    width: 300px; overflow: hidden;
-    background: var(--ground-0); border: 1px solid var(--line);
-    border-radius: var(--r-lg); box-shadow: var(--shadow-panel);
+    width: 320px; overflow: hidden;
+    background: var(--ground-1); border: 1.5px solid var(--line-strong);
+    border-radius: var(--r-lg); box-shadow: var(--shadow-panel), var(--highlight-inset);
   }
 
   /* The face's own colour, as a band. Identity colour is the one consistent
      thread between the roster, the message list and here. */
   .banner {
-    height: 52px;
-    background: linear-gradient(120deg, var(--fc), color-mix(in oklab, var(--fc) 40%, var(--ground-2)));
+    height: 60px;
+    background: linear-gradient(135deg, var(--fc), color-mix(in oklab, var(--fc) 30%, var(--ground-1)));
   }
 
-  .head { display: flex; align-items: flex-end; gap: 11px; padding: 0 15px; margin-top: -26px; }
-  .head :global(.av) { box-shadow: 0 0 0 3px var(--ground-0); }
+  .head { display: flex; align-items: flex-end; gap: 12px; padding: 0 16px; margin-top: -30px; }
+  .head :global(.av) { box-shadow: 0 0 0 3.5px var(--ground-1); }
   .who { padding-bottom: 3px; min-width: 0; }
   .nm { font-weight: 700; font-size: var(--text-base); overflow: hidden; text-overflow: ellipsis; }
   .addr {
@@ -211,12 +211,18 @@ const STATUS: Record<string, string> = {
   .actions { display: flex; gap: 7px; padding: 14px 15px 15px; }
   .go, .alt {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1;
-    border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600;
-    padding: 8px 12px; border-radius: var(--r-pill);
+    border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700;
+    padding: 8px 14px; border-radius: var(--r-pill);
     background: var(--brand); color: #fff;
-    transition: filter var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+    transition: filter var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
+      transform var(--t-fast) var(--ease-toy);
   }
-  .go:hover { filter: brightness(1.08); }
+  .go {
+    box-shadow: 0 var(--lift) 0 var(--violet-deep), var(--highlight-inset);
+  }
+  .go:hover { filter: brightness(1.1); }
+  .go:active { transform: translateY(var(--lift)); box-shadow: none; }
   .alt { background: var(--ground-3); color: var(--text-dim); }
   .alt:hover { background: var(--ground-4); color: var(--text); }
+  .alt:active { transform: translateY(1px); }
 </style>

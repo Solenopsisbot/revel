@@ -27,7 +27,14 @@ const face = $derived(core.faces[p.faceId]!);
   class:ringing={p.ringing}
   style="--ring: var(--face-{faceColour(face)})"
 >
-  <Avatar {face} size={56} />
+  <div class="av-wrap">
+    {#if p.speaking && !p.diverged}
+      <span class="wave w1"></span>
+      <span class="wave w2"></span>
+      <span class="wave w3"></span>
+    {/if}
+    <Avatar {face} size={56} />
+  </div>
   <div class="name">
     {face.name}{#if me}<span class="you">you</span>{/if}
     {#if face.agent}<span class="badge">{face.agent.label}</span>{/if}
@@ -66,16 +73,46 @@ const face = $derived(core.faces[p.faceId]!);
 <style>
   .tile {
     position: relative; display: flex; flex-direction: column; align-items: center;
-    gap: 7px; padding: 18px 14px 14px; border-radius: var(--r-md);
-    background: var(--ground-2); border: 1px solid var(--line);
-    box-shadow: inset 0 0 0 2px transparent;
-    transition: box-shadow var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+    gap: 9px; padding: 22px 16px 16px; border-radius: var(--r-md);
+    background: var(--ground-2); border: 1.5px solid var(--line);
+    box-shadow: var(--shadow-subtle), var(--highlight-inset);
+    transition: box-shadow var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
+      background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
   }
-  .tile.speaking { box-shadow: inset 0 0 0 2px var(--ring); }
+  .tile:hover {
+    background: var(--ground-3);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-ambient), var(--highlight-inset);
+  }
+  .tile.speaking {
+    border-color: var(--ring);
+    box-shadow: 0 0 18px color-mix(in oklab, var(--ring) 35%, transparent), var(--highlight-inset);
+  }
   .tile.diverged { border-color: color-mix(in oklab, var(--face-coral) 55%, var(--line)); }
-  /* Not yet answered. Dimmed rather than absent, so you can see who you're
-     waiting on. */
   .tile.ringing { opacity: .55; }
+
+  .av-wrap {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 68px;
+    height: 68px;
+  }
+  .wave {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid var(--ring);
+    opacity: 0;
+    animation: ripple 2s cubic-bezier(0.2, 0.8, 0.4, 1) infinite;
+    pointer-events: none;
+  }
+  .wave.w2 { animation-delay: 0.65s; }
+  .wave.w3 { animation-delay: 1.3s; }
+  @keyframes ripple {
+    0% { transform: scale(0.85); opacity: 0.85; }
+    100% { transform: scale(1.4); opacity: 0; }
+  }
 
   .name { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); font-weight: 600; }
   .you { font-weight: 400; font-size: 11px; color: var(--text-mute); }

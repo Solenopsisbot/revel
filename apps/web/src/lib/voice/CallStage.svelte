@@ -154,20 +154,33 @@ function pickMore(id: string) {
   }
 
   .bar {
-    display: flex; align-items: center; justify-content: center; gap: 8px;
-    margin-top: auto; padding-top: 8px; flex-wrap: wrap;
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    margin-top: auto; padding: 12px 20px; flex-wrap: wrap;
+    background: var(--ground-1); border: 1.5px solid var(--line-strong);
+    border-radius: var(--r-pill); box-shadow: var(--shadow-panel), var(--highlight-inset);
+    width: fit-content; margin-inline: auto;
   }
   .ctl, .leave {
     display: inline-flex; align-items: center; gap: 8px;
-    border: 0; cursor: pointer; font: inherit; font-size: var(--text-sm); font-weight: 600;
-    padding: 11px 16px; border-radius: var(--r-pill);
-    background: var(--ground-3); color: var(--text-dim);
-    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    border: 0; cursor: pointer; font: inherit; font-size: var(--text-sm); font-weight: 700;
+    padding: 10px 18px; border-radius: var(--r-pill);
+    background: var(--ground-3); color: var(--text);
+    box-shadow: 0 var(--lift) 0 var(--ground-4), var(--highlight-inset);
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+      transform var(--t-fast) var(--ease-toy), box-shadow var(--t-fast) var(--ease);
   }
-  .ctl:hover { background: var(--ground-4); color: var(--text); }
-  .ctl.on { background: var(--brand); color: #fff; }
-  .leave { background: var(--face-rose); color: #fff; margin-left: 10px; }
-  .leave:hover { filter: brightness(1.08); }
+  .ctl:hover { filter: brightness(1.08); transform: translateY(-1px); }
+  .ctl:active { transform: translateY(var(--lift)); box-shadow: none; }
+  .ctl.on {
+    background: var(--brand); color: #fff;
+    box-shadow: 0 var(--lift) 0 var(--violet-deep), var(--highlight-inset);
+  }
+  .leave {
+    background: var(--face-rose); color: #fff; margin-left: 6px;
+    box-shadow: 0 var(--lift) 0 var(--rose-deep), var(--highlight-inset);
+  }
+  .leave:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  .leave:active { transform: translateY(var(--lift)); box-shadow: none; }
 
   .fine {
     margin: 0; text-align: center; font-size: 11px; color: var(--text-mute);

@@ -59,10 +59,25 @@ function announceTyping() {
   void live.setTyping(core.currentRoomId, thread);
 }
 
+import { sound } from './sound.js';
+
+function selectFace(faceId: string) {
+  const here = core.facesHere === null || core.facesHere.includes(faceId);
+  const reveals = here && core.revealsLinkHere(faceId);
+  if (!here || reveals) {
+    joining = faceId;
+  } else {
+    core.speakHere(faceId);
+    core.speakingAsOpen = false;
+    sound.switchFace();
+  }
+}
+
 function submit() {
   // Clearing the reply target is `core.send`'s job, not the composer's.
   if (thread) core.sendToThread(thread, draft);
   else core.send(draft);
+  sound.send();
   draft = '';
   if (live.running) void live.stopTyping(core.currentRoomId, thread);
   // Someone replies, so the typing indicator and arrival animation have
@@ -78,6 +93,18 @@ function onKey(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey && fine) {
     e.preventDefault();
     submit();
+    return;
+  }
+  if (core.myFaces.length > 1) {
+    if ((e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j')) {
+      e.preventDefault();
+      const currentIdx = core.myFaces.findIndex(f => f.id === core.speakingHere);
+      const delta = e.key === 'ArrowUp' ? -1 : 1;
+      const nextIdx = (currentIdx + delta + core.myFaces.length) % core.myFaces.length;
+      const target = core.myFaces[nextIdx];
+      if (target) selectFace(target.id);
+      return;
+    }
   }
   if (e.key === 'Escape') {
     // Escape clears the most specific thing first, then the next.
@@ -388,20 +415,24 @@ function grow(el: HTMLTextAreaElement) {
   .switcher.sheet .opt { padding: 10px; font-size: var(--text-base); }
 
   .box {
-    display: flex; align-items: flex-end; gap: 8px;
-    background: var(--ground-3); border: 2px solid var(--line);
-    border-radius: var(--r-lg); padding: 6px 6px 6px 12px;
+    display: flex; align-items: flex-end; gap: 10px;
+    background: var(--ground-2); border: 1.5px solid var(--line-strong);
+    border-radius: var(--r-lg); padding: 8px 8px 8px 14px;
+    box-shadow: var(--shadow-subtle), var(--highlight-inset);
     transition:
       border-color var(--t-base) var(--ease),
       background var(--t-base) var(--ease),
       box-shadow var(--t-base) var(--ease);
   }
   /* Hovering the box hints it is a target before you commit to clicking it. */
-  .box:hover:not(:focus-within) { border-color: var(--ground-4); background: var(--ground-2); }
+  .box:hover:not(:focus-within) {
+    border-color: color-mix(in oklab, var(--brand) 40%, var(--line-strong));
+    background: var(--ground-2);
+  }
   .box:focus-within {
     border-color: var(--brand);
     background: var(--ground-2);
-    box-shadow: var(--focus-ring);
+    box-shadow: var(--focus-ring), var(--shadow-ambient);
   }
   /* Files dragged over it: the whole field becomes the drop target, so the
      affordance is the field rather than a separate zone that appears. */
@@ -414,8 +445,8 @@ function grow(el: HTMLTextAreaElement) {
 
   .reply-banner {
     display: flex; align-items: center; gap: 8px;
-    padding: 7px 12px; font-size: var(--text-sm); color: var(--text-mute);
-    background: var(--ground-2); border: 2px solid var(--line); border-bottom: 0;
+    padding: 8px 14px; font-size: var(--text-sm); color: var(--text-mute);
+    background: var(--ground-2); border: 1.5px solid var(--line-strong); border-bottom: 0;
     border-radius: var(--r-lg) var(--r-lg) 0 0;
     animation: banner var(--t-base) var(--ease);
   }
@@ -435,19 +466,19 @@ function grow(el: HTMLTextAreaElement) {
   .reply-banner .x:hover { color: var(--text); background: var(--ground-3); }
 
   .chip {
-    display: inline-flex; align-items: center; gap: 6px; flex: none; cursor: pointer;
-    background: color-mix(in oklab, var(--fc) 20%, transparent);
-    border: 1px solid color-mix(in oklab, var(--fc) 42%, transparent);
-    color: var(--fc); border-radius: var(--r-pill); padding: 3px 8px 3px 3px;
-    font-size: var(--text-sm); font-weight: 700; margin-bottom: 3px;
-    /* The one control in the composer that isn't the text field or the send
-       button, and the only way to change who you are speaking as — so it takes
-       the floor rather than staying the 32px a mouse is happy with. */
+    display: inline-flex; align-items: center; gap: 7px; flex: none; cursor: pointer;
+    background: color-mix(in oklab, var(--fc) 18%, var(--ground-3));
+    border: 1.5px solid color-mix(in oklab, var(--fc) 46%, transparent);
+    color: var(--fc); border-radius: var(--r-pill); padding: 4px 10px 4px 4px;
+    font-size: var(--text-sm); font-weight: 700; margin-bottom: 2px;
     min-height: var(--tap);
-    /* The colour change IS the feedback that you're about to speak as
-       someone else (docs/32). */
+    box-shadow: var(--shadow-subtle);
     transition: background var(--t-base) var(--ease), border-color var(--t-base) var(--ease),
-      color var(--t-base) var(--ease);
+      color var(--t-base) var(--ease), transform var(--t-fast) var(--ease);
+  }
+  .chip:hover {
+    background: color-mix(in oklab, var(--fc) 26%, var(--ground-3));
+    transform: translateY(-1px);
   }
 
   textarea {
@@ -466,25 +497,25 @@ function grow(el: HTMLTextAreaElement) {
     min-width: var(--tap); min-height: var(--tap);
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .icon:hover { background: var(--ground-4); color: var(--text); }
-  .icon:active { transform: scale(0.9); }
+  .icon:hover { background: var(--ground-3); color: var(--text); }
+  .icon:active { transform: scale(0.92); }
 
   .send {
     flex: none; width: 36px; height: 36px; border-radius: 50%; border: 0; cursor: pointer;
     min-width: var(--tap); min-height: var(--tap);
-    background: linear-gradient(180deg, #8a51ed, #7b48d8); color: #fff;
+    background: linear-gradient(180deg, #935ced, #7944d6); color: #fff;
     display: grid; place-items: center;
-    box-shadow: 0 var(--lift) 0 #55229e, var(--highlight-inset);
+    box-shadow: 0 var(--lift) 0 var(--violet-deep), var(--highlight-inset);
     transition: transform var(--t-fast) var(--ease-toy), box-shadow var(--t-fast) var(--ease),
-      opacity var(--t-fast) var(--ease);
+      opacity var(--t-fast) var(--ease), filter var(--t-fast) var(--ease);
   }
   /* Enabling the send button is the clearest signal that the field has
      content, so it is worth animating rather than snapping. */
   .send:disabled {
     opacity: .35; cursor: default; box-shadow: none;
-    background: var(--ground-4); transform: scale(.92);
+    background: var(--ground-3); transform: scale(.92);
   }
-  .send:not(:disabled):hover { filter: brightness(1.08); }
+  .send:not(:disabled):hover { filter: brightness(1.10); }
   /* The one overshoot in the product: it presses down like an object. */
-  .send:not(:disabled):active { transform: translateY(var(--lift)); box-shadow: 0 0 0 #55229e; }
+  .send:not(:disabled):active { transform: translateY(var(--lift)); box-shadow: none; }
 </style>

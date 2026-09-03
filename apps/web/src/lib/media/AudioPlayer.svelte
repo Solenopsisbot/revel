@@ -115,6 +115,7 @@ function onKey(e: KeyboardEvent) {
     {#each bars as h, i (i)}
       <i class="bar" class:done={i / bars.length < pct} style="height: {Math.max(12, h * 100)}%"></i>
     {/each}
+    <span class="scrub-pin" style="left: {pct * 100}%"></span>
   </div>
 
   <span class="t">{fmt(playing || at ? at : total)}</span>
@@ -124,24 +125,24 @@ function onKey(e: KeyboardEvent) {
 <style>
   .audio {
     display: flex; align-items: center; gap: 10px; max-width: 420px;
-    background: var(--ground-2); border: 1px solid var(--line);
-    border-radius: var(--r-md); padding: 8px 11px;
-    transition: border-color var(--t-base) var(--ease);
+    background: var(--ground-2); border: 1.5px solid var(--line);
+    border-radius: var(--r-md); padding: 8px 12px;
+    box-shadow: var(--shadow-subtle), var(--highlight-inset);
+    transition: border-color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease);
   }
-  .audio.playing { border-color: color-mix(in oklab, var(--brand) 55%, var(--line)); }
+  .audio.playing {
+    border-color: color-mix(in oklab, var(--brand) 55%, var(--line));
+    box-shadow: var(--shadow-ambient), var(--highlight-inset);
+  }
 
   .pp {
-    flex: none; width: 32px; height: 32px; border-radius: 50%; border: 0; cursor: pointer;
+    flex: none; width: 34px; height: 34px; border-radius: 50%; border: 0; cursor: pointer;
     background: var(--brand); color: #fff; display: grid; place-items: center;
-    transition: transform var(--t-fast) var(--ease-toy), filter var(--t-fast) var(--ease);
+    box-shadow: 0 var(--lift) 0 var(--violet-deep), var(--highlight-inset);
+    transition: transform var(--t-fast) var(--ease-toy), filter var(--t-fast) var(--ease),
+      box-shadow var(--t-fast) var(--ease);
+    position: relative;
   }
-  /* The filled circle stays 32px — growing it would make the play button the
-     loudest thing in a row of quiet controls — so the *target* grows instead,
-     as an invisible pseudo-element centred on it. Painting nothing means the
-     hover brightness and the press scale still apply to the circle alone.
-     `position: relative` is already implied by the button being a grid box, so
-     only the child needs positioning. */
-  .pp { position: relative; }
   @media (pointer: coarse) {
     .pp::after {
       content: ''; position: absolute; left: 50%; top: 50%;
@@ -149,21 +150,33 @@ function onKey(e: KeyboardEvent) {
       translate: -50% -50%;
     }
   }
-  .pp:hover { filter: brightness(1.1); }
-  .pp:active { transform: scale(0.9); }
+  .pp:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  .pp:active { transform: translateY(var(--lift)); box-shadow: none; }
 
   .track {
-    flex: 1; min-width: 90px; height: 30px; display: flex; align-items: center; gap: 2px;
+    position: relative;
+    flex: 1; min-width: 90px; height: 32px; display: flex; align-items: center; gap: 2px;
     cursor: pointer; touch-action: none;
   }
   .track:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--r-xs); }
   .bar {
     flex: 1; min-width: 2px; border-radius: var(--r-pill); background: var(--ground-4);
-    /* Only the fill colour animates. Animating height would make the waveform
-       ripple every frame, which reads as noise (docs/32). */
     transition: background var(--t-fast) linear;
   }
   .bar.done { background: var(--brand); }
+
+  .scrub-pin {
+    position: absolute; top: 50%; translate: -50% -50%;
+    width: 6px; height: 26px; border-radius: var(--r-pill);
+    background: #ffffff;
+    box-shadow: 0 0 8px var(--brand);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--t-fast) var(--ease);
+  }
+  .track:hover .scrub-pin, .audio.playing .scrub-pin {
+    opacity: 1;
+  }
 
   .t {
     flex: none; font-family: var(--font-mono); font-size: var(--text-xs);

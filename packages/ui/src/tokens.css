@@ -115,9 +115,10 @@
      outline-and-drop-shadow, which is a specific costume belonging to
      someone else's brand. Tactility is the idea we keep; the costume isn't. */
   --lift: 3px;
-  --shadow-ambient: 0 6px 14px rgba(0,0,0,.30);
-  --shadow-panel: 0 10px 30px rgba(0,0,0,.35);
-  --highlight-inset: inset 0 1px 0 rgba(255,255,255,.30);
+  --shadow-subtle: 0 2px 6px rgba(0,0,0,.22);
+  --shadow-ambient: 0 6px 16px rgba(0,0,0,.28);
+  --shadow-panel: 0 12px 36px rgba(0,0,0,.36);
+  --highlight-inset: inset 0 1px 0 rgba(255,255,255,.18);
 
   --glow-size: 24px;
   --focus-ring: 0 0 0 3px color-mix(in oklab, var(--brand) 55%, transparent);
@@ -125,89 +126,83 @@
 
 /* ---- dusk: violet dark. The default. ---------------------------------- */
 [data-theme='dusk'] {
-  /* Lifted 2026-08-27 after a design review measured the old ramp at L* 6.2 —
-     darker than Slack, a third of Discord — with chroma 26 against the
-     reference's 66-79. A violet tint that dark is indistinguishable from
-     charcoal, which defeated the one decision meant to make this feel warm.
-     Now L* 13-35 with chroma 48-80. */
-  --ground-0: #271848;   /* app background — L* 12.9 */
-  --ground-1: #2f2056;   /* rail, sidebar   — L* 17.0 */
-  --ground-2: #3a2a68;   /* raised: hover, cards */
-  --ground-3: #47367d;   /* inputs, chips */
-  --ground-4: #584595;   /* highest raised */
-  --line: #4b3a86;
+  /* Rich, warm velvet violet ramp with generous value spread so panes,
+     cards and active channels have distinct, tactile architectural depth. */
+  --ground-0: #1b1236;   /* app background — deep velvet base */
+  --ground-1: #241947;   /* rail, sidebar   — structural baseline */
+  --ground-2: #30225c;   /* raised: hover, cards, message bubble tint */
+  --ground-3: #3e2d73;   /* inputs, active pills, chips */
+  --ground-4: #523b94;   /* highest raised, tooltips */
+  --line: rgba(199, 155, 255, .14);
+  --line-strong: rgba(199, 155, 255, .24);
   --text: #ffffff;
-  --text-dim: #c3b8e0;
-  --text-mute: #8f84ad;
-  --moment-bg: radial-gradient(120% 110% at 20% 0%, #7b4bc4 0%, #4a2790 42%, #2a1657 100%);
+  --text-dim: #cfc4ec;
+  --text-mute: #9689ba;
+  --moment-bg: radial-gradient(120% 110% at 20% 0%, #7b4bc4 0%, #4a2790 42%, #1b1236 100%);
   --scrim: rgba(10, 6, 26, .72);
   --face-gold: var(--gold);     --face-rose: var(--rose);
-  /* violet needs a nudge lighter than its fill: on the lifted ground it
-     measured 4.39, just under the 4.5 body-text floor. */
-  --face-violet: #9f71f1;       --face-sky: var(--sky);
+  --face-violet: #a97ef5;       --face-sky: var(--sky);
   --face-mint: var(--mint);     --face-coral: var(--coral);
   --face-lilac: var(--lilac);   --face-aqua: var(--aqua);
 }
 
 /* ---- midnight: navy dark. The clouds design. -------------------------- */
 [data-theme='midnight'] {
-  --ground-0: #142234;   /* L* 12.9 */
-  --ground-1: #1a2b3f;   /* L* 17.0 */
-  --ground-2: #22364c;
-  --ground-3: #2c445c;
-  --ground-4: #385570;
-  --line: #2f4961;
+  --ground-0: #101c2b;   /* L* 11 */
+  --ground-1: #17263a;   /* L* 15 */
+  --ground-2: #20344c;   /* L* 20 */
+  --ground-3: #2b4360;   /* L* 26 */
+  --ground-4: #385579;   /* L* 33 */
+  --line: rgba(140, 185, 235, .14);
+  --line-strong: rgba(140, 185, 235, .24);
   --text: #ffffff;
   --text-dim: #b3c6da;
   --text-mute: #7d93a8;
   --moment-bg: radial-gradient(120% 110% at 25% 5%, #23415e 0%, #16283d 45%, #0b1522 100%);
   --scrim: rgba(4, 12, 20, .72);
   --face-gold: var(--gold);     --face-rose: var(--rose);
-  /* violet needs a nudge lighter than its fill: on the lifted ground it
-     measured 4.39, just under the 4.5 body-text floor. */
-  --face-violet: #9f71f1;       --face-sky: var(--sky);
+  --face-violet: #a97ef5;       --face-sky: var(--sky);
   --face-mint: var(--mint);     --face-coral: var(--coral);
   --face-lilac: var(--lilac);   --face-aqua: var(--aqua);
 }
 
-/* ---- ember: warm dark. --------------------------------------------------
-   Same ramp shape as dusk (L* 13-35), different hue. Grounds are generated to
-   hit those lightness targets rather than picked by eye, and every face ink is
-   checked against --ground-0; only violet needed lifting. */
+/* ---- ember: warm dark. -------------------------------------------------- */
 [data-theme='ember'] {
-  --ground-0: #2f1d12;
-  --ground-1: #3a2518;
-  --ground-2: #482f21;
-  --ground-3: #593b2b;
-  --ground-4: #6e4a38;
-  --line: #603e2e;
+  --ground-0: #23150d;
+  --ground-1: #2f1d13;
+  --ground-2: #3f281b;
+  --ground-3: #523524;
+  --ground-4: #6b4530;
+  --line: rgba(230, 160, 120, .14);
+  --line-strong: rgba(230, 160, 120, .24);
   --text: #ffffff;
   --text-dim: #e0c8b6;
   --text-mute: #ab8d79;
   --face-gold: var(--gold);     --face-rose: var(--rose);
-  --face-violet: #9f71f1;       --face-sky: var(--sky);
+  --face-violet: #a97ef5;       --face-sky: var(--sky);
   --face-mint: var(--mint);     --face-coral: var(--coral);
   --face-lilac: var(--lilac);   --face-aqua: var(--aqua);
-  --moment-bg: radial-gradient(120% 110% at 20% 0%, #b4632c 0%, #7a3d1e 42%, #40220f 100%);
+  --moment-bg: radial-gradient(120% 110% at 20% 0%, #b4632c 0%, #7a3d1e 42%, #29150a 100%);
   --scrim: rgba(24, 12, 6, .72);
 }
 
 /* ---- moss: green dark. ------------------------------------------------- */
 [data-theme='moss'] {
-  --ground-0: #12251c;
-  --ground-1: #182e23;
-  --ground-2: #1f3a2c;
-  --ground-3: #294837;
-  --ground-4: #355945;
-  --line: #2c4d3a;
+  --ground-0: #0d1e16;
+  --ground-1: #14281e;
+  --ground-2: #1c3629;
+  --ground-3: #264736;
+  --ground-4: #335d47;
+  --line: rgba(130, 210, 165, .14);
+  --line-strong: rgba(130, 210, 165, .24);
   --text: #ffffff;
   --text-dim: #bcd6c6;
   --text-mute: #85a291;
   --face-gold: var(--gold);     --face-rose: var(--rose);
-  --face-violet: #9f71f1;       --face-sky: var(--sky);
+  --face-violet: #a97ef5;       --face-sky: var(--sky);
   --face-mint: var(--mint);     --face-coral: var(--coral);
   --face-lilac: var(--lilac);   --face-aqua: var(--aqua);
-  --moment-bg: radial-gradient(120% 110% at 20% 0%, #3f8f63 0%, #245a3e 42%, #102a1e 100%);
+  --moment-bg: radial-gradient(120% 110% at 20% 0%, #3f8f63 0%, #245a3e 42%, #0d1e16 100%);
   --scrim: rgba(6, 20, 13, .72);
 }
 
@@ -218,7 +213,8 @@
   --ground-2: #ede8f7;
   --ground-3: #e3dcf2;
   --ground-4: #d5cbe8;
-  --line: #ded5ef;
+  --line: rgba(80, 50, 140, .11);
+  --line-strong: rgba(80, 50, 140, .20);
   --text: #1b1533;
   --text-dim: #4a4168;
   --text-mute: #6f6690;

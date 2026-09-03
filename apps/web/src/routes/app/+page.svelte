@@ -18,6 +18,7 @@ import { conversation } from '$lib/fake/conversation.svelte.js';
 import { core, MY_ACCOUNT } from '$lib/fake/core.svelte.js';
 import type { NotifyLevel } from '$lib/fake/data.js';
 import Icon from '$lib/Icon.svelte';
+import PrivacyInspector from '$lib/crypto/PrivacyInspector.svelte';
 import { clearStash, readStash } from '$lib/invite.js';
 import { lastRoom } from '$lib/lastRoom.js';
 import { layout } from '$lib/layout.svelte.js';
@@ -1146,6 +1147,13 @@ function toggleMembers() {
       {/if}
       <button
         class="icon-btn"
+        aria-pressed={core.privacyInspectorOpen}
+        onclick={() => (core.privacyInspectorOpen = true)}
+        title="Room privacy & keys"
+        aria-label="Room privacy & keys"
+      ><Icon name="key" size={17} /></button>
+      <button
+        class="icon-btn"
         aria-pressed={search.open}
         onclick={() => (search.open ? search.close() : search.show())}
         title="Search messages (⌘F)"
@@ -1259,6 +1267,7 @@ function toggleMembers() {
 
   <SettingsOverlay bind:open={settingsOpen} bind:section={settingsSection} bind:face={editingFace} />
   <SpaceSettings bind:open={spaceOpen} bind:tab={spaceTab} bind:room={spaceRoom} />
+  <PrivacyInspector bind:open={core.privacyInspectorOpen} />
   <CommandBar bind:open={commandOpen} ctx={cmdCtx} />
   <ContextMenu />
 
@@ -1320,10 +1329,6 @@ function toggleMembers() {
   .shell {
     display: grid;
     grid-template-columns: 76px 250px 1fr 240px;
-    /* `--app-h` is the visible viewport, which on a phone is the screen minus
-       the on-screen keyboard (`layout.svelte.ts`). `100dvh` is the fallback and
-       what every desktop uses — dvh handles a collapsing URL bar but nothing
-       handles the keyboard, and without this the composer types underneath it. */
     height: var(--app-h, 100dvh);
     transition: grid-template-columns var(--t-base) var(--ease);
   }
@@ -1337,56 +1342,53 @@ function toggleMembers() {
     width: 48px; height: 48px; border: 0; cursor: pointer; position: relative;
     border-radius: var(--r-md); color: #fff; font-weight: 800; font-size: 16px;
     background: linear-gradient(160deg, var(--from), var(--to));
-    transition: border-radius var(--t-base) var(--ease-toy), transform var(--t-fast) var(--ease);
+    box-shadow: var(--shadow-subtle), var(--highlight-inset);
+    transition: border-radius var(--t-base) var(--ease-toy), transform var(--t-fast) var(--ease),
+      box-shadow var(--t-fast) var(--ease);
   }
-  .space:hover { border-radius: var(--r-sm); }
-  .space:active { transform: scale(0.94); }
-  .space.add { background: var(--ground-3); color: var(--text-mute); display: grid; place-items: center; }
-  /* The selection indicator grows from nothing — the thing you did gets the
-     visible motion (docs/32). */
+  .space:hover { border-radius: var(--r-sm); transform: translateY(-1px); box-shadow: var(--shadow-ambient), var(--highlight-inset); }
+  .space:active { transform: translateY(var(--lift)) scale(0.96); box-shadow: none; }
+  .space.add {
+    background: var(--ground-2); border: 1.5px dashed var(--line-strong); color: var(--text-mute);
+    display: grid; place-items: center; box-shadow: none;
+  }
+  .space.add:hover {
+    background: var(--ground-3); border-style: solid; border-color: var(--brand); color: var(--text);
+    transform: translateY(-1px);
+  }
   .space.active::before {
     content: ''; position: absolute; left: -14px; top: 50%; translate: 0 -50%;
-    width: 4px; height: 26px; border-radius: var(--r-pill); background: var(--text);
+    width: 4px; height: 28px; border-radius: 0 var(--r-pill) var(--r-pill) 0;
+    background: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,.4);
     animation: grow var(--t-base) var(--ease);
   }
-  @keyframes grow { from { height: 0; opacity: 0; } to { height: 26px; opacity: 1; } }
+  @keyframes grow { from { height: 0; opacity: 0; } to { height: 28px; opacity: 1; } }
 
   .sidebar { background: var(--ground-1); border-right: 1px solid var(--line); display: flex; flex-direction: column; overflow: hidden; }
-  /* The space name is the space menu — the affordance Discord taught
-     everyone, and the only place a space-wide action is obviously reachable. */
   .space-head {
     display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
     padding: 14px 16px; border: 0; border-bottom: 1px solid var(--line);
     background: transparent; cursor: pointer; color: var(--text);
     font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg);
+    letter-spacing: -.01em;
     transition: background var(--t-fast) var(--ease);
   }
   .space-head:hover { background: var(--ground-2); }
   .sh-nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .space-head :global(svg) { color: var(--text-mute); }
+  .space-head :global(svg) { color: var(--text-mute); transition: transform var(--t-base) var(--ease); }
+  .space-head:hover :global(svg) { transform: translateY(1px); color: var(--text); }
 
   .join {
     display: inline-flex; align-items: center; gap: 6px; flex: none;
     min-height: var(--tap);
     border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700;
     background: var(--face-mint); color: var(--ground-0);
-    padding: 6px 13px; border-radius: var(--r-pill);
+    padding: 6px 14px; border-radius: var(--r-pill);
+    box-shadow: 0 var(--lift) 0 var(--mint-deep), var(--highlight-inset);
+    transition: transform var(--t-fast) var(--ease-toy), filter var(--t-fast) var(--ease);
   }
   .join:hover { filter: brightness(1.06); }
-  /* Sits in the header rather than floating: "message someone" is a property
-     of the list, and a button that hovers over rows is one people click by
-     accident while scrolling. */
-  /*
-    The visible box **is** the button, so the shading and the glyph cannot
-    disagree — which they did twice: once as a rotated diamond behind a square
-    icon, and once as a pseudo-element centred on the button while the glyph
-    sat two pixels off its centre. Anything drawn separately from the thing it
-    is drawn around eventually drifts from it.
-
-    The 44px tap target `docs/24` asks for is a transparent `::after` instead.
-    A hit area is invisible by definition, so it is the half that can afford to
-    be a separate box.
-  */
+  .join:active { transform: translateY(var(--lift)); box-shadow: none; }
   .sh-add {
     margin-left: auto; position: relative;
     display: grid; place-items: center; cursor: pointer;
@@ -1414,8 +1416,6 @@ function toggleMembers() {
     background: var(--accent); color: var(--on-accent);
   }
   .new-dm button:disabled { opacity: .5; cursor: default; }
-  /* The muted warning tone, not red: a handle nobody has is a typo, not an
-     alarm (`docs/08`). */
   .new-dm-err {
     flex-basis: 100%; margin: 2px 0 0; font-size: var(--text-xs);
     color: color-mix(in oklab, var(--text) 66%, transparent);
@@ -1426,7 +1426,7 @@ function toggleMembers() {
     display: flex; align-items: center; gap: 10px;
     padding: 10px 14px; border-radius: 999px;
     border: 1px solid var(--line); background: var(--ground-2);
-    box-shadow: var(--shadow-lg); font-size: var(--text-sm);
+    box-shadow: var(--shadow-ambient); font-size: var(--text-sm);
     max-width: min(46rem, calc(100vw - 32px));
   }
   .joining button {
@@ -1439,17 +1439,17 @@ function toggleMembers() {
   .sheet-scrim {
     position: fixed; inset: 0; z-index: 60; border: 0; padding: 0;
     background: color-mix(in oklab, var(--ground-0) 62%, transparent);
-    backdrop-filter: blur(2px);
+    backdrop-filter: blur(4px);
   }
   .make-space {
     position: fixed; z-index: 61; top: 50%; left: 50%; translate: -50% -50%;
     width: min(380px, calc(100vw - 32px));
     display: flex; flex-direction: column; gap: 10px;
-    padding: 20px; border-radius: var(--r-lg);
-    border: 1px solid var(--line); background: var(--ground-1);
-    box-shadow: var(--shadow-lg);
+    padding: 22px; border-radius: var(--r-lg);
+    border: 1px solid var(--line-strong); background: var(--ground-1);
+    box-shadow: var(--shadow-panel);
   }
-  .make-space h2 { margin: 0; font-size: var(--text-lg); }
+  .make-space h2 { margin: 0; font-family: var(--font-display); font-size: var(--text-lg); }
   .make-space p { margin: 0; font-size: var(--text-sm); color: var(--text-mute); }
   .make-space input {
     font: inherit; padding: 9px 11px; min-height: var(--tap);
@@ -1462,7 +1462,11 @@ function toggleMembers() {
     font: inherit; font-weight: 600; cursor: pointer; flex: 1;
     padding: 0 14px; min-height: var(--tap); border: 0; border-radius: var(--r-sm);
     background: var(--accent); color: var(--on-accent);
+    box-shadow: 0 var(--lift) 0 var(--rose-deep), var(--highlight-inset);
+    transition: transform var(--t-fast) var(--ease-toy);
   }
+  .make-space .go:hover:not(:disabled) { filter: brightness(1.08); }
+  .make-space .go:active:not(:disabled) { transform: translateY(var(--lift)); box-shadow: none; }
   .make-space .go:disabled { opacity: .5; cursor: default; }
   .make-space .cancel {
     font: inherit; cursor: pointer; padding: 0 14px; min-height: var(--tap);
@@ -1472,82 +1476,85 @@ function toggleMembers() {
 
   .rooms { overflow-y: auto; padding: 10px 8px; flex: 1; }
 
-  /* Bottom-left, where every chat client puts the "you" area. */
   .me {
     display: flex; align-items: center; gap: 4px; flex: none;
-    padding: 8px; border-top: 1px solid var(--line); background: var(--ground-2);
+    padding: 8px 10px; border-top: 1px solid var(--line); background: var(--ground-1);
   }
   .me-id {
     display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0;
     background: transparent; border: 0; cursor: pointer; color: var(--text);
-    padding: 4px 6px; border-radius: var(--r-sm); text-align: left;
+    padding: 5px 8px; border-radius: var(--r-sm); text-align: left;
     min-height: var(--tap);
     transition: background var(--t-fast) var(--ease);
   }
-  .me-id:hover { background: var(--ground-3); }
+  .me-id:hover { background: var(--ground-2); }
   .me-meta { min-width: 0; display: flex; flex-direction: column; }
-  .me-nm { font-weight: 700; font-size: var(--text-sm); line-height: 1.2; }
+  .me-nm { font-weight: 700; font-size: var(--text-sm); line-height: 1.2; color: var(--text); }
   .me-sub {
     font-size: 11px; color: var(--text-mute); font-family: var(--font-mono);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px;
   }
   .me-btn {
-    flex: none; width: 30px; height: 30px; border: 0; cursor: pointer;
+    flex: none; width: 32px; height: 32px; border: 0; cursor: pointer;
     min-width: var(--tap); min-height: var(--tap);
     background: transparent; color: var(--text-mute); border-radius: var(--r-sm);
     display: grid; place-items: center;
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
-      rotate var(--t-base) var(--ease);
+      transform var(--t-base) var(--ease);
   }
-  .me-btn:hover { background: var(--ground-3); color: var(--text); rotate: 90deg; }
+  .me-btn:hover { background: var(--ground-2); color: var(--text); transform: rotate(90deg); }
   .cat {
-    font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
-    color: var(--text-mute); padding: 12px 8px 4px;
+    font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--text-mute); padding: 16px 12px 6px;
   }
   .room {
     display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
-    padding: 7px 10px; border: 0; background: transparent; cursor: pointer;
+    padding: 7px 10px; margin: 1px 0; border: 0; background: transparent; cursor: pointer;
     min-height: var(--tap);
     border-radius: var(--r-sm); color: var(--text-mute); font-weight: 600;
-    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+      transform var(--t-fast) var(--ease);
+    position: relative;
   }
-  .room { position: relative; }
   .room:hover { background: var(--ground-2); color: var(--text-dim); }
-  .room.active { background: var(--ground-3); color: var(--text); }
-  /* The active room gets a marker that grows in, so the selection reads as
-     something that moved rather than something that blinked (docs/32). */
+  .room.active {
+    background: var(--ground-3); color: var(--text);
+    box-shadow: var(--shadow-subtle), var(--highlight-inset);
+  }
   .room.active::before {
     content: ''; position: absolute; left: 0; top: 50%; translate: 0 -50%;
-    width: 3px; height: 60%; border-radius: var(--r-pill); background: var(--brand);
+    width: 3px; height: 18px; border-radius: var(--r-pill); background: var(--brand);
     animation: mark var(--t-base) var(--ease);
   }
-  @keyframes mark { from { height: 0; opacity: 0; } to { height: 60%; opacity: 1; } }
-  .room.unread { color: var(--text); }
-  /* A room set to notify about nothing still counts unread, it just reads
-     quieter in the list. Otherwise the setting is invisible. */
+  @keyframes mark { from { height: 0; opacity: 0; } to { height: 18px; opacity: 1; } }
+  .room.unread { color: var(--text); font-weight: 700; }
   .room.quiet { opacity: .55; }
 
-  /* Home is a peer of the spaces, not one of them, so it sits above a rule
-     rather than in the same run of icons. */
   .home {
     position: relative; width: 48px; height: 48px; flex: none; margin-bottom: 4px;
     display: grid; place-items: center; border: 0; cursor: pointer;
-    border-radius: var(--r-lg); background: var(--ground-3); color: var(--text-dim);
+    border-radius: var(--r-md); background: var(--ground-2); color: var(--text-dim);
+    box-shadow: var(--shadow-subtle), var(--highlight-inset);
     transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease),
-      border-radius var(--t-base) var(--ease);
+      border-radius var(--t-base) var(--ease-toy), transform var(--t-fast) var(--ease);
   }
-  .home:hover { border-radius: var(--r-md); color: var(--text); }
-  .home.active { background: var(--brand); color: #fff; border-radius: var(--r-md); }
-  .rail-sep { width: 24px; border: 0; border-top: 1px solid var(--line); margin: 4px 0 8px; }
+  .home:hover { border-radius: var(--r-sm); color: var(--text); background: var(--ground-3); transform: translateY(-1px); }
+  .home.active { background: var(--brand); color: #fff; border-radius: var(--r-sm); }
+  .home.active::before {
+    content: ''; position: absolute; left: -14px; top: 50%; translate: 0 -50%;
+    width: 4px; height: 28px; border-radius: 0 var(--r-pill) var(--r-pill) 0;
+    background: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,.4);
+    animation: grow var(--t-base) var(--ease);
+  }
+  .rail-sep { width: 28px; border: 0; border-top: 1px solid var(--line); margin: 4px 0 8px; }
   .rail-dot {
-    position: absolute; right: 4px; top: 4px; width: 9px; height: 9px;
+    position: absolute; right: 2px; top: 2px; width: 10px; height: 10px;
     border-radius: 50%; background: var(--face-rose);
-    box-shadow: 0 0 0 2px var(--ground-0);
+    box-shadow: 0 0 0 2.5px var(--ground-1), 0 0 8px var(--face-rose);
   }
 
   .space-head.static { cursor: default; }
   .room.dm { gap: 9px; }
-  /* Two overlapping avatars for a group, so a group reads as one at a glance. */
   .stack { display: flex; flex: none; }
   .stack > :global(*:last-child) { margin-left: -8px; box-shadow: 0 0 0 2px var(--ground-1); }
 
@@ -1557,26 +1564,19 @@ function toggleMembers() {
 
   .threads {
     display: flex; flex-direction: column; gap: 1px;
-    margin: 0 0 3px 26px; padding-left: 9px;
-    /* A hairline that says "these hang off the room above" without drawing a
-       whole tree. `docs/07`: structure by alignment, not by boxes. */
-    border-left: 1px solid var(--line);
+    margin: 2px 0 4px 28px; padding-left: 10px;
+    border-left: 1.5px solid var(--line-strong);
   }
   .thread {
     display: flex; align-items: center; gap: 6px;
-    padding: 3px 7px; border: 0; background: none; border-radius: var(--r-xs);
+    padding: 4px 8px; border: 0; background: none; border-radius: var(--r-xs);
     color: var(--text-mute); font: inherit; font-size: var(--text-xs);
     cursor: pointer; text-align: left; width: 100%;
-    /* A thread is a room you can be in, listed among rooms — it should be no
-       harder to hit than the room above it. It stays visually smaller; only
-       the box grows. */
     min-height: var(--tap);
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .thread:hover { background: var(--ground-3); color: var(--text); }
   .thread.active { background: var(--ground-3); color: var(--text); font-weight: 600; }
-  .th-nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .th-n { font-variant-numeric: tabular-nums; opacity: .7; }
 
   .incall { display: flex; flex-direction: column; gap: 1px; margin: 0 0 4px 30px; }
   .occupant {
@@ -1586,20 +1586,27 @@ function toggleMembers() {
     font-size: 12px; color: var(--text-mute); padding: 3px 8px; border-radius: var(--r-sm);
   }
   .occupant:hover { background: var(--ground-2); color: var(--text-dim); }
-  .room .glyph { opacity: .6; display: grid; place-items: center; width: 15px; }
+  .room .glyph { opacity: .7; display: grid; place-items: center; width: 15px; }
   .room .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .room .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text); flex: none; }
+  .room .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--text);
+    box-shadow: 0 0 6px var(--text); flex: none;
+  }
   .room .pill {
     background: var(--face-rose); color: #fff; font-size: 11px; font-weight: 800;
-    border-radius: var(--r-pill); padding: 1px 7px;
+    border-radius: var(--r-pill); padding: 2px 7px;
+    box-shadow: 0 2px 6px rgba(236,76,140,.32);
   }
 
   .chat { display: flex; flex-direction: column; overflow: hidden; background: var(--ground-0); min-width: 0; }
   .chat-head {
-    display: flex; align-items: center; gap: 10px; padding: 12px 16px;
-    border-bottom: 1px solid var(--line); flex: none;
+    display: flex; align-items: center; gap: 12px; padding: 14px 20px;
+    border-bottom: 1px solid var(--line); flex: none; background: var(--ground-0);
   }
-  .chat-head h1 { margin: 0; font-size: var(--text-lg); font-weight: 700; }
+  .chat-head h1 {
+    margin: 0; font-family: var(--font-display); font-size: var(--text-lg);
+    font-weight: 600; letter-spacing: -.01em; color: var(--text);
+  }
   .chat-head .glyph { color: var(--text-mute); display: grid; place-items: center; }
   .spacer { flex: 1; }
 
@@ -1608,19 +1615,17 @@ function toggleMembers() {
     background: var(--face-gold);
     animation: breathe 1.8s ease-in-out infinite;
   }
-  /* Rose, not red-alert: being offline is a state, not an error, and the app
-     keeps working. The dot's job is to explain why a message is sitting
-     pending, not to demand anything. */
   .conn.offline { background: var(--face-rose); animation: none; }
   @keyframes breathe { 50% { opacity: .35; } }
   .icon-btn {
     border: 0; background: transparent; color: var(--text-dim); cursor: pointer;
-    width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+    width: 34px; height: 34px; border-radius: var(--r-sm); display: grid; place-items: center;
     min-width: var(--tap); min-height: var(--tap);
-    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+      transform var(--t-fast) var(--ease);
   }
   .icon-btn:hover { background: var(--ground-2); color: var(--text); }
-  .icon-btn:active { transform: scale(0.9); }
+  .icon-btn:active { transform: scale(0.92); }
   .icon-btn[aria-pressed='true'] { color: var(--text); background: var(--ground-3); }
 
   /* Room content cross-fades; the sidebar selection is what moves. A slide
@@ -1628,25 +1633,24 @@ function toggleMembers() {
   .fade { flex: 1; min-height: 0; animation: fade var(--t-fast) var(--ease); }
   @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
-  .members { background: var(--ground-1); border-left: 1px solid var(--line); overflow: hidden auto; padding: 8px 10px; }
-  /* This became a <button> when members got a context menu, and buttons come
-     with a user-agent background, border and centred text — which is why the
-     rows turned into white boxes. Resetting all three is not optional when you
-     promote a div to a button. */
+  .members { background: var(--ground-1); border-left: 1px solid var(--line); overflow: hidden auto; padding: 12px 10px; }
   .member {
     display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
-    padding: 6px 8px; border: 0; border-radius: var(--r-sm); min-height: var(--tap);
+    padding: 7px 9px; border: 0; border-radius: var(--r-sm); min-height: var(--tap);
     background: transparent; color: inherit; font: inherit;
-    cursor: pointer; transition: background var(--t-fast) var(--ease);
+    cursor: pointer; transition: background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
   }
-  .member:hover { background: var(--ground-2); }
+  .member:hover { background: var(--ground-2); transform: translateY(-1px); }
+  .member:active { transform: translateY(1px); }
   .who { min-width: 0; }
   .nm { font-weight: 600; font-size: var(--text-sm); display: flex; align-items: center; gap: 6px; }
   .sub { font-size: 11px; color: var(--text-mute); }
   .badge {
-    font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+    font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
     padding: 1px 6px; border-radius: var(--r-xs);
-    border: 1px solid var(--text-mute); color: var(--text-dim); line-height: 1.5;
+    border: 1px solid color-mix(in oklab, var(--text-mute) 40%, transparent);
+    background: color-mix(in oklab, var(--text-mute) 12%, transparent);
+    color: var(--text-dim); line-height: 1.5;
   }
 
   /* On a desktop this wrapper does not exist as far as layout is concerned:

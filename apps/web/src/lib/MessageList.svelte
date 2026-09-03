@@ -33,11 +33,13 @@
  * all; the cost of the alternative is being wrong about every height, forever.
  */
 
+import { faceColour } from './colour.js';
 import { conversation } from './fake/conversation.svelte.js';
 import { core } from './fake/core.svelte.js';
 import { dayLabel, newDay } from './format.js';
 import Icon from './Icon.svelte';
 import MessageRow from './MessageRow.svelte';
+import { sound } from './sound.js';
 
 let viewport = $state<HTMLElement>();
 let atBottom = $state(true);
@@ -222,9 +224,37 @@ const bubble = $derived(core.room.style === 'bubbles');
     {/if}
 
     {#if core.timeline.length === 0}
+      {@const activeFace = core.faces[core.speakingHere] ?? core.myFaces[0]}
       <div class="empty">
-        <h2>Nothing here yet</h2>
-        <p>This is yours. Say something — nobody can read it but the people you put in this room.</p>
+        <div class="empty-badge">
+          {#if bubble}
+            <Icon name="send" size={26} />
+          {:else}
+            <Icon name="hash" size={26} />
+          {/if}
+        </div>
+        <h2>{bubble ? 'Start of a conversation' : 'Somewhere waiting to be used'}</h2>
+        <p>
+          {#if bubble}
+            Only the people here can read these messages. Say hello as
+            <b style="color: var(--face-{faceColour(activeFace)})">{activeFace?.name ?? 'yourself'}</b>.
+          {:else}
+            No cleartext path, no ghost readers. Start the conversation, drop a mock, or inspect who holds keys.
+          {/if}
+        </p>
+        <div class="empty-chips">
+          <button
+            class="chip-act"
+            onclick={() => { core.send(`Hello from ${activeFace?.name ?? 'here'}!`); sound.send(); }}
+          >
+            <Icon name="sparkle" size={13} />
+            <span>Say hello as {activeFace?.name ?? 'me'}</span>
+          </button>
+          <button class="chip-act alt" onclick={() => (core.privacyInspectorOpen = true)}>
+            <Icon name="key" size={13} />
+            <span>What can the server see?</span>
+          </button>
+        </div>
       </div>
     {/if}
 
@@ -287,21 +317,26 @@ const bubble = $derived(core.room.style === 'bubbles');
   .grow { flex: 1 0 auto; }
 
   .day {
-    display: flex; align-items: center; gap: 12px; padding: 14px 16px 6px; flex: none;
-    font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
+    display: flex; align-items: center; gap: 14px; padding: 18px 20px 8px; flex: none;
+    font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
     color: var(--text-mute);
   }
   .day::before, .day::after { content: ''; flex: 1; height: 1px; background: var(--line); }
-  .day span { flex: none; }
+  .day span {
+    flex: none; padding: 3px 10px; border-radius: var(--r-pill);
+    background: var(--ground-2); border: 1px solid var(--line);
+    color: var(--text-dim);
+  }
 
   .typing {
-    flex: none; height: 22px; display: flex; align-items: center; gap: 8px;
-    padding: 0 16px; font-size: var(--text-xs); color: var(--text-mute);
+    flex: none; height: 26px; display: flex; align-items: center; gap: 8px;
+    padding: 0 20px; font-size: var(--text-xs); color: var(--text-mute);
+    font-weight: 500;
   }
   .who { animation: fade var(--t-fast) var(--ease); }
   @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
-  .dots { display: inline-flex; gap: 3px; align-items: flex-end; height: 10px; }
-  .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--text-mute); animation: tp 1.3s infinite ease-in-out; }
+  .dots { display: inline-flex; gap: 4px; align-items: center; height: 10px; }
+  .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--brand); animation: tp 1.3s infinite ease-in-out; }
   .dots i:nth-child(2) { animation-delay: .18s; }
   .dots i:nth-child(3) { animation-delay: .36s; }
   @keyframes tp { 0%, 65%, 100% { opacity: .35; transform: translateY(0); } 32% { opacity: 1; transform: translateY(-3px); } }
@@ -310,29 +345,49 @@ const bubble = $derived(core.room.style === 'bubbles');
      of the two things it is: a shortcut, or news. */
   .jump {
     position: absolute; left: 50%; translate: -50% 0; bottom: 30px; z-index: 4;
-    display: flex; align-items: center; gap: 7px; cursor: pointer;
-    background: var(--ground-3); border: 1px solid var(--line); color: var(--text-dim);
-    border-radius: var(--r-pill); padding: 6px 14px; font-size: var(--text-sm); font-weight: 600;
-    box-shadow: var(--shadow-ambient);
+    display: flex; align-items: center; gap: 8px; cursor: pointer;
+    background: var(--ground-3); border: 1px solid var(--line-strong); color: var(--text);
+    border-radius: var(--r-pill); padding: 7px 16px; font-size: var(--text-sm); font-weight: 700;
+    box-shadow: var(--shadow-ambient), var(--highlight-inset);
     animation: pill var(--t-base) var(--ease);
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
-      transform var(--t-fast) var(--ease);
+      transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
   }
-  /* `translate` and `transform` are separate properties that COMPOSE — the
-     browser applies translate first, then transform. Re-stating the -50%
-     centring inside a transform here made the pill sit at -100% for the length
-     of the animation and snap to -50% the moment it ended. Centring lives in
-     `translate` above; anything animated moves on `transform` only and never
-     mentions the -50% again. */
   @keyframes pill { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-  .jump:hover { background: var(--ground-4); color: var(--text); }
-  .jump:active { transform: translateY(1px); }
-  .jump.has { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .jump:hover { background: var(--ground-4); transform: translateY(-1px); box-shadow: var(--shadow-panel); }
+  .jump:active { transform: translateY(var(--lift)); box-shadow: none; }
+  .jump.has {
+    background: var(--brand); border-color: var(--brand); color: #fff;
+    box-shadow: 0 var(--lift) 0 var(--violet-deep), var(--highlight-inset);
+  }
 
-  .empty { flex: none; text-align: center; padding: 60px 24px; }
+  .empty {
+    flex: none; text-align: center; padding: 70px 24px 40px;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .empty-badge {
+    width: 60px; height: 60px; border-radius: var(--r-md);
+    background: var(--ground-2); border: 1.5px solid var(--line-strong);
+    color: var(--face-mint); display: grid; place-items: center;
+    box-shadow: var(--shadow-ambient), var(--highlight-inset);
+    margin-bottom: 18px;
+  }
   .empty h2 {
     font-family: var(--font-display); font-weight: 600; font-size: var(--display-1);
-    margin: 0 0 6px; letter-spacing: -.02em;
+    margin: 0 0 8px; letter-spacing: -.02em; color: var(--text);
   }
-  .empty p { color: var(--text-mute); font-size: var(--text-sm); max-width: 42ch; margin: 0 auto; }
+  .empty p { color: var(--text-dim); font-size: var(--text-sm); max-width: 44ch; margin: 0 auto 20px; line-height: 1.55; }
+  .empty-chips { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .chip-act {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 16px; border-radius: var(--r-pill); border: 0; cursor: pointer;
+    font: inherit; font-size: var(--text-xs); font-weight: 700;
+    background: var(--ground-2); color: var(--text);
+    border: 1.5px solid var(--line-strong);
+    box-shadow: 0 var(--lift) 0 var(--ground-3), var(--highlight-inset);
+    transition: transform var(--t-fast) var(--ease-toy), background var(--t-fast) var(--ease);
+  }
+  .chip-act:hover { background: var(--ground-3); transform: translateY(-1px); }
+  .chip-act:active { transform: translateY(var(--lift)); box-shadow: none; }
+  .chip-act.alt { color: var(--face-mint); border-color: color-mix(in oklab, var(--face-mint) 35%, transparent); }
 </style>

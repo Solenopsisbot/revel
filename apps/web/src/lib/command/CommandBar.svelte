@@ -182,8 +182,8 @@ function onKey(e: KeyboardEvent) {
     position: fixed; z-index: 75; left: 50%; top: 14vh; translate: -50% 0;
     width: min(640px, calc(100vw - 32px));
     max-height: 68vh; display: flex; flex-direction: column; overflow: hidden;
-    background: var(--ground-0); border: 1px solid var(--ground-4);
-    border-radius: var(--r-lg); box-shadow: var(--shadow-panel);
+    background: var(--ground-1); border: 1.5px solid var(--line-strong);
+    border-radius: var(--r-lg); box-shadow: var(--shadow-panel), var(--highlight-inset);
     animation: drop var(--t-base) var(--ease);
   }
   @keyframes drop {
@@ -192,10 +192,10 @@ function onKey(e: KeyboardEvent) {
   }
 
   .input {
-    display: flex; align-items: center; gap: 10px; padding: 12px 14px;
-    border-bottom: 1px solid var(--line); background: var(--ground-1);
+    display: flex; align-items: center; gap: 12px; padding: 14px 18px;
+    border-bottom: 1px solid var(--line); background: var(--ground-2);
   }
-  .input img { border-radius: 50%; background: var(--ground-3); flex: none; }
+  .input img { border-radius: 50%; background: var(--ground-3); flex: none; box-shadow: 0 0 0 1.5px var(--face-mint); }
   .input input {
     flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text);
     font: inherit; font-size: var(--text-base); outline: none;
@@ -203,22 +203,28 @@ function onKey(e: KeyboardEvent) {
   .input input::placeholder { color: var(--text-mute); }
   kbd {
     font-family: var(--font-mono); font-size: 10px; color: var(--text-mute);
-    border: 1px solid var(--line); border-radius: var(--r-xs); padding: 2px 6px; flex: none;
+    border: 1px solid var(--line-strong); border-radius: var(--r-xs); padding: 3px 7px; flex: none;
+    background: var(--ground-3);
   }
 
-  .results { overflow-y: auto; padding: 6px; }
+  .results { overflow-y: auto; padding: 8px; }
   .group {
-    font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
-    color: var(--text-mute); padding: 9px 9px 4px;
+    font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--text-mute); padding: 10px 10px 4px;
   }
   .row {
     display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
     border: 0; background: transparent; cursor: pointer; color: var(--text-dim);
-    padding: 8px 9px; border-radius: var(--r-sm); font: inherit; font-size: var(--text-sm);
+    padding: 9px 12px; border-radius: var(--r-sm); font: inherit; font-size: var(--text-sm);
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .row.sel { background: var(--ground-3); color: var(--text); }
+  .row.sel {
+    background: var(--ground-3); color: var(--text); font-weight: 600;
+    box-shadow: var(--shadow-subtle), var(--highlight-inset);
+  }
+  .row :global(svg) { color: var(--face-mint); flex: none; }
   .l { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .h { font-size: 11px; color: var(--text-mute); flex: none; }
+  .h { font-size: 11px; color: var(--text-mute); flex: none; font-family: var(--font-mono); }
 
   .empty { padding: 22px 14px; margin: 0; font-size: var(--text-sm); color: var(--text-mute); line-height: 1.55; }
 

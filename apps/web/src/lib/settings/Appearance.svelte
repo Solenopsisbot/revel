@@ -1,5 +1,6 @@
 <script lang="ts">
 import Icon from '$lib/Icon.svelte';
+import { sound } from '$lib/sound.js';
 import { THEMES, theme } from '$lib/theme.svelte.js';
 </script>
 
@@ -73,6 +74,23 @@ import { THEMES, theme } from '$lib/theme.svelte.js';
   </label>
 </section>
 
+<section>
+  <h3>Sound</h3>
+  <label class="row">
+    <input
+      type="checkbox"
+      checked={sound.enabled}
+      onchange={(e) => { sound.enabled = e.currentTarget.checked; if (sound.enabled) sound.switchFace(); }}
+    />
+    <span>
+      <b>Tactile micro-sounds</b>
+      <span class="sub">
+        Soft synthesized clicks on sending messages, reacting, and switching headmates.
+      </span>
+    </span>
+  </label>
+</section>
+
 <style>
   h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); margin: 0 0 4px; }
   .lede { color: var(--text-mute); margin: 0 0 28px; font-size: var(--text-sm); }
@@ -83,12 +101,17 @@ import { THEMES, theme } from '$lib/theme.svelte.js';
   .themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-top: 12px; }
   .theme {
     display: flex; align-items: center; gap: 11px; text-align: left; cursor: pointer;
-    background: var(--ground-2); border: 2px solid var(--line); border-radius: var(--r-md);
-    padding: 9px; color: var(--text); font: inherit;
-    transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+    background: var(--ground-2); border: 1.5px solid var(--line); border-radius: var(--r-md);
+    padding: 10px 12px; color: var(--text); font: inherit;
+    box-shadow: var(--shadow-subtle);
+    transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
+      transform var(--t-fast) var(--ease);
   }
-  .theme:hover { border-color: var(--ground-4); }
-  .theme.sel { border-color: var(--brand); background: var(--ground-3); }
+  .theme:hover { border-color: var(--line-strong); background: var(--ground-3); transform: translateY(-1px); }
+  .theme.sel {
+    border-color: var(--brand); background: var(--ground-3);
+    box-shadow: var(--shadow-ambient), var(--highlight-inset);
+  }
 
   /* Each preview renders in its own theme, so the list shows you the thing
      rather than describing it. */
@@ -108,14 +131,21 @@ import { THEMES, theme } from '$lib/theme.svelte.js';
   .hint { font-size: 11px; color: var(--text-mute); }
   .tick { color: var(--brand); }
 
-  .seg { display: inline-flex; gap: 3px; background: var(--ground-2); padding: 3px; border-radius: var(--r-pill); }
+  .seg {
+    display: inline-flex; gap: 3px; background: var(--ground-2); padding: 4px;
+    border-radius: var(--r-pill); border: 1px solid var(--line);
+    box-shadow: var(--shadow-subtle);
+  }
   .seg button {
     border: 0; cursor: pointer; font: inherit; font-size: var(--text-sm); font-weight: 600;
     padding: 7px 18px; border-radius: var(--r-pill); background: transparent; color: var(--text-dim);
-    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
   }
   .seg button:hover { color: var(--text); }
-  .seg button.sel { background: var(--brand); color: #fff; }
+  .seg button.sel {
+    background: var(--brand); color: #fff;
+    box-shadow: 0 var(--lift) 0 var(--violet-deep), var(--highlight-inset);
+  }
 
   .row { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
   .row input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--face-mint); cursor: pointer; flex: none; }

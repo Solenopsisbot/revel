@@ -61,28 +61,37 @@ function fit(a: Attachment) {
         class:single={visual.length === 1}
         style={visual.length === 1 ? `width:${box.w}px;aspect-ratio:${box.w}/${box.h}` : ''}
       >
-        {#if hidden}
-          <!-- The sender said this needs a warning, so it gets one. The frame
-               is already the right size, so revealing it moves nothing. -->
-          <button class="spoiler" onclick={() => (revealed[a.id] = true)}>
-            <Icon name="eye" size={19} />
-            <span>Marked sensitive</span>
-            <small>{layout.coarse ? 'Tap' : 'Click'} to show</small>
-          </button>
-        {:else}
+        <button
+          class="open"
+          onclick={() => lightbox.show(visual, visual.indexOf(a))}
+          aria-label="Open {a.name}"
+        >
+          {#if a.kind === 'video'}
+            <img src={a.poster} alt={a.alt || a.name} loading="lazy" decoding="async" />
+            <span class="play"><Icon name="play" size={20} /></span>
+          {:else}
+            <img src={a.url} alt={a.alt || a.name} loading="lazy" decoding="async" />
+          {/if}
+        </button>
+
+        {#if a.spoiler}
           <button
-            class="open"
-            onclick={() => lightbox.show(visual, visual.indexOf(a))}
-            aria-label="Open {a.name}"
+            class="spoiler-lens"
+            class:hidden
+            onclick={() => (revealed[a.id] = !revealed[a.id])}
+            aria-label={hidden ? 'Show sensitive content' : 'Hide sensitive content'}
           >
-            {#if a.kind === 'video'}
-              <img src={a.poster} alt={a.alt || a.name} loading="lazy" decoding="async" />
-              <span class="play"><Icon name="play" size={20} /></span>
-            {:else}
-              <img src={a.url} alt={a.alt || a.name} loading="lazy" decoding="async" />
+            {#if hidden}
+              <div class="spoiler-content">
+                <Icon name="eye" size={20} />
+                <span>Marked sensitive</span>
+                <small>{layout.coarse ? 'Tap' : 'Click'} to show</small>
+              </div>
             {/if}
           </button>
+        {/if}
 
+        {#if !hidden}
           {#if a.kind === 'gif'}<span class="tag">GIF</span>{/if}
           {#if a.kind === 'video' && a.duration}<span class="tag right">{duration(a.duration)}</span>{/if}
           {#if a.alt}
@@ -152,7 +161,7 @@ function fit(a: Attachment) {
      actually is, and still never moves once they land. */
   .frame.single { max-width: 100%; }
 
-  .open, .spoiler {
+  .open {
     display: block; width: 100%; height: 100%; padding: 0; border: 0; cursor: pointer;
     background: var(--ground-2); border-radius: var(--r-md); overflow: hidden;
     position: relative;
@@ -176,17 +185,34 @@ function fit(a: Attachment) {
   }
   .open:hover .play { transform: scale(1.08); background: rgba(20, 10, 40, .7); }
 
-  .spoiler {
-    display: grid; place-items: center; align-content: center; gap: 2px;
-    color: var(--text-dim); border: 1px dashed var(--line);
-    background: repeating-linear-gradient(
-      135deg, var(--ground-2), var(--ground-2) 10px, var(--ground-3) 10px, var(--ground-3) 20px
-    );
-    min-height: 110px;
+  .spoiler-lens {
+    position: absolute; inset: 0; border: 0; cursor: pointer;
+    background: transparent; backdrop-filter: blur(0px);
+    opacity: 0; pointer-events: none;
+    transition: backdrop-filter var(--t-base) var(--ease),
+      background var(--t-base) var(--ease),
+      opacity var(--t-base) var(--ease);
+    border-radius: var(--r-md);
   }
-  .spoiler span { font-size: var(--text-sm); font-weight: 700; }
-  .spoiler small { font-size: var(--text-xs); color: var(--text-mute); }
-  .spoiler:hover { color: var(--text); }
+  .spoiler-lens.hidden {
+    opacity: 1; pointer-events: auto;
+    backdrop-filter: blur(28px);
+    background: repeating-linear-gradient(
+      135deg,
+      rgba(27, 18, 54, 0.78),
+      rgba(27, 18, 54, 0.78) 12px,
+      rgba(48, 34, 92, 0.78) 12px,
+      rgba(48, 34, 92, 0.78) 24px
+    );
+    display: grid; place-items: center;
+  }
+  .spoiler-content {
+    display: grid; place-items: center; align-content: center; gap: 3px;
+    color: var(--text-dim); text-align: center; padding: 12px;
+  }
+  .spoiler-content span { font-size: var(--text-sm); font-weight: 700; color: var(--text); }
+  .spoiler-content small { font-size: var(--text-xs); color: var(--text-mute); }
+  .spoiler-lens:hover .spoiler-content { filter: brightness(1.15); }
 
   .tag {
     position: absolute; left: 7px; bottom: 7px; border: 0; cursor: default;
